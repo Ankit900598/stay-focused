@@ -53,6 +53,7 @@ Context -> strategic goal -> current verified state -> phases -> deliverables ->
 
 Use this when working on the phone app.
 
+- **Commitment Transparency (2026-09-22):** Home session list + Advanced **Last decision** explains the latest allow/warn/block/lock. Copy debug report is sanitized (no screen text by default). Tests: `CommitmentTransparencyTest`, `HomeChatLayoutTest`. Does not change enforcement.
 - **Phone Surface Trace Replay (2026-09-21):** 80+ frozen a11y traces in `PhoneSurfaceTraceCatalog`. When a phone bug appears, add the screen text first, then fix law. Run `:app:testDebugUnitTest --tests com.phonecodex.app.domain.enforcement.trace.PhoneSurfaceTraceReplayTest`. Doc: `docs/enforcement-trace-replay.md`.
 - **Protection Reliability Gate (2026-09-20):** Home card + Accessibility heartbeat + `Run protection check` shipped in unit tests. Phone-verify after reinstall/restart: card must say Needs setup / Not protecting / Protected *before* opening Chrome/YouTube. Do not treat a green pill as a11y-enabled-only.
 - Verify Accessibility service is alive.

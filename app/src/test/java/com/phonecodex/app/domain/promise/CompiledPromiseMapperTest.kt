@@ -483,6 +483,113 @@ class CompiledPromiseMapperTest {
     }
 
     @Test
+    fun youtubeContentScopeScrubsContradictoryAppOnlyConfirmationNotes() {
+        val draft = CompiledPromiseMapper.toFocusPromise(
+            CompiledPromiseResponse(
+                rawText = "for 1 hour allow only YouTube video longer than 40 minutes",
+                sessionDurationMinutes = 60,
+                strictness = "STRICT",
+                allowedSummaries = listOf("YouTube videos longer than 40 minutes"),
+                blockedSummaries = listOf("YouTube videos 40 minutes or shorter"),
+                conditionalSummaries = emptyList(),
+                contentRules = listOf(
+                    CompiledContentRuleDto(
+                        appLabel = "YouTube",
+                        packageName = null,
+                        surface = "video",
+                        contentType = "long_form_video",
+                        operator = "gt",
+                        value = 40,
+                        unit = "minutes",
+                        action = "ALLOW",
+                        description = "YouTube videos longer than 40 minutes"
+                    )
+                ),
+                clarificationQuestion = null,
+                cautionMessages = emptyList(),
+                source = "azure_promise_compiler",
+                confidence = 0.9,
+                suggestedAppRules = emptyList(),
+                contentBrands = listOf("youtube"),
+                surfaceScope = listOf("youtube"),
+                contentScope = listOf("youtube"),
+                scopeKind = "youtube_content",
+                clarificationRequired = false,
+                canStartCommitment = true,
+                userFacingConfirmation = UserFacingConfirmationDto(
+                    understood = "Only YouTube videos longer than 40 minutes",
+                    allowed = listOf("YouTube videos longer than 40 minutes"),
+                    blocked = listOf(
+                        "Shorter YouTube videos, other apps and video services, except emergency calls."
+                    ),
+                    time = "About 1 hour",
+                    appliesTo = "YouTube videos anywhere",
+                    checkThis = listOf(
+                        "Only YouTube is allowed for video playback, not browser video or alternative players.",
+                        "I treated only YouTube as excluding browser video and other YouTube clients.",
+                        "Exactly 40 minutes is not allowed."
+                    ),
+                    safetyNotes = listOf("This is not YouTube app only.")
+                )
+            )
+        )
+
+        val ui = buildPromiseUnderstanding(
+            draft = draft,
+            source = UnderstandingSource.PROMISE_COMPILER
+        )
+        val text = ui.userFacingTextBlob().lowercase()
+
+        assertFalse(text.contains("not browser"))
+        assertFalse(text.contains("excluding browser"))
+        assertFalse(text.contains("alternative player"))
+        assertFalse(text.contains("youtube app only"))
+        assertFalse(text.contains("other apps"))
+        assertFalse(text.contains("other apps and video services"))
+        assertTrue(text.contains("youtube content applies across"))
+        assertTrue(text.contains("exactly 40 minutes is not allowed"))
+    }
+
+    @Test
+    fun explicitYoutubeAppOnlyKeepsAppOnlyConfirmationNotes() {
+        val draft = CompiledPromiseMapper.toFocusPromise(
+            CompiledPromiseResponse(
+                rawText = "YouTube app only: only allow videos longer than 40 min for 1 hour",
+                sessionDurationMinutes = 60,
+                strictness = "STRICT",
+                allowedSummaries = listOf("YouTube app videos longer than 40 minutes"),
+                blockedSummaries = listOf("Other YouTube clients do not count"),
+                conditionalSummaries = emptyList(),
+                contentRules = emptyList(),
+                clarificationQuestion = null,
+                cautionMessages = emptyList(),
+                source = "azure_promise_compiler",
+                confidence = 0.9,
+                suggestedAppRules = emptyList(),
+                scopePackages = listOf("com.google.android.youtube"),
+                scopeKind = "youtube_app_only",
+                clarificationRequired = false,
+                canStartCommitment = true,
+                userFacingConfirmation = UserFacingConfirmationDto(
+                    understood = "YouTube app only",
+                    allowed = listOf("Official YouTube app video"),
+                    blocked = listOf("Browser YouTube is outside this promise"),
+                    time = "About 1 hour",
+                    appliesTo = "YouTube app only",
+                    checkThis = listOf("YouTube app only means not browser video or alternative players."),
+                    safetyNotes = emptyList()
+                )
+            )
+        )
+
+        val ui = buildPromiseUnderstanding(
+            draft = draft,
+            source = UnderstandingSource.PROMISE_COMPILER
+        )
+        assertTrue(ui.userFacingTextBlob().lowercase().contains("not browser video"))
+    }
+
+    @Test
     fun shortsAllSurfacesRematerialize_expandsScopeOnFocusPromise() {
         val draft = CompiledPromiseMapper.toFocusPromise(
             CompiledPromiseResponse(

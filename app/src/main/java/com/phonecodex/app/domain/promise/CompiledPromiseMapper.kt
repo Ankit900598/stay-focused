@@ -248,20 +248,38 @@ object CompiledPromiseMapper {
     fun toFocusPromise(response: CompiledPromiseResponse, fallbackRawText: String = ""): FocusPromise {
         val raw = response.rawText.ifBlank { fallbackRawText }
         val ufc = response.userFacingConfirmation
-        val allowedSummaries = ufc?.allowed?.takeIf { it.isNotEmpty() }
+        val scopeKind = response.scopeKind?.trim()?.takeIf { it.isNotEmpty() }
+        val youtubeContentScope = isYouTubeContentScope(
+            rawText = raw,
+            scopeKind = scopeKind,
+            contentBrands = response.contentBrands + response.contentScope + response.surfaceScope
+        )
+        val allowedSummaries = sanitizeConfirmationLinesForScope(
+            lines = ufc?.allowed?.takeIf { it.isNotEmpty() }
             ?: response.allowedSummaries.ifEmpty {
                 response.confirmationPreview.filter {
                     it.startsWith("Allowed:", ignoreCase = true)
                 }
-            }
-        val blockedSummaries = ufc?.blocked?.takeIf { it.isNotEmpty() }
+            },
+            youtubeContentScope = youtubeContentScope
+        )
+        val blockedSummaries = sanitizeConfirmationLinesForScope(
+            lines = ufc?.blocked?.takeIf { it.isNotEmpty() }
             ?: response.blockedSummaries.ifEmpty {
                 response.confirmationPreview.filter {
                     it.startsWith("Blocked", ignoreCase = true)
                 }
-            }
-        val checkThis = ufc?.checkThis.orEmpty()
-        val safetyNotes = ufc?.safetyNotes.orEmpty()
+            },
+            youtubeContentScope = youtubeContentScope
+        )
+        val checkThis = sanitizeConfirmationNotesForScope(
+            notes = ufc?.checkThis.orEmpty(),
+            youtubeContentScope = youtubeContentScope
+        )
+        val safetyNotes = sanitizeConfirmationNotesForScope(
+            notes = ufc?.safetyNotes.orEmpty(),
+            youtubeContentScope = youtubeContentScope
+        )
         return PromiseClarificationLaw.clearGhostClarification(
             FocusPromise(
                 rawText = raw,
@@ -281,20 +299,26 @@ object CompiledPromiseMapper {
             ),
             surfaceScope = mergeBrandLists(response.surfaceScope, response.contentBrands),
             contentScope = mergeBrandLists(response.contentScope, response.contentBrands),
-            scopeKind = response.scopeKind?.trim()?.takeIf { it.isNotEmpty() },
+            scopeKind = scopeKind,
             clarificationQuestion = response.clarificationQuestion?.takeIf { it.isNotBlank() },
-            warnings = (response.cautionMessages + response.interpretationNotes + checkThis + safetyNotes)
+            warnings = sanitizeConfirmationLinesForScope(
+                lines = response.cautionMessages + response.interpretationNotes + checkThis + safetyNotes,
+                youtubeContentScope = youtubeContentScope
+            )
                 .filter { it.isNotBlank() }
                 .distinct(),
             allowedSummaries = allowedSummaries,
             blockedSummaries = blockedSummaries,
-            conditionalSummaries = (
+            conditionalSummaries = sanitizeConfirmationLinesForScope(
+                lines = (
                 response.conditionalSummaries +
                     response.confirmationPreview.filter { line ->
                         !line.startsWith("Allowed:", ignoreCase = true) &&
                             !line.startsWith("Blocked", ignoreCase = true)
                     }
-                ).distinct(),
+                ),
+                youtubeContentScope = youtubeContentScope
+            ).distinct(),
             clarificationOptions = response.clarificationOptions.map(::mapClarificationOption),
             clarificationRequired = response.clarificationRequired,
             canStartCommitment = response.canStartCommitment,
@@ -359,6 +383,83 @@ object CompiledPromiseMapper {
         lists.flatMap { list ->
             list.map { EnforcementScopeLaw.normalizeBrand(it) }.filter { it.isNotEmpty() }
         }.distinct()
+
+    private fun isYouTubeContentScope(
+        rawText: String,
+        scopeKind: String?,
+        contentBrands: List<String>
+    ): Boolean {
+        if (scopeKind == "youtube_content") return true
+        if (scopeKind == "youtube_app_only" || scopeKind == "youtube_only" || scopeKind == "youtube_shorts_only") {
+            return false
+        }
+        val hasYouTubeBrand = contentBrands.any {
+            EnforcementScopeLaw.normalizeBrand(it) == "youtube"
+        }
+        return hasYouTubeBrand && !PromiseIntentRules.namesYouTubeAppOnly(rawText)
+    }
+
+    private fun sanitizeConfirmationNotesForScope(
+        notes: List<String>,
+        youtubeContentScope: Boolean
+    ): List<String> {
+        val sanitized = notes.filter { note ->
+            val lower = note.lowercase()
+            !youtubeContentScope || (
+                "not browser" !in lower &&
+                    "excluding browser" !in lower &&
+                    "alternative player" !in lower &&
+                    "official app only" !in lower &&
+                    "youtube app only" !in lower &&
+                    !lower.matches(Regex(".*\\bonly youtube is allowed for video playback.*"))
+                )
+        }
+        return if (youtubeContentScope && sanitized.size != notes.size) {
+            (sanitized + "YouTube content applies across the YouTube app, browser pages, and other YouTube clients.")
+                .distinct()
+        } else {
+            sanitized.distinct()
+        }
+    }
+
+    private fun sanitizeConfirmationLinesForScope(
+        lines: List<String>,
+        youtubeContentScope: Boolean
+    ): List<String> = lines.mapNotNull { line ->
+        sanitizeConfirmationLineForScope(line, youtubeContentScope)
+    }.distinct()
+
+    private fun sanitizeConfirmationLineForScope(
+        line: String,
+        youtubeContentScope: Boolean
+    ): String? {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) return null
+        if (!youtubeContentScope) return trimmed
+        val withoutOtherVideoServices = trimmed
+            .replace(
+                Regex(
+                    pattern = "\\s*,?\\s*other apps[^.]*",
+                    option = RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .replace(
+                Regex(
+                    pattern = "\\s*,?\\s*other video services[^.]*",
+                    option = RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("\\s*,\\s*,+\\s*"), ", ")
+            .replace(Regex("\\.\\s*,+\\s*"), ". ")
+            .replace(Regex("\\s+,\\s*"), ", ")
+            .trim()
+            .trim(',', ';')
+            .trim()
+        return withoutOtherVideoServices.takeIf { it.isNotBlank() }
+    }
 
     private fun canonicalizePackage(raw: String): String? {
         val trimmed = raw.trim()

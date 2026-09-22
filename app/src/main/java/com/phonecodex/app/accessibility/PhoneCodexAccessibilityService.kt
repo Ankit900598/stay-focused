@@ -378,8 +378,10 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                         decision = DecisionType.ALLOW.name,
                         reason = "Always allowed safe app",
                         source = "Safe App",
-                        confidence = 1.0
-                    )
+                        confidence = 1.0,
+                        matchedSignals = listOf(EnforcementReasonCodes.EMERGENCY_ALLOW)
+                    ),
+                    reasonCode = EnforcementReasonCodes.EMERGENCY_ALLOW
                 )
                 Log.d(
                     "PhoneCodexDecision",
@@ -714,7 +716,20 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             confidence = 1.0,
             matchedSignals = listOf(result.reasonCode)
         )
-        recordExplanation(packageName, screenText, explanation)
+        val enforcementContext = EnforcementContext.fromParts(
+            packageName = packageName,
+            screenText = screenText,
+            detection = surface,
+            parsed = VideoDurationParser.parse(screenText)
+        )
+        recordExplanation(
+            packageName = packageName,
+            screenText = screenText,
+            explanation = explanation,
+            reasonCode = result.reasonCode,
+            context = enforcementContext,
+            surface = surface.surface.name
+        )
         when (result.action) {
             BlankVideoTreeAction.BLOCK -> {
                 hideWarningOverlay()
@@ -1054,6 +1069,24 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                         activity = surfaceDetection.activity.name.lowercase(),
                         durationSource = sourceLabel
                     )
+                )
+                recordExplanation(
+                    packageName = packageName,
+                    screenText = screenText,
+                    explanation = DecisionExplanation(
+                        decision = "WAIT",
+                        reason = SessionEnforcementCopy.overlayEvidence(
+                            waitCode,
+                            "Waiting for the player clock",
+                            hardBlock = false
+                        ),
+                        source = "Duration Rule",
+                        confidence = 1.0,
+                        matchedSignals = listOf(waitCode, "duration_source=$sourceLabel")
+                    ),
+                    reasonCode = waitCode,
+                    context = enforcementContext,
+                    surface = surface.name
                 )
                 val waitSession = sessionStore.getActiveSession()
                 if (waitSession != null) {
@@ -1449,7 +1482,14 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             confidence = 1.0,
             matchedSignals = listOf(reasonCode) + matchedSignals.filter { it != reasonCode }
         )
-        recordExplanation(packageName, screenText, explanation)
+        recordExplanation(
+            packageName = packageName,
+            screenText = screenText,
+            explanation = explanation,
+            reasonCode = reasonCode,
+            context = context,
+            surface = surface.name
+        )
 
         if (block) {
             hideWarningOverlay()
@@ -2026,9 +2066,16 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private fun recordExplanation(
         packageName: String,
         screenText: String,
-        explanation: DecisionExplanation
+        explanation: DecisionExplanation,
+        reasonCode: String? = null,
+        context: EnforcementContext? = null,
+        surface: String? = null
     ) {
         latestExplanation = explanation
+        val code = reasonCode
+            ?: explanation.matchedSignals.firstOrNull { signal ->
+                signal.contains('_') && signal == signal.uppercase()
+            }
         debugStateStore.recordDecision(
             packageName = packageName,
             screenText = screenText,
@@ -2036,7 +2083,11 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             reason = explanation.reason,
             source = explanation.source,
             confidence = explanation.confidence ?: 1.0,
-            matchedSignals = explanation.matchedSignals
+            matchedSignals = explanation.matchedSignals,
+            reasonCode = code,
+            surface = surface ?: context?.surfaceFamily?.name,
+            activity = context?.activityState?.name,
+            durationSource = context?.durationSource?.name
         )
     }
 
@@ -2091,6 +2142,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             source = classification.source,
             confidence = classification.confidence
         )
+        val context = EnforcementContext.from(packageName, screenText)
         debugStateStore.recordDecision(
             packageName = packageName,
             screenText = screenText,
@@ -2100,7 +2152,10 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             confidence = classification.confidence,
             reasonCategory = classification.reasonCategory,
             wouldEscalate = classification.wouldEscalate,
-            backendMeta = classification.backendMeta
+            backendMeta = classification.backendMeta,
+            surface = context.surfaceFamily.name,
+            activity = context.activityState.name,
+            durationSource = context.durationSource.name
         )
     }
 
@@ -2117,7 +2172,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 reason = decision.reason,
                 source = "Policy",
                 confidence = decision.confidence
-            )
+            ),
+            context = EnforcementContext.from(packageName, screenText)
         )
     }
 

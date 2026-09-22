@@ -86,7 +86,10 @@ internal fun DecisionDebugPanel(
     Spacer(modifier = Modifier.height(16.dp))
 
     InspectorField(label = "Current app", value = displayPackage)
-    InspectorField(label = "Screen summary", value = displayScreenText)
+    InspectorField(
+        label = "Screen text preview (truncated, private — not copied by default)",
+        value = displayScreenText
+    )
     InspectorField(label = "Promise / goal", value = displayPromise)
     InspectorField(label = "Final decision", value = displayDecision)
     InspectorField(

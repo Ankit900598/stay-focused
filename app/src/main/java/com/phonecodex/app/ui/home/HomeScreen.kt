@@ -214,6 +214,15 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
+                HomeListItem.LastDecision -> {
+                    LastDecisionCard(
+                        debugState = state.debugState,
+                        promiseText = state.session?.goal ?: state.goal.ifBlank { null },
+                        nowMillis = state.nowMillis
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                }
+
                 HomeListItem.PromiseComposer -> {
                     PromiseComposerSection(
                         promiseText = state.promiseText,

@@ -14,6 +14,7 @@ internal sealed class HomeListItem(val id: String) {
     data object ProtectionStatus : HomeListItem("protection_status")
     data object ProtectionSetup : HomeListItem("protection_setup")
     data object ActiveCommitment : HomeListItem("active_commitment")
+    data object LastDecision : HomeListItem("last_decision")
     data object PromiseComposer : HomeListItem("promise_composer")
     data object PromiseUnderstanding : HomeListItem("promise_understanding")
     data object AdvancedToggle : HomeListItem("advanced_toggle")
@@ -76,6 +77,7 @@ internal fun buildHomeListItems(
     }
     if (hasStoredSession) {
         items += HomeListItem.ActiveCommitment
+        items += HomeListItem.LastDecision
     } else if (hasPromiseUnderstanding) {
         items += HomeListItem.PromiseUnderstanding
     } else {
@@ -84,6 +86,9 @@ internal fun buildHomeListItems(
     items += HomeListItem.AdvancedToggle
     if (showAdvancedControls) {
         items += HomeListItem.AdvancedIntro
+        if (!hasStoredSession) {
+            items += HomeListItem.LastDecision
+        }
         items += HomeListItem.AdvancedSessionTuning
         items += HomeListItem.AdvancedPermanentCommitments
         items += HomeListItem.AdvancedProtectionHealth

@@ -163,6 +163,15 @@ private suspend fun pollCoreHomeState(state: HomeScreenState) {
             }
         }
     }
+
+    if (hasActiveOrLockedSession || state.showAdvancedControls) {
+        val debugState = withContext(Dispatchers.IO) {
+            state.debugStateStore.getDebugState()
+        }
+        if (debugState != state.debugState) {
+            state.debugState = debugState
+        }
+    }
 }
 
 private suspend fun pollInspectorHomeState(state: HomeScreenState) {

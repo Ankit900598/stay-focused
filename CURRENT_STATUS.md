@@ -28,6 +28,7 @@ The name may change later. Do not rename packages casually.
 - Backend classifier exists.
 - Azure OpenAI path exists for AI classification experiments.
 - AI lab has prompt/eval infrastructure for classifier and promise compiler research.
+- Home / Advanced **Last decision** explains the latest ALLOW / WARN / BLOCK / LOCK without Logcat. Engineering detail + sanitized copy report. Display only; PolicyEngine is still law.
 
 ## Active Risk
 

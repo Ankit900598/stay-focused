@@ -1,6 +1,6 @@
 # PhoneCodex — Current State
 
-**Updated:** 2026-09-22 (P0 polish: Strlix branding, confirmation layout, YouTube blank-tree BLOCK copy)
+**Updated:** 2026-09-22 (Commitment Transparency: Last decision on Home/Advanced)
 
 **Hosted backend:** https://phonecodex-backend.azurewebsites.net in `phonecodex-dev`. POST routes require `X-Strlix-App-Secret`. Ladder: compiler `pc-lab-astra` (gpt-6-astra), classifier `pc-lab-terra` (gpt-5.6-terra) → luna/sol/strong. Vision env OFF. Localhost `:8787` still works when secret is empty. Runbook: `docs/azure-hosted-backend.md`. AI does not enforce.  
 **Audience:** Future Cursor / Codex sessions  
@@ -17,6 +17,8 @@
 **Invariant (P0):** Every decision log must include `code=` from `EnforcementReasonCodes` plus `surface` / `activity` / `durationSource`.
 
 **Invariant (P0):** User confirmation is category-level. Internal `scopePackages` may be specific; UI must not dump `com.*` / NewPipe unless the user named it.
+
+**Invariant (P0):** After ALLOW / WARN / BLOCK / LOCK (and WAIT), Home → **Last decision** explains the last action in user language: promise, decision, why, evidence, next step. Engineering detail may include package / reason code / surface / duration source. Copy debug report is sanitized and omits screen text by default. This screen does not change enforcement. AI is counsel; PolicyEngine is law.
 
 ### Experiment (2026-09-19 → 2026-09-29 IST): vision counsel
 
@@ -137,6 +139,7 @@ Promise Compiler (NL → CommitmentPolicy JSON)
 |-------|--------|
 | Accessibility detect + evaluate | In app |
 | PolicyEngine + Decision Inspector | In app |
+| Last decision (Commitment Transparency) | In app — user explanation + engineering + sanitized copy. Display only. |
 | Overlay enforcement | In app — own-package retain + away debounce + decision hold; still verify on device |
 | Surface detection | `SurfaceDetector` + `VideoPlatformRegistry` (YT, Chrome, NewPipe, IG, FB, TikTok, Snap) |
 | Media-length (clock B) | Local law on **active player only**; passive Home/Search/shelf/recs → `Surface Gate PASS passive video surface` (no AI WARN/BLOCK) |
@@ -159,6 +162,7 @@ Promise Compiler (NL → CommitmentPolicy JSON)
 - Permanent guardrails store + evaluator
 - Tamper guard hooks
 - Decision Inspector / debug UI + event log
+- Last decision card on session Home + Advanced (sanitized copy report)
 - Network classifier path: app → backend → Azure → confidence gate → policy merge
 
 **AI Lab (not product-critical this week)**

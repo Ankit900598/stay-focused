@@ -61,6 +61,50 @@ class HomeChatLayoutTest {
     }
 
     @Test
+    fun sessionHome_showsLastDecisionAfterActiveCommitment() {
+        val items = buildHomeListItems(
+            hasStoredSession = true,
+            hasPromiseUnderstanding = false,
+            showAdvancedControls = false
+        )
+        val active = items.indexOf(HomeListItem.ActiveCommitment)
+        val last = items.indexOf(HomeListItem.LastDecision)
+        assertTrue(active >= 0)
+        assertEquals(active + 1, last)
+    }
+
+    @Test
+    fun advancedWithoutSession_showsLastDecision() {
+        val items = buildHomeListItems(
+            hasStoredSession = false,
+            hasPromiseUnderstanding = false,
+            showAdvancedControls = true
+        )
+        assertTrue(items.contains(HomeListItem.LastDecision))
+        assertTrue(items.indexOf(HomeListItem.LastDecision) > items.indexOf(HomeListItem.AdvancedIntro))
+    }
+
+    @Test
+    fun sessionPlusAdvanced_showsLastDecisionOnce() {
+        val items = buildHomeListItems(
+            hasStoredSession = true,
+            hasPromiseUnderstanding = false,
+            showAdvancedControls = true
+        )
+        assertEquals(1, items.count { it == HomeListItem.LastDecision })
+    }
+
+    @Test
+    fun idleHomeList_hidesLastDecision() {
+        val items = buildHomeListItems(
+            hasStoredSession = false,
+            hasPromiseUnderstanding = false,
+            showAdvancedControls = false
+        )
+        assertFalse(items.contains(HomeListItem.LastDecision))
+    }
+
+    @Test
     fun confirmationPreview_compactsOrHidesProtectionCard() {
         assertEquals(
             ConfirmationProtectionMode.HIDDEN,

@@ -17,7 +17,11 @@ data class DebugState(
     val lastBackendProvider: String?,
     val lastBackendDeployment: String?,
     val lastBackendPromptVersion: String?,
-    val lastBackendLatencyMs: Long?
+    val lastBackendLatencyMs: Long?,
+    val lastReasonCode: String? = null,
+    val lastSurface: String? = null,
+    val lastActivity: String? = null,
+    val lastDurationSource: String? = null
 )
 
 class DebugStateStore(context: Context) {
@@ -45,7 +49,11 @@ class DebugStateStore(context: Context) {
         matchedSignals: List<String> = emptyList(),
         reasonCategory: String? = null,
         wouldEscalate: Boolean? = null,
-        backendMeta: ClassificationBackendMeta? = null
+        backendMeta: ClassificationBackendMeta? = null,
+        reasonCode: String? = null,
+        surface: String? = null,
+        activity: String? = null,
+        durationSource: String? = null
     ) {
         prefs.edit()
             .putString(KEY_LAST_PACKAGE_NAME, packageName)
@@ -82,6 +90,10 @@ class DebugStateStore(context: Context) {
                     remove(KEY_LAST_BACKEND_PROMPT_VERSION)
                     remove(KEY_LAST_BACKEND_LATENCY_MS)
                 }
+                putOptionalString(KEY_LAST_REASON_CODE, reasonCode)
+                putOptionalString(KEY_LAST_SURFACE, surface)
+                putOptionalString(KEY_LAST_ACTIVITY, activity)
+                putOptionalString(KEY_LAST_DURATION_SOURCE, durationSource)
             }
             .apply()
     }
@@ -116,8 +128,19 @@ class DebugStateStore(context: Context) {
             lastBackendProvider = prefs.getString(KEY_LAST_BACKEND_PROVIDER, null),
             lastBackendDeployment = prefs.getString(KEY_LAST_BACKEND_DEPLOYMENT, null),
             lastBackendPromptVersion = prefs.getString(KEY_LAST_BACKEND_PROMPT_VERSION, null),
-            lastBackendLatencyMs = backendLatency
+            lastBackendLatencyMs = backendLatency,
+            lastReasonCode = prefs.getString(KEY_LAST_REASON_CODE, null),
+            lastSurface = prefs.getString(KEY_LAST_SURFACE, null),
+            lastActivity = prefs.getString(KEY_LAST_ACTIVITY, null),
+            lastDurationSource = prefs.getString(KEY_LAST_DURATION_SOURCE, null)
         )
+    }
+
+    private fun android.content.SharedPreferences.Editor.putOptionalString(
+        key: String,
+        value: String?
+    ) {
+        if (value.isNullOrBlank()) remove(key) else putString(key, value)
     }
 
     private fun encodeMatchedSignals(matchedSignals: List<String>): String {
@@ -150,6 +173,10 @@ class DebugStateStore(context: Context) {
         private const val KEY_LAST_BACKEND_DEPLOYMENT = "lastBackendDeployment"
         private const val KEY_LAST_BACKEND_PROMPT_VERSION = "lastBackendPromptVersion"
         private const val KEY_LAST_BACKEND_LATENCY_MS = "lastBackendLatencyMs"
+        private const val KEY_LAST_REASON_CODE = "lastReasonCode"
+        private const val KEY_LAST_SURFACE = "lastSurface"
+        private const val KEY_LAST_ACTIVITY = "lastActivity"
+        private const val KEY_LAST_DURATION_SOURCE = "lastDurationSource"
         private const val MATCHED_SIGNAL_SEPARATOR = "\u001E"
     }
 }
