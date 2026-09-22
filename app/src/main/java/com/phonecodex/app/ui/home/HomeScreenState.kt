@@ -48,6 +48,7 @@ import com.phonecodex.app.domain.promise.CompiledPromiseMapper
 import com.phonecodex.app.domain.promise.ConfirmedPromiseBinder
 import com.phonecodex.app.domain.promise.FocusPromiseParser
 import com.phonecodex.app.domain.promise.PromiseCompilerClient
+import com.phonecodex.app.domain.promise.PromiseTextCleanup
 import com.phonecodex.app.domain.promise.PromiseUnderstandingRequestGate
 import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
 import com.phonecodex.app.domain.promise.PromiseUnderstandingResolver
@@ -268,7 +269,7 @@ internal class HomeScreenState(
     }
 
     fun updatePromiseText(text: String) {
-        promiseText = text
+        promiseText = PromiseTextCleanup.normalizeTyped(text)
         voiceInputStatus = null
         if (promiseUnderstanding != null || understandingInProgress) {
             clearUnderstanding()
@@ -276,7 +277,7 @@ internal class HomeScreenState(
     }
 
     fun applyVoiceTranscript(transcript: String) {
-        val cleanTranscript = transcript.trim()
+        val cleanTranscript = PromiseTextCleanup.normalizeTyped(transcript.trim())
         if (cleanTranscript.isEmpty()) {
             voiceInputStatus = "I did not hear a promise. Try again or type it."
             return
@@ -296,8 +297,11 @@ internal class HomeScreenState(
     }
 
     fun understandPromise(selectedOptionId: String? = null) {
-        val text = promiseText.trim()
+        val text = PromiseTextCleanup.normalizeTyped(promiseText.trim())
         if (text.isEmpty()) return
+        if (text != promiseText) {
+            promiseText = text
+        }
 
         val scope = diagnosticsScope
         if (scope == null) {

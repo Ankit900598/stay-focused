@@ -177,6 +177,49 @@ class CommitmentOverlayCopyTest {
     }
 
     @Test
+    fun youtubeHardBlock_durationUnavailable_isFirmNotContinue() {
+        assertEquals(
+            SessionEnforcementCopy.YOUTUBE_CLOCK_UNREADABLE_BLOCK,
+            SessionEnforcementCopy.overlayEvidence(
+                EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+                "blocked because greater than 2 hours",
+                hardBlock = true
+            )
+        )
+        assertFalse(
+            SessionEnforcementCopy.hidePromiseLine(
+                EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+                hardBlock = true
+            )
+        )
+        assertFalse(
+            SessionEnforcementCopy.forceContinue(
+                EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+                hardBlock = true
+            )
+        )
+        assertFalse(
+            SessionEnforcementCopy.YOUTUBE_CLOCK_UNREADABLE_BLOCK.contains(
+                "carefully",
+                ignoreCase = true
+            )
+        )
+        assertFalse(
+            SessionEnforcementCopy.YOUTUBE_CLOCK_UNREADABLE_BLOCK.contains(
+                "maybe",
+                ignoreCase = true
+            )
+        )
+        assertFalse(
+            CommitmentOverlayCopy.allowsContinue(
+                OverlayKind.BLOCK,
+                StrictnessLevel.SOFT,
+                forceContinue = false
+            )
+        )
+    }
+
+    @Test
     fun durationUnavailable_hidesPromiseAndForcesContinue() {
         assertTrue(
             SessionEnforcementCopy.hidePromiseLine(

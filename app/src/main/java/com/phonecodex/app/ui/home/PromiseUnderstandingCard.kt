@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,13 +80,15 @@ internal fun PromiseUnderstandingCard(
             }
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = "\u201C${understanding.promiseText}\u201D",
-            style = MaterialTheme.typography.bodyMedium,
-            fontStyle = FontStyle.Italic,
-            color = colors.onSurfaceVariant
-        )
+        if (understanding.understoodSummary.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "\u201C${understanding.promiseText}\u201D",
+                style = MaterialTheme.typography.bodyMedium,
+                fontStyle = FontStyle.Italic,
+                color = colors.onSurfaceVariant
+            )
+        }
 
         Spacer(modifier = Modifier.height(18.dp))
         HorizontalDivider(color = colors.outlineVariant)
@@ -161,7 +164,11 @@ internal fun PromiseUnderstandingCard(
 
         Spacer(modifier = Modifier.height(22.dp))
         if (understanding.canStart) {
-            PrimaryAction(text = "Start Commitment", onClick = onStartCommitment)
+            PrimaryAction(
+                text = "Start Commitment",
+                onClick = onStartCommitment,
+                modifier = Modifier.testTag("start_commitment")
+            )
         } else {
             Text(
                 text = startDisabledMessage(understanding),

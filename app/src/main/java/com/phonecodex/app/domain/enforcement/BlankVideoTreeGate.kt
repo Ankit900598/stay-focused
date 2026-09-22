@@ -8,7 +8,8 @@ import com.phonecodex.app.domain.safeapps.SafeAppsCatalog
  * tree. Silent ALLOW is illegal while a commitment is active.
  *
  * Media-length promises → WAIT/WARN ([VIDEO_APP_DURATION_UNAVAILABLE]).
- * Unknown duration is never treated as over/under the limit.
+ * Exception: official YouTube under a YouTube-content minimum-length promise fails closed.
+ * Unknown duration is never treated as over/under the limit for generic / unknown players.
  * Monk / no-entertainment / no-movies / block-this-app → BLOCK
  * ([UNKNOWN_VIDEO_APP_BLANK_TREE]).
  * Named-app scope: if [enforcementScopePackages] is set, other packages skip this gate.
@@ -87,11 +88,35 @@ object BlankVideoTreeGate {
             )
         }
 
+        if (shouldFailClosedForYoutubeMinLength(packageName, goal, contentBrands)) {
+            return BlankVideoTreeResult(
+                action = BlankVideoTreeAction.BLOCK,
+                reasonCode = EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+                reason = SessionEnforcementCopy.YOUTUBE_CLOCK_UNREADABLE_BLOCK
+            )
+        }
+
         return BlankVideoTreeResult(
             action = BlankVideoTreeAction.WAIT,
             reasonCode = EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
             reason = SessionEnforcementCopy.DURATION_UNAVAILABLE
         )
+    }
+
+    private fun shouldFailClosedForYoutubeMinLength(
+        packageName: String,
+        goal: String,
+        contentBrands: Collection<String>
+    ): Boolean {
+        if (!VideoPlatformRegistry.isOfficialYouTube(packageName)) return false
+        val brands = contentBrands.map { it.trim().lowercase() }
+        if (EnforcementScopeLaw.BRAND_YOUTUBE !in brands &&
+            !PromiseIntentRules.namesYouTubeContentBrand(goal)
+        ) {
+            return false
+        }
+        return PromiseIntentRules.extractGoalMinVideoLimitMinutes(goal) != null &&
+            PromiseIntentRules.extractGoalMaxVideoLimitMinutes(goal) == null
     }
 
     /**

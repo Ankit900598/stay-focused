@@ -26,7 +26,8 @@ internal fun ProtectionReliabilityCard(
     lastCheckSummary: String?,
     checkInProgress: Boolean,
     onOpenAccessibilitySettings: () -> Unit,
-    onRunProtectionCheck: () -> Unit
+    onRunProtectionCheck: () -> Unit,
+    compact: Boolean = false
 ) {
     var detailsOpen by remember(model.level) { mutableStateOf(model.detailsExpandedByDefault) }
     val colors = MaterialTheme.colorScheme
@@ -44,16 +45,22 @@ internal fun ProtectionReliabilityCard(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = model.headline,
-            style = MaterialTheme.typography.titleLarge,
+            style = if (compact) {
+                MaterialTheme.typography.titleMedium
+            } else {
+                MaterialTheme.typography.titleLarge
+            },
             color = headlineColor,
             modifier = Modifier.testTag("protection_reliability_headline")
         )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = model.summary,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant
-        )
+        if (!compact) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = model.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant
+            )
+        }
         if (model.nothingEnforced) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
@@ -62,7 +69,7 @@ internal fun ProtectionReliabilityCard(
                 color = colors.error
             )
         }
-        if (!lastCheckSummary.isNullOrBlank()) {
+        if (!compact && !lastCheckSummary.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = lastCheckSummary,
@@ -78,12 +85,14 @@ internal fun ProtectionReliabilityCard(
                 modifier = Modifier.testTag("protection_reliability_primary")
             )
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        QuietAction(
-            text = if (detailsOpen) "Hide details" else "Details",
-            onClick = { detailsOpen = !detailsOpen }
-        )
-        if (detailsOpen) {
+        if (!compact) {
+            Spacer(modifier = Modifier.height(10.dp))
+            QuietAction(
+                text = if (detailsOpen) "Hide details" else "Details",
+                onClick = { detailsOpen = !detailsOpen }
+            )
+        }
+        if (!compact && detailsOpen) {
             Spacer(modifier = Modifier.height(12.dp))
             SummaryRow(label = "Accessibility", value = model.accessibilityLine)
             Spacer(modifier = Modifier.height(8.dp))

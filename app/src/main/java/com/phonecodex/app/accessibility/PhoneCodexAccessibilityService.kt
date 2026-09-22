@@ -705,7 +705,11 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         }
         val explanation = DecisionExplanation(
             decision = decisionType.name,
-            reason = SessionEnforcementCopy.overlayEvidence(result.reasonCode, result.reason),
+            reason = SessionEnforcementCopy.overlayEvidence(
+                result.reasonCode,
+                result.reason,
+                hardBlock = result.action == BlankVideoTreeAction.BLOCK
+            ),
             source = "BlankVideoTree",
             confidence = 1.0,
             matchedSignals = listOf(result.reasonCode)
@@ -2047,9 +2051,11 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         } else {
             null
         }
+        val hardBlock = kind == OverlayKind.BLOCK || kind == OverlayKind.LOCK
         val evidence = SessionEnforcementCopy.overlayEvidence(
             reasonCode,
-            CommitmentOverlayCopy.evidenceLine(explanation.decision, explanation.reason)
+            CommitmentOverlayCopy.evidenceLine(explanation.decision, explanation.reason),
+            hardBlock = hardBlock
         )
         return CommitmentOverlayModel(
             kind = kind,
@@ -2059,8 +2065,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             remainingMillis = remaining,
             strictness = session?.strictness,
             reasonCode = reasonCode,
-            hidePromiseLine = SessionEnforcementCopy.hidePromiseLine(reasonCode),
-            forceContinue = SessionEnforcementCopy.forceContinue(reasonCode)
+            hidePromiseLine = SessionEnforcementCopy.hidePromiseLine(reasonCode, hardBlock),
+            forceContinue = SessionEnforcementCopy.forceContinue(reasonCode, hardBlock)
         )
     }
 

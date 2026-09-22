@@ -2,6 +2,7 @@ package com.phonecodex.app.ui.home
 
 import androidx.compose.runtime.Immutable
 import com.phonecodex.app.domain.model.InstalledApp
+import com.phonecodex.app.domain.protection.ProtectionReliabilityLevel
 
 /**
  * One row in the home LazyColumn. Building a list of these (instead of one giant Column)
@@ -39,6 +40,25 @@ internal fun usesChatHome(
     showAdvancedControls: Boolean
 ): Boolean = !hasStoredSession && !showAdvancedControls
 
+enum class ConfirmationProtectionMode {
+    FULL,
+    COMPACT,
+    HIDDEN
+}
+
+/** Composer stays off-screen while the user reviews Start. */
+internal fun confirmationReviewHidesComposer(hasUnderstanding: Boolean): Boolean =
+    hasUnderstanding
+
+internal fun confirmationReviewProtectionMode(
+    hasUnderstanding: Boolean,
+    protectionLevel: ProtectionReliabilityLevel
+): ConfirmationProtectionMode = when {
+    !hasUnderstanding -> ConfirmationProtectionMode.FULL
+    protectionLevel == ProtectionReliabilityLevel.PROTECTED -> ConfirmationProtectionMode.HIDDEN
+    else -> ConfirmationProtectionMode.COMPACT
+}
+
 /**
  * Builds the visible home list from lightweight flags. Pure function — no I/O.
  * Engineering (app rules / debug / events / feedback) stays collapsed until explicitly opened.
@@ -56,11 +76,10 @@ internal fun buildHomeListItems(
     }
     if (hasStoredSession) {
         items += HomeListItem.ActiveCommitment
+    } else if (hasPromiseUnderstanding) {
+        items += HomeListItem.PromiseUnderstanding
     } else {
         items += HomeListItem.PromiseComposer
-        if (hasPromiseUnderstanding) {
-            items += HomeListItem.PromiseUnderstanding
-        }
     }
     items += HomeListItem.AdvancedToggle
     if (showAdvancedControls) {

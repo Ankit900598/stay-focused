@@ -10,6 +10,9 @@ object SessionEnforcementCopy {
     const val DURATION_UNAVAILABLE =
         "The player clock is unreadable, so we cannot prove this is over or under your time limit."
 
+    const val YOUTUBE_CLOCK_UNREADABLE_BLOCK =
+        "YouTube hid the video length. Your promise only allows longer videos, so this is blocked."
+
     const val BLANK_TREE_MOVIE_BLOCK =
         "This movie/OTT app hid its screen. Your promise bans movies, so playback is blocked."
 
@@ -46,8 +49,13 @@ object SessionEnforcementCopy {
         return "none — $NO_ACTIVE_COMMITMENT"
     }
 
-    fun overlayEvidence(reasonCode: String?, fallback: String): String = when (reasonCode) {
-        EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE -> DURATION_UNAVAILABLE
+    fun overlayEvidence(
+        reasonCode: String?,
+        fallback: String,
+        hardBlock: Boolean = false
+    ): String = when (reasonCode) {
+        EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE ->
+            if (hardBlock) YOUTUBE_CLOCK_UNREADABLE_BLOCK else DURATION_UNAVAILABLE
         EnforcementReasonCodes.UNKNOWN_VIDEO_APP_BLANK_TREE -> BLANK_TREE_MOVIE_BLOCK
         EnforcementReasonCodes.MONK_ENTERTAINMENT_BLOCK -> MONK_ENTERTAINMENT_BLOCK
         EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL,
@@ -65,11 +73,11 @@ object SessionEnforcementCopy {
         else -> false
     }
 
-    fun hidePromiseLine(reasonCode: String?): Boolean =
-        reasonCode == EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE
+    fun hidePromiseLine(reasonCode: String?, hardBlock: Boolean = false): Boolean =
+        reasonCode == EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE && !hardBlock
 
-    fun forceContinue(reasonCode: String?): Boolean =
-        reasonCode == EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE ||
+    fun forceContinue(reasonCode: String?, hardBlock: Boolean = false): Boolean =
+        (reasonCode == EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE && !hardBlock) ||
             reasonCode == EnforcementReasonCodes.QUOTA_ALLOW_COUNT
 
     fun isQuotaReminder(reasonCode: String?): Boolean =

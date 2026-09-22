@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">PhoneCodex</string>
+    <string name="app_name">Strlix</string>
     <string name="accessibility_service_label">PhoneCodex Focus Detection</string>
-    <string name="accessibility_service_description">PhoneCodex detects which app is open so Focus World can guide your session. It does not block or control your phone yet.</string>
+    <string name="accessibility_service_description">Strlix detects which app is open so your commitment can be enforced. It does not control calls or emergency apps.</string>
     <string name="protection_heartbeat_channel_name">Protection heartbeat</string>
-    <string name="protection_heartbeat_notification_title">PhoneCodex</string>
-    <string name="protection_heartbeat_notification_text">PhoneCodex protection active</string>
+    <string name="protection_heartbeat_notification_title">Strlix</string>
+    <string name="protection_heartbeat_notification_text">Strlix protection active</string>
 </resources>

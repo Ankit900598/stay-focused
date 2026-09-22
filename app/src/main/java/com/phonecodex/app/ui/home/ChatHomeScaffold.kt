@@ -53,6 +53,8 @@ internal fun ChatHomeScaffold(
     onOpenAdvanced: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val reviewing = understanding != null
+    val protectionMode = confirmationReviewProtectionMode(reviewing, protection.level)
     Column(
         modifier = Modifier
             .then(modifier)
@@ -64,14 +66,17 @@ internal fun ChatHomeScaffold(
     ) {
         ChatHomeHeader(protectionLevel = protection.level)
 
-        Spacer(modifier = Modifier.height(16.dp))
-        ProtectionReliabilityCard(
-            model = protection,
-            lastCheckSummary = lastCheckSummary,
-            checkInProgress = checkInProgress,
-            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-            onRunProtectionCheck = onRunProtectionCheck
-        )
+        if (protectionMode != ConfirmationProtectionMode.HIDDEN) {
+            Spacer(modifier = Modifier.height(16.dp))
+            ProtectionReliabilityCard(
+                model = protection,
+                lastCheckSummary = lastCheckSummary,
+                checkInProgress = checkInProgress,
+                onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                onRunProtectionCheck = onRunProtectionCheck,
+                compact = protectionMode == ConfirmationProtectionMode.COMPACT
+            )
+        }
 
         Box(
             modifier = Modifier
@@ -104,16 +109,18 @@ internal fun ChatHomeScaffold(
             }
         }
 
-        PromiseComposerSection(
-            promiseText = promiseText,
-            onPromiseTextChange = onPromiseTextChange,
-            onExampleSelected = {},
-            onUnderstandPromise = onUnderstandPromise,
-            onVoicePromise = onVoicePromise,
-            voiceInputStatus = voiceInputStatus,
-            understandingInProgress = understandingInProgress,
-            compact = true
-        )
+        if (!confirmationReviewHidesComposer(reviewing)) {
+            PromiseComposerSection(
+                promiseText = promiseText,
+                onPromiseTextChange = onPromiseTextChange,
+                onExampleSelected = {},
+                onUnderstandPromise = onUnderstandPromise,
+                onVoicePromise = onVoicePromise,
+                voiceInputStatus = voiceInputStatus,
+                understandingInProgress = understandingInProgress,
+                compact = true
+            )
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
         QuietAction(text = "Advanced", onClick = onOpenAdvanced)

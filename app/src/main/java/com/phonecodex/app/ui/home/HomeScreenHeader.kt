@@ -40,7 +40,7 @@ internal fun HomeScreenHeader(
                 )
         )
         Spacer(modifier = Modifier.width(8.dp))
-        MicroLabel(text = "PhoneCodex")
+        MicroLabel(text = "Strlix")
     }
 
     Spacer(modifier = Modifier.height(14.dp))

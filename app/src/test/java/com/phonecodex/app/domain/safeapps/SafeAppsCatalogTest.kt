@@ -23,7 +23,7 @@ class SafeAppsCatalogTest {
 
     @Test
     fun defaultLabel_returnsReadableName() {
-        assertEquals("PhoneCodex", SafeAppsCatalog.defaultLabel("com.phonecodex.app"))
+        assertEquals("Strlix", SafeAppsCatalog.defaultLabel("com.phonecodex.app"))
         assertEquals("WhatsApp", SafeAppsCatalog.defaultLabel("com.whatsapp"))
     }
 

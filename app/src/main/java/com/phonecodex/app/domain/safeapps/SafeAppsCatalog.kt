@@ -27,7 +27,7 @@ object SafeAppsCatalog {
     )
 
     private val DEFAULT_LABELS: Map<String, String> = mapOf(
-        "com.phonecodex.app" to "PhoneCodex",
+        "com.phonecodex.app" to "Strlix",
         "com.android.dialer" to "Phone",
         "com.google.android.dialer" to "Phone",
         "com.android.phone" to "Phone",

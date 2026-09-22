@@ -77,4 +77,15 @@ class AccessibilityTamperGuardTest {
         assertNotNull(match)
         assertTrue(match!!.matchedSignals.contains("phonecodex"))
     }
+
+    @Test
+    fun evaluatePhoneCodexAccessibilityControls_matchesStrlixLabel() {
+        val match = guard.evaluatePhoneCodexAccessibilityControls(
+            packageName = AccessibilityTamperGuard.SETTINGS_PACKAGE,
+            screenText = "Downloaded apps Strlix Use Strlix"
+        )
+        assertNotNull(match)
+        assertTrue(match!!.matchedSignals.contains("strlix"))
+        assertTrue(match.matchedSignals.contains("use strlix"))
+    }
 }

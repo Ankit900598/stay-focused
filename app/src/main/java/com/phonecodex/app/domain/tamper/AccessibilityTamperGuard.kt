@@ -41,7 +41,9 @@ class AccessibilityTamperGuard {
         val PHONECODEX_CONTROL_SIGNALS: List<String> = listOf(
             "phonecodex",
             "phone codex",
-            "use phonecodex"
+            "use phonecodex",
+            "strlix",
+            "use strlix"
         )
     }
 }

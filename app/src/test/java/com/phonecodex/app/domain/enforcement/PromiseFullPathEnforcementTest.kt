@@ -656,6 +656,32 @@ class BlankVideoTreeGateTest {
     }
 
     @Test
+    fun youtubeContentMinLength_blankOfficialYoutube_failsClosed() {
+        val text = "for 1 hour allow only YouTube video longer than 40 minutes"
+        val stored = ConfirmedPromiseBinder.bind(parser.parse(text))
+        assertTrue(stored.enforcementContentBrands.contains("youtube"))
+        assertTrue(stored.enforcementScopePackages.isEmpty())
+
+        val result = PromiseEnforcementCoordinator.evaluate(
+            PromiseEvalInput(
+                hasActiveSession = true,
+                goal = text,
+                settings = stored,
+                appRule = AppRuleBehavior.ALLOW,
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                screenText = blank
+            )
+        )
+
+        assertEquals(DecisionType.BLOCK, result.decision)
+        assertEquals(
+            EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+            result.reasonCode
+        )
+        assertTrue(result.contentGatesRanBeforeAppRule)
+    }
+
+    @Test
     fun sessionOn_monk_blankNetmirror_blocks() {
         val result = PromiseEnforcementCoordinator.evaluate(
             PromiseEvalInput(
@@ -895,5 +921,41 @@ class BlankVideoTreeGateTest {
         )
         assertEquals(DecisionType.BLOCK, result.decision)
         assertEquals(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN, result.reasonCode)
+    }
+
+    @Test
+    fun officialYoutube_minLengthPromise_blankTree_hardBlocks() {
+        val goal = "for 1 hour allow only YouTube video longer than 40 minutes"
+        val result = BlankVideoTreeGate.evaluate(
+            hasActiveSession = true,
+            packageName = VideoPlatformRegistry.YOUTUBE,
+            screenText = "Play Pause",
+            goal = goal,
+            contentBrands = listOf(EnforcementScopeLaw.BRAND_YOUTUBE)
+        )
+        assertEquals(BlankVideoTreeAction.BLOCK, result.action)
+        assertEquals(
+            EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+            result.reasonCode
+        )
+        assertEquals(SessionEnforcementCopy.YOUTUBE_CLOCK_UNREADABLE_BLOCK, result.reason)
+        assertFalse(result.reason.contains("carefully", ignoreCase = true))
+    }
+
+    @Test
+    fun unknownOtt_minLengthPromise_blankTree_stillWaits() {
+        val goal = "for 1 hour allow only YouTube video longer than 40 minutes"
+        val result = BlankVideoTreeGate.evaluate(
+            hasActiveSession = true,
+            packageName = "com.unknown.ott.stream",
+            screenText = "Play Pause",
+            goal = goal
+        )
+        assertEquals(BlankVideoTreeAction.WAIT, result.action)
+        assertEquals(
+            EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+            result.reasonCode
+        )
+        assertEquals(SessionEnforcementCopy.DURATION_UNAVAILABLE, result.reason)
     }
 }

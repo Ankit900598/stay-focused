@@ -1,6 +1,6 @@
 # PhoneCodex — Current State
 
-**Updated:** 2026-09-21 (Phone Surface Trace Replay + hosted backend + Protection Reliability Gate)
+**Updated:** 2026-09-22 (P0 polish: Strlix branding, confirmation layout, YouTube blank-tree BLOCK copy)
 
 **Hosted backend:** https://phonecodex-backend.azurewebsites.net in `phonecodex-dev`. POST routes require `X-Strlix-App-Secret`. Ladder: compiler `pc-lab-astra` (gpt-6-astra), classifier `pc-lab-terra` (gpt-5.6-terra) → luna/sol/strong. Vision env OFF. Localhost `:8787` still works when secret is empty. Runbook: `docs/azure-hosted-backend.md`. AI does not enforce.  
 **Audience:** Future Cursor / Codex sessions  

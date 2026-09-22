@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.phonecodex.app.domain.ProductBrand
 import com.phonecodex.app.domain.enforcement.SessionEnforcementCopy
 import com.phonecodex.app.domain.model.DecisionType
 import com.phonecodex.app.domain.model.StrictnessLevel
@@ -72,8 +73,7 @@ object CommitmentOverlayCopy {
         return when (kind) {
             OverlayKind.WARN -> "You promised this. I’m helping you keep it."
             OverlayKind.BLOCK -> "You promised this. I’m helping you keep it."
-            OverlayKind.LOCK ->
-                "You asked not to get an easy way out. Lock is active — wait it out or open PhoneCodex."
+            OverlayKind.LOCK -> ProductBrand.LOCK_COMPANION
         }
     }
 
@@ -231,7 +231,9 @@ class CommitmentOverlayBuilder(private val context: Context) {
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = true
-            contentDescription = "PhoneCodex ${CommitmentOverlayCopy.decisionBadge(model.kind)} overlay"
+            contentDescription = ProductBrand.overlayContentDescription(
+                CommitmentOverlayCopy.decisionBadge(model.kind)
+            )
         }
 
         val card = LinearLayout(context).apply {
@@ -398,7 +400,7 @@ class CommitmentOverlayBuilder(private val context: Context) {
                 }
                 actions.onOpenPhoneCodex?.let { openApp ->
                     card.addView(spacer(dp(10)))
-                    card.addView(secondaryButton("Open PhoneCodex", openApp, dp))
+                    card.addView(secondaryButton(ProductBrand.OPEN_APP, openApp, dp))
                 }
             }
             OverlayKind.LOCK -> {
@@ -412,7 +414,7 @@ class CommitmentOverlayBuilder(private val context: Context) {
                 )
                 actions.onOpenPhoneCodex?.let { openApp ->
                     card.addView(spacer(dp(10)))
-                    card.addView(secondaryButton("Open PhoneCodex", openApp, dp))
+                    card.addView(secondaryButton(ProductBrand.OPEN_APP, openApp, dp))
                 }
             }
         }

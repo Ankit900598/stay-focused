@@ -77,7 +77,7 @@ internal fun DecisionDebugPanel(
     MicroLabel(text = "Decision inspector")
     Spacer(modifier = Modifier.height(6.dp))
     Text(
-        text = "Why PhoneCodex allowed, warned, or blocked the last detected screen.",
+        text = "Why Strlix allowed, warned, or blocked the last detected screen.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
