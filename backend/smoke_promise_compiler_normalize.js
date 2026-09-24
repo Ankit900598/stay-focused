@@ -1190,6 +1190,69 @@ check(
   "leftover id against empty options is not an unrecognized pick"
 );
 
+const hallucinatedAdultOnWhatsapp = normalizeCompiledPromise(
+  basePolicy({
+    blockedApps: [
+      {
+        packageName: "com.whatsapp",
+        appLabel: "WhatsApp",
+        scope: "messaging",
+      },
+    ],
+    activeGuardrails: ["no_adult_content"],
+    blockedContent: [
+      {
+        type: "adult_sexual",
+        description: "adult content",
+        apps: [],
+      },
+    ],
+  }),
+  "do not allow whatsapp for 10 minutes"
+);
+const hallucinatedAdultCopy = JSON.stringify({
+  confirmation: hallucinatedAdultOnWhatsapp.userFacingConfirmation,
+  blocked: hallucinatedAdultOnWhatsapp.blockedSummaries,
+  preview: hallucinatedAdultOnWhatsapp.confirmationPreview,
+  guardrails: hallucinatedAdultOnWhatsapp.internalPolicy.guardrails,
+});
+check(
+  !/adult|sexual|porn|nsfw|18\+/i.test(hallucinatedAdultCopy),
+  "unrelated app-block promise must not show hallucinated adult guardrail"
+);
+check(
+  !(hallucinatedAdultOnWhatsapp.internalPolicy.guardrails || []).includes(
+    "no_adult_content"
+  ),
+  "unrelated app-block promise must not store hallucinated adult guardrail"
+);
+
+const explicitAdultGuardrail = normalizeCompiledPromise(
+  basePolicy({
+    commitmentType: "permanent_guardrail",
+    duration: { kind: "permanent", value: null, unit: null, until: null },
+    activeGuardrails: ["no_adult_content"],
+    blockedContent: [
+      {
+        type: "adult_sexual",
+        description: "porn and adult content",
+        apps: [],
+      },
+    ],
+  }),
+  "no porn for 1 year"
+);
+check(
+  /adult|porn|sexual/i.test(
+    JSON.stringify({
+      confirmation: explicitAdultGuardrail.userFacingConfirmation,
+      blocked: explicitAdultGuardrail.blockedSummaries,
+      guardrails: explicitAdultGuardrail.internalPolicy.guardrails,
+    })
+  ),
+  "explicit adult safety promise still keeps adult guardrail copy"
+);
+
 console.log(`ASSERTIONS_PASSED=${ASSERTIONS}`);
 console.log(
   JSON.stringify({

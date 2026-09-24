@@ -826,6 +826,12 @@ function isNormalPhoneExceptSafety(rawText) {
   return normalPhone && safetyOnly;
 }
 
+function explicitlyMentionsAdultSafety(rawText) {
+  return /\b(porn|porno|nsfw|adult|sexual|sex|18\+|xxx|onlyfans|nude|nudity|hookup|dating)\b/i.test(
+    String(rawText || "")
+  );
+}
+
 function repairNormalPhoneExceptSafety(parsed, promiseText) {
   if (!isNormalPhoneExceptSafety(promiseText)) return parsed;
   const next = { ...parsed };
@@ -2330,10 +2336,18 @@ function normalizeCompiledPromise(parsed, rawText, options = {}) {
   }
 
   // Adult always immediate BLOCK — never consume friendly short-form quota.
+  const adultSafetyExplicit = explicitlyMentionsAdultSafety(promiseText);
+  if (!adultSafetyExplicit) {
+    contentRules = contentRules.filter((r) => r.contentType !== "adult_sexual");
+    blockedMapped.summaries = blockedMapped.summaries.filter(
+      (s) => !/adult|sexual|porn|nsfw|18\+/i.test(String(s))
+    );
+  }
   const hasAdult =
-    (Array.isArray(parsed.activeGuardrails) &&
+    adultSafetyExplicit &&
+    ((Array.isArray(parsed.activeGuardrails) &&
       parsed.activeGuardrails.includes("no_adult_content")) ||
-    contentRules.some((r) => r.contentType === "adult_sexual");
+      contentRules.some((r) => r.contentType === "adult_sexual"));
   if (hasAdult) {
     if (!contentRules.some((r) => r.contentType === "adult_sexual" && r.action === "BLOCK")) {
       contentRules = dedupeContentRules([
@@ -2754,10 +2768,13 @@ function normalizeCompiledPromise(parsed, rawText, options = {}) {
       const guards = Array.isArray(parsed.activeGuardrails)
         ? [...parsed.activeGuardrails]
         : [];
+      const adultFiltered = adultSafetyExplicit
+        ? guards
+        : guards.filter((g) => g !== "no_adult_content");
       if (quotaMapped.shortFormQuota) {
-        return guards.filter((g) => g !== "no_short_form_video");
+        return adultFiltered.filter((g) => g !== "no_short_form_video");
       }
-      return guards;
+      return adultFiltered;
     })(),
   });
 
