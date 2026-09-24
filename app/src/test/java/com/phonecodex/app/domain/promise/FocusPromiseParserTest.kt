@@ -408,6 +408,26 @@ class FocusPromiseParserTest {
     }
 
     @Test
+    fun messyNoWhatsapp_compilesWholeAppBlock() {
+        val draft = parser.parse("dp not allow to use whatsapp fo 3 days")
+
+        assertEquals(
+            AppRuleBehavior.BLOCK,
+            draft.suggestedAppRules.first { it.packageName == "com.whatsapp" }.behavior
+        )
+    }
+
+    @Test
+    fun allowEverythingExceptWhatsapp_compilesWholeAppBlock() {
+        val draft = parser.parse("allow everything except whatsapp for next 1 hour")
+
+        assertEquals(
+            AppRuleBehavior.BLOCK,
+            draft.suggestedAppRules.first { it.packageName == "com.whatsapp" }.behavior
+        )
+    }
+
+    @Test
     fun hinglish_makeMeStrictAaj() {
         val draft = parser.parse("make me strict aaj")
 

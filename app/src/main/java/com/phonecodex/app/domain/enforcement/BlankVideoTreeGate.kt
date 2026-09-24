@@ -41,26 +41,26 @@ object BlankVideoTreeGate {
         reason = "Not a blank video/movie tree"
     )
 
+    /**
+     * Phase 2A: scope preflight moved to [com.phonecodex.app.domain.scope.ScopeGate].
+     * `enforcementScopePackages` and `contentBrands` remain as `@Deprecated` no-op
+     * parameters so the 80+ trace callers compile unchanged. Every live caller runs
+     * ScopeGate first; if scope short-circuits, this gate is never reached.
+     * See docs/scope-semantics-v1-phase2-review.md §3.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun evaluate(
         hasActiveSession: Boolean,
         packageName: String,
         screenText: String,
         goal: String,
+        // @Deprecated: Scope handled by ScopeGate in Phase 2A. Kept for source
+        // compatibility with the 80+ existing trace callers.
         enforcementScopePackages: Collection<String> = emptyList(),
         contentBrands: Collection<String> = emptyList()
     ): BlankVideoTreeResult {
         if (!hasActiveSession) return NONE
         if (SafeAppsCatalog.isDefaultPackage(packageName)) return NONE
-        if (
-            !EnforcementScopeLaw.matches(
-                packageName = packageName,
-                screenText = screenText,
-                scopePackages = enforcementScopePackages,
-                contentBrands = contentBrands
-            )
-        ) {
-            return NONE
-        }
         if (!VideoPlatformRegistry.isVideoOrStreamingPackage(packageName)) return NONE
         val surface = SurfaceDetector.detect(packageName, screenText)
         // Shorts / Reels URL or player is identified short-form — not an unknown

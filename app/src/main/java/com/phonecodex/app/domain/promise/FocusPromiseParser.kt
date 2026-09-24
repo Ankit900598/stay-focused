@@ -733,10 +733,20 @@ class FocusPromiseParser {
         val suggestions = mutableListOf<AppRule>()
 
         if (normalized.contains("telegram")) {
-            suggestions += AppRule(PKG_TELEGRAM, "Telegram", AppRuleBehavior.WARN)
+            val behavior = if (explicitlyBlocksNamedApp(normalized, "telegram")) {
+                AppRuleBehavior.BLOCK
+            } else {
+                AppRuleBehavior.WARN
+            }
+            suggestions += AppRule(PKG_TELEGRAM, "Telegram", behavior)
         }
         if (normalized.contains("whatsapp")) {
-            suggestions += AppRule(PKG_WHATSAPP, "WhatsApp", AppRuleBehavior.WARN)
+            val behavior = if (explicitlyBlocksNamedApp(normalized, "whatsapp")) {
+                AppRuleBehavior.BLOCK
+            } else {
+                AppRuleBehavior.WARN
+            }
+            suggestions += AppRule(PKG_WHATSAPP, "WhatsApp", behavior)
         }
 
         val youtubeRules = contentRules.filter { it.packageName == PKG_YOUTUBE }
@@ -815,6 +825,47 @@ class FocusPromiseParser {
         normalized.contains("instagram") || normalized.contains("insta") ||
             normalized.contains("reels")
 
+    /**
+     * Cue must be bound to the alias — see PromiseIntentRules.explicitlyBlocksAlias
+     * for the rationale (docs/scope-semantics-v1-phase2-review.md §2 F2). Kept in
+     * lockstep with that implementation; do not diverge without updating both.
+     */
+    private fun explicitlyBlocksNamedApp(normalized: String, appName: String): Boolean {
+        val a = Regex.escape(appName)
+
+        val preCue = Regex(
+            """(?<![a-z])(?:""" +
+                """no|block|blocks|blocking|ban|bans|banning|forbid|forbids|""" +
+                """stop|stops|disable|disables|disabling|blacklist|""" +
+                """don't\s+use|dont\s+use|do\s+not\s+use|""" +
+                """can't\s+use|cannot\s+use|no\s+using|""" +
+                """(?:do\s+not|don't|dont|never)\s+allow""" +
+                """(?:\s+(?:me\s+)?(?:to\s+)?(?:use|open|watch|access))?|""" +
+                """not\s+allow""" +
+                """(?:\s+(?:me\s+)?(?:to\s+)?(?:use|open|watch|access))?""" +
+                """)\s+(?:the\s+)?""" + a + """\b""",
+            RegexOption.IGNORE_CASE
+        )
+        if (preCue.containsMatchIn(normalized)) return true
+
+        val postCue = Regex(
+            """\b""" + a + """\b\s+(?:is\s+|are\s+|will\s+be\s+|gets?\s+|)""" +
+                """(?:blocked|banned|forbidden|disabled|blacklisted|off|not\s+allowed)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        if (postCue.containsMatchIn(normalized)) return true
+
+        val exceptRe = Regex("""\bexcept\s+(?:the\s+)?""" + a + """\b""", RegexOption.IGNORE_CASE)
+        val exceptMatch = exceptRe.find(normalized) ?: return false
+        val before = normalized.substring(0, exceptMatch.range.first).lowercase()
+        val lastAllow = listOf("allow", "everything", "permit").maxOf { before.lastIndexOf(it) }
+        val lastBlock = listOf(
+            " no ", " block", " don't", " dont", " do not", " not allow",
+            " ban", " forbid", " stop", " disable"
+        ).maxOf { before.lastIndexOf(it) }
+        return lastAllow >= 0 && lastAllow > lastBlock
+    }
+
     private fun allowsBroadChromeUse(normalized: String): Boolean =
         normalized.contains("allow everything on chrome") ||
             normalized.contains("chrome allow everything") ||
@@ -851,6 +902,14 @@ class FocusPromiseParser {
         private const val PKG_TELEGRAM = "org.telegram.messenger"
         private const val PKG_WHATSAPP = "com.whatsapp"
         private const val PKG_NETMIRROR = VideoPlatformRegistry.NETMIRROR
+        private const val APP_BLOCK_WINDOW_CHARS = 80
+
+        private val APP_BLOCK_CUE = Regex(
+            """\b(no|block|ban|forbid|stop|disable|except)\b|""" +
+                """do not allow|dont allow|don't allow|not allow|""" +
+                """not use|dont use|don't use|cannot use|can't use""",
+            RegexOption.IGNORE_CASE
+        )
 
         private val ALLOW_KEYWORDS = listOf(
             "study", "lecture", "docs", "telegram", "whatsapp", "coding", "code",

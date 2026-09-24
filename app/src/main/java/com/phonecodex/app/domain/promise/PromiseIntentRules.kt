@@ -264,6 +264,68 @@ object PromiseIntentRules {
         return !blocksDocs
     }
 
+    fun explicitlyBlocksKnownPackage(goal: String, packageName: String): Boolean {
+        val aliases = PACKAGE_ALIASES[packageName].orEmpty()
+        if (aliases.isEmpty()) return false
+        val normalized = goal.lowercase()
+        return aliases.any { alias -> explicitlyBlocksAlias(normalized, alias) }
+    }
+
+    /**
+     * The cue must be syntactically bound to the alias:
+     *   (A) pre-cue immediately governing the alias
+     *         ("no whatsapp", "block gmail", "don't use gmail", "cannot use whatsapp",
+     *          "do not allow to use whatsapp", "not allow me to open gmail"), OR
+     *   (B) state predicate immediately after the alias
+     *         ("whatsapp is blocked", "gmail disabled"), OR
+     *   (C) polarity-aware "except <alias>" — a positive polarity before "except"
+     *         ("allow everything except X", "everything except X") blocks X; a
+     *         negative polarity before "except" ("no messengers except X") allows X.
+     *
+     * A bare "no" / "stop" / "block" elsewhere in the sentence MUST NOT block a
+     * named app the user explicitly allowed. See
+     * docs/scope-semantics-v1-phase2-review.md §2 F2. Kept in sync with the
+     * matching implementation in FocusPromiseParser.explicitlyBlocksNamedApp.
+     */
+    private fun explicitlyBlocksAlias(normalized: String, alias: String): Boolean {
+        val a = Regex.escape(alias)
+
+        // (A) Block cue immediately governs the alias.
+        val preCue = Regex(
+            """(?<![a-z])(?:""" +
+                """no|block|blocks|blocking|ban|bans|banning|forbid|forbids|""" +
+                """stop|stops|disable|disables|disabling|blacklist|""" +
+                """don't\s+use|dont\s+use|do\s+not\s+use|""" +
+                """can't\s+use|cannot\s+use|no\s+using|""" +
+                """(?:do\s+not|don't|dont|never)\s+allow""" +
+                """(?:\s+(?:me\s+)?(?:to\s+)?(?:use|open|watch|access))?|""" +
+                """not\s+allow""" +
+                """(?:\s+(?:me\s+)?(?:to\s+)?(?:use|open|watch|access))?""" +
+                """)\s+(?:the\s+)?""" + a + """\b""",
+            RegexOption.IGNORE_CASE
+        )
+        if (preCue.containsMatchIn(normalized)) return true
+
+        // (B) State predicate after the alias.
+        val postCue = Regex(
+            """\b""" + a + """\b\s+(?:is\s+|are\s+|will\s+be\s+|gets?\s+|)""" +
+                """(?:blocked|banned|forbidden|disabled|blacklisted|off|not\s+allowed)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        if (postCue.containsMatchIn(normalized)) return true
+
+        // (C) Polarity-aware "except <alias>".
+        val exceptRe = Regex("""\bexcept\s+(?:the\s+)?""" + a + """\b""", RegexOption.IGNORE_CASE)
+        val exceptMatch = exceptRe.find(normalized) ?: return false
+        val before = normalized.substring(0, exceptMatch.range.first).lowercase()
+        val lastAllow = listOf("allow", "everything", "permit").maxOf { before.lastIndexOf(it) }
+        val lastBlock = listOf(
+            " no ", " block", " don't", " dont", " do not", " not allow",
+            " ban", " forbid", " stop", " disable"
+        ).maxOf { before.lastIndexOf(it) }
+        return lastAllow >= 0 && lastAllow > lastBlock
+    }
+
     /** Max length: block videos longer/greater than N minutes. */
     fun extractGoalMaxVideoLimitMinutes(goal: String): Int? {
         val normalized = goal.lowercase()
@@ -326,6 +388,27 @@ object PromiseIntentRules {
         "com.google.android.apps.docs.editors.slides",
         "com.google.android.apps.drive",
         "com.google.android.gm"
+    )
+
+    private const val APP_BLOCK_WINDOW_CHARS = 80
+
+    private val APP_BLOCK_CUE = Regex(
+        """\b(no|block|ban|forbid|stop|disable|except)\b|""" +
+            """do not allow|dont allow|don't allow|not allow|""" +
+            """not use|dont use|don't use|cannot use|can't use""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val PACKAGE_ALIASES = mapOf(
+        "com.whatsapp" to listOf("whatsapp", "whats app"),
+        "org.telegram.messenger" to listOf("telegram"),
+        "com.google.android.gm" to listOf("gmail"),
+        "com.openai.chatgpt" to listOf("chatgpt", "chat gpt"),
+        "com.google.android.apps.drive" to listOf("drive", "google drive"),
+        "com.google.android.apps.docs" to listOf("docs", "google docs"),
+        "com.google.android.apps.docs.editors.docs" to listOf("docs", "google docs"),
+        "com.google.android.apps.docs.editors.sheets" to listOf("sheets", "google sheets"),
+        "com.google.android.apps.docs.editors.slides" to listOf("slides", "google slides")
     )
 
     private val STUDY_ONLY_PHRASES = listOf(

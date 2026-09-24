@@ -59,12 +59,21 @@ object MediaLengthEnforcement {
             contentBrands = contentBrands
         ).decision
 
+    /**
+     * Phase 2A: scope preflight moved to [com.phonecodex.app.domain.scope.ScopeGate].
+     * `enforcementScopePackages` and `contentBrands` remain as `@Deprecated` no-op
+     * parameters so the 80+ trace callers compile unchanged.
+     * See docs/scope-semantics-v1-phase2-review.md §3.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun decideDetailed(
         packageName: String,
         goal: String,
         screenText: String,
         structuredMaxBlockMinutes: Int?,
         structuredMinBlockMinutes: Int? = null,
+        // @Deprecated: Scope handled by ScopeGate in Phase 2A. Kept for source
+        // compatibility with the 80+ existing trace callers.
         enforcementScopePackages: Collection<String> = emptyList(),
         contentBrands: Collection<String> = emptyList()
     ): MediaLengthDecisionDetail {
@@ -73,17 +82,6 @@ object MediaLengthEnforcement {
             structuredMinBlockMinutes != null ||
             PromiseIntentRules.hasMediaLengthLimit(goal)
         if (!hasLimit) {
-            return detail(MediaLengthLocalDecision.NONE, parsed)
-        }
-
-        if (
-            !EnforcementScopeLaw.matches(
-                packageName = packageName,
-                screenText = screenText,
-                scopePackages = enforcementScopePackages,
-                contentBrands = contentBrands
-            )
-        ) {
             return detail(MediaLengthLocalDecision.NONE, parsed)
         }
 

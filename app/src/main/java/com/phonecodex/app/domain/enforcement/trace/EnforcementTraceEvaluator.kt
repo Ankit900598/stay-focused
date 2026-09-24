@@ -11,9 +11,11 @@ import com.phonecodex.app.domain.enforcement.SurfaceDetector
 import com.phonecodex.app.domain.enforcement.VideoDurationParser
 import com.phonecodex.app.domain.guardrail.PermanentGuardrailEvaluator
 import com.phonecodex.app.domain.model.DecisionType
+import com.phonecodex.app.domain.model.AppRuleBehavior
 import com.phonecodex.app.domain.model.PermanentGuardrail
 import com.phonecodex.app.domain.model.SessionStatus
 import com.phonecodex.app.domain.safeapps.SafeAppsCatalog
+import com.phonecodex.app.domain.promise.PromiseIntentRules
 
 /**
  * Pure replay of the Accessibility gate chain for one screen snapshot.
@@ -38,8 +40,22 @@ object EnforcementTraceEvaluator {
             durationSource = context.durationSource.name,
             seconds = context.currentPlayerDurationSeconds
         )
+        val effectiveAppRule = if (
+            trace.appRule == AppRuleBehavior.BLOCK ||
+            PromiseIntentRules.explicitlyBlocksKnownPackage(trace.goal, trace.packageName)
+        ) {
+            AppRuleBehavior.BLOCK
+        } else {
+            trace.appRule
+        }
 
-        if (SafeAppsCatalog.isDefaultPackage(trace.packageName)) {
+        if (
+            SafeAppsCatalog.isDefaultPackage(trace.packageName) &&
+            (
+                effectiveAppRule != AppRuleBehavior.BLOCK ||
+                    SafeAppsCatalog.isNonOverridableDefaultPackage(trace.packageName)
+            )
+        ) {
             return snapshot.result(
                 TraceDecision.ALLOW,
                 EnforcementReasonCodes.EMERGENCY_ALLOW,
@@ -65,6 +81,7 @@ object EnforcementTraceEvaluator {
         val locked = trace.sessionStatus == SessionStatus.LOCKED
         if (
             locked &&
+            effectiveAppRule != AppRuleBehavior.BLOCK &&
             SessionLockLaw.mayUseAppWhileLocked(
                 packageName = trace.packageName,
                 screenText = trace.screenText,
@@ -85,7 +102,7 @@ object EnforcementTraceEvaluator {
                 hasActiveSession = trace.sessionStatus == SessionStatus.ACTIVE || locked,
                 goal = trace.goal,
                 settings = trace.settings,
-                appRule = trace.appRule,
+                appRule = effectiveAppRule,
                 packageName = trace.packageName,
                 screenText = trace.screenText
             )
@@ -96,16 +113,26 @@ object EnforcementTraceEvaluator {
         var stage = coord.stage
 
         val quotaLimit = trace.settings.shortFormDailyQuotaLimit
-        if (quotaLimit != null && decision != TraceDecision.BLOCK && decision != TraceDecision.LOCK) {
+        // Phase 2A: quota is only evaluated on IN-SCOPE traces. If the coordinator
+        // short-circuited on ScopeGate (unresolved / exempt / out-of-scope allow),
+        // the quota gate must NOT count or block that play. Mirrors the live phone
+        // path where the AccessibilityService also stops at scope.
+        val scopeShortCircuited = reason == EnforcementReasonCodes.SCOPE_UNRESOLVED_NO_ENFORCE ||
+            reason == EnforcementReasonCodes.SCOPE_EXEMPT_ALLOW ||
+            reason == EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW
+        if (
+            quotaLimit != null &&
+            decision != TraceDecision.BLOCK &&
+            decision != TraceDecision.LOCK &&
+            !scopeShortCircuited
+        ) {
             val quota = ShortFormQuotaGate(
                 ledger = SeedLedger(trace.quotaAlreadyCounted)
             ).evaluate(
                 packageName = trace.packageName,
                 screenText = trace.screenText,
                 limit = quotaLimit,
-                allowLongEducational = trace.settings.allowLongEducationalVideos,
-                enforcementScopePackages = trace.settings.enforcementScopePackages,
-                contentBrands = trace.settings.enforcementContentBrands
+                allowLongEducational = trace.settings.allowLongEducationalVideos
             )
             when (quota.action) {
                 ShortFormQuotaAction.BLOCK_ADULT -> {

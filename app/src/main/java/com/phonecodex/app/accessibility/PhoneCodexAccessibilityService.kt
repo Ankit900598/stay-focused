@@ -41,6 +41,7 @@ import com.phonecodex.app.domain.model.SessionStatus
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.WorldMode
 import com.phonecodex.app.domain.policy.PolicyEngine
+import com.phonecodex.app.domain.safeapps.SafeAppsCatalog
 import com.phonecodex.app.domain.enforcement.BlankVideoTreeAction
 import com.phonecodex.app.domain.enforcement.BlankVideoTreeGate
 import com.phonecodex.app.domain.enforcement.DurationSource
@@ -78,6 +79,8 @@ import com.phonecodex.app.domain.enforcement.VisionCounselMerge
 import com.phonecodex.app.domain.feedback.FeedbackMemory
 import com.phonecodex.app.domain.guardrail.PermanentGuardrailEvaluator
 import com.phonecodex.app.domain.promise.PromiseIntentRules
+import com.phonecodex.app.domain.scope.ScopeGate
+import com.phonecodex.app.domain.scope.ScopeMatch
 import com.phonecodex.app.domain.session.SessionExpiryPolicy
 import com.phonecodex.app.domain.signals.ContentSignalDetector
 import com.phonecodex.app.domain.tamper.AccessibilityTamperGuard
@@ -364,7 +367,19 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             return
         }
 
-        if (safeAppsStore.isSafePackage(packageName)) {
+        val explicitAppRuleEarly = appRulesStore.getBehaviorForPackage(packageName)
+        val effectiveAppRuleEarly = if (
+            explicitAppRuleEarly == AppRuleBehavior.BLOCK ||
+            PromiseIntentRules.explicitlyBlocksKnownPackage(
+                goal = storedSession?.goal.orEmpty(),
+                packageName = packageName
+            )
+        ) {
+            AppRuleBehavior.BLOCK
+        } else {
+            explicitAppRuleEarly
+        }
+        if (shouldAllowSafePackage(packageName, effectiveAppRuleEarly)) {
             hideWarningOverlay()
             // No active overlay target here — normal PhoneCodex / safe-app open.
             val now = System.currentTimeMillis()
@@ -446,6 +461,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
 
         val lockScopeSettings = studyWorldSettingsStore.getSettings()
         if (storedSession.status == SessionStatus.LOCKED &&
+            effectiveAppRuleEarly != AppRuleBehavior.BLOCK &&
             SessionLockLaw.mayUseAppWhileLocked(
                 packageName = packageName,
                 screenText = screenText,
@@ -478,36 +494,87 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         maybeResearchApp(packageName, screenText, storedSession.goal.orEmpty())
 
         val scopedSettings = lockScopeSettings
-        val scopedAppRule = appRulesStore.getBehaviorForPackage(packageName)
-        if (
-            !EntertainmentBanGate.mustEvaluate(
-                packageName = packageName,
-                screenText = screenText,
-                goal = storedSession.goal.orEmpty(),
-                enforcementScopePackages = scopedSettings.enforcementScopePackages,
-                contentBrands = scopedSettings.enforcementContentBrands
-            ) &&
-            scopedAppRule != AppRuleBehavior.BLOCK
-        ) {
+        val scopedAppRule = effectiveAppRuleEarly
+
+        // Phase 2A scope preflight. Shared contract with PromiseEnforcementCoordinator.
+        // See docs/scope-semantics-v1-phase2-review.md §1.3 and §3.
+        val scopeOutcome = ScopeGate.evaluate(
+            packageName = packageName,
+            screenText = screenText,
+            goal = storedSession.goal.orEmpty(),
+            settings = scopedSettings
+        )
+        if (scopeOutcome.shortCircuits) {
             hideWarningOverlay()
-            hideBlockOverlay()
             val surface = SurfaceDetector.detect(packageName, screenText)
-            Log.d(
-                "PhoneCodexDecision",
-                EnforcementDecisionLog.format(
-                    packageName = packageName,
-                    surface = surface.surface.name,
-                    rule = "Scope",
-                    decision = "ALLOW",
-                    reasonCode = EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW,
-                    reason = "Outside this promise's package/content scope",
-                    activity = surface.activity.name.lowercase()
-                )
-            )
-            return
+            when (val m = scopeOutcome.match) {
+                is ScopeMatch.Unresolved -> {
+                    hideBlockOverlay()
+                    Log.d(
+                        "PhoneCodexDecision",
+                        EnforcementDecisionLog.format(
+                            packageName = packageName,
+                            surface = surface.surface.name,
+                            rule = "Scope",
+                            decision = "ALLOW",
+                            reasonCode = EnforcementReasonCodes.SCOPE_UNRESOLVED_NO_ENFORCE,
+                            reason = "Scope unresolved -- not enforcing this promise",
+                            activity = surface.activity.name.lowercase(),
+                            scopeKind = scopeOutcome.scopeKind.name
+                        )
+                    )
+                    return
+                }
+                is ScopeMatch.Exempt -> {
+                    hideBlockOverlay()
+                    Log.d(
+                        "PhoneCodexDecision",
+                        EnforcementDecisionLog.format(
+                            packageName = packageName,
+                            surface = surface.surface.name,
+                            rule = "Scope",
+                            decision = "ALLOW",
+                            reasonCode = EnforcementReasonCodes.SCOPE_EXEMPT_ALLOW,
+                            reason = "In-scope exemption matched",
+                            activity = surface.activity.name.lowercase(),
+                            scopeKind = scopeOutcome.scopeKind.name,
+                            scopeClause = m.clauseId
+                        )
+                    )
+                    return
+                }
+                ScopeMatch.OutOfScope -> {
+                    if (scopedAppRule == AppRuleBehavior.BLOCK) {
+                        if (applyAppRuleBehavior(packageName, screenText, scopedAppRule)) return
+                    }
+                    hideBlockOverlay()
+                    Log.d(
+                        "PhoneCodexDecision",
+                        EnforcementDecisionLog.format(
+                            packageName = packageName,
+                            surface = surface.surface.name,
+                            rule = "Scope",
+                            decision = "ALLOW",
+                            reasonCode = EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW,
+                            reason = "Outside this promise's package/content scope",
+                            activity = surface.activity.name.lowercase(),
+                            scopeKind = scopeOutcome.scopeKind.name
+                        )
+                    )
+                    return
+                }
+                is ScopeMatch.InScope -> Unit
+            }
         }
 
         if (applyBlankVideoTreeRules(packageName, screenText, storedSession)) {
+            return
+        }
+
+        if (
+            scopedAppRule == AppRuleBehavior.BLOCK &&
+            applyAppRuleBehavior(packageName, screenText, scopedAppRule)
+        ) {
             return
         }
 
@@ -525,7 +592,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             return
         }
 
-        if (applyAppRuleBehavior(packageName, screenText)) {
+        if (applyAppRuleBehavior(packageName, screenText, scopedAppRule)) {
             return
         }
 
@@ -639,6 +706,15 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             .take(300)
             .trim()
             .replace(Regex("\\s+"), " ")
+    }
+
+    private fun shouldAllowSafePackage(
+        packageName: String,
+        explicitAppRule: AppRuleBehavior?
+    ): Boolean {
+        if (!safeAppsStore.isSafePackage(packageName)) return false
+        if (explicitAppRule != AppRuleBehavior.BLOCK) return true
+        return SafeAppsCatalog.isNonOverridableDefaultPackage(packageName)
     }
 
     private fun logScreenTextIfChanged(packageName: String, screenText: String) {
@@ -849,10 +925,16 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         return true
     }
 
-    private fun applyAppRuleBehavior(packageName: String, screenText: String): Boolean {
-        val rule = appRulesStore.getRuleForPackage(packageName) ?: return false
+    private fun applyAppRuleBehavior(
+        packageName: String,
+        screenText: String,
+        behaviorOverride: AppRuleBehavior? = null
+    ): Boolean {
+        val rule = appRulesStore.getRuleForPackage(packageName)
+        val behavior = behaviorOverride ?: rule?.behavior ?: return false
+        val label = rule?.label ?: SafeAppsCatalog.defaultLabel(packageName)
 
-        return when (rule.behavior) {
+        return when (behavior) {
             AppRuleBehavior.ALLOW -> {
                 if (VideoPlatformRegistry.enforcesMediaSurfaces(packageName) ||
                     VideoPlatformRegistry.looksLikeUnknownStreamingPackage(packageName)
@@ -876,13 +958,13 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                         packageName = packageName,
                         screenText = screenText,
                         decision = DecisionType.ALLOW.name,
-                        reason = "Allowed by app rule for ${rule.label}",
+                        reason = "Allowed by app rule for $label",
                         source = "App Rule",
                         confidence = 1.0
                     )
                     Log.d(
                         "PhoneCodexDecision",
-                        "App rule ALLOW for $packageName (${rule.label})"
+                        "App rule ALLOW for $packageName ($label)"
                     )
                     true
                 }
@@ -890,7 +972,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             AppRuleBehavior.WARN -> {
                 hideBlockOverlay()
                 val signature = textSignature(screenText)
-                val reason = "App rule warns for ${rule.label}"
+                val reason = "App rule warns for $label"
                 val explanation = DecisionExplanation(
                     decision = DecisionType.WARN.name,
                     reason = reason,
@@ -903,13 +985,13 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 }
                 Log.d(
                     "PhoneCodexDecision",
-                    "App rule WARN for $packageName (${rule.label})"
+                    "App rule WARN for $packageName ($label)"
                 )
                 true
             }
             AppRuleBehavior.BLOCK -> {
                 hideWarningOverlay()
-                val reason = "Blocked by app rule for ${rule.label}"
+                val reason = "Blocked by app rule for $label"
                 val explanation = DecisionExplanation(
                     decision = DecisionType.BLOCK.name,
                     reason = reason,
@@ -924,7 +1006,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 )
                 Log.d(
                     "PhoneCodexDecision",
-                    "App rule BLOCK for $packageName (${rule.label})"
+                    "App rule BLOCK for $packageName ($label)"
                 )
                 true
             }

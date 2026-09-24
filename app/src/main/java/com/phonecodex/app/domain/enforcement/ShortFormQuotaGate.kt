@@ -81,12 +81,21 @@ class ShortFormQuotaGate(
         java.time.Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate().toString() +
             ":" + QUOTA_TYPE
 
+    /**
+     * Phase 2A: scope preflight moved to [com.phonecodex.app.domain.scope.ScopeGate].
+     * `enforcementScopePackages` and `contentBrands` remain as `@Deprecated` no-op
+     * parameters so the 80+ trace callers compile unchanged.
+     * See docs/scope-semantics-v1-phase2-review.md §3.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun evaluate(
         packageName: String,
         screenText: String,
         limit: Int,
         allowLongEducational: Boolean = true,
         nowMillis: Long = clock(),
+        // @Deprecated: Scope handled by ScopeGate in Phase 2A. Kept for source
+        // compatibility with the 80+ existing trace callers.
         enforcementScopePackages: Collection<String> = emptyList(),
         contentBrands: Collection<String> = emptyList()
     ): ShortFormQuotaDecision {
@@ -105,27 +114,6 @@ class ShortFormQuotaGate(
                 durationSeconds = surface.durationSeconds,
                 dayKey = dayKey,
                 reason = "No short-form daily quota configured",
-                titleHint = titleHint
-            )
-        }
-
-        if (
-            !EnforcementScopeLaw.matches(
-                packageName = packageName,
-                screenText = screenText,
-                scopePackages = enforcementScopePackages,
-                contentBrands = contentBrands
-            )
-        ) {
-            return ShortFormQuotaDecision(
-                action = ShortFormQuotaAction.NONE,
-                count = currentCount(dayKey),
-                limit = limit,
-                counted = false,
-                surface = surface.surface,
-                durationSeconds = surface.durationSeconds,
-                dayKey = dayKey,
-                reason = "Package outside clarification rematerialize scope",
                 titleHint = titleHint
             )
         }

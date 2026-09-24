@@ -1,5 +1,7 @@
 package com.phonecodex.app.domain.model
 
+import com.phonecodex.app.domain.scope.EnforcementScope
+
 data class StudyWorldSettings(
     val durationMinutes: Int,
     val lockAttemptThreshold: Int,
@@ -38,6 +40,17 @@ data class StudyWorldSettings(
     val enforcementContentBrands: List<String> = emptyList(),
     /** Persisted compiler scope kind; used to keep app-only vs content-brand honest. */
     val enforcementScopeKind: String? = null,
+    /**
+     * Scope Semantics v1 typed scope. Null in Phase 2A -- the three legacy fields
+     * above stay authoritative and are adapted by
+     * [com.phonecodex.app.domain.scope.LegacyScopeAdapter]. Phase 2B/3 flips this
+     * to be the source of truth for the coordinator + AccessibilityService via
+     * [com.phonecodex.app.domain.scope.ScopeGate].
+     *
+     * When non-null [com.phonecodex.app.domain.scope.ScopeGate] uses it directly
+     * and bypasses the legacy adapter for this settings object.
+     */
+    val enforcementScope: EnforcementScope? = null,
     /**
      * Developer opt-in for the 10-day vision counsel experiment.
      * Default OFF. Still requires [VisionExperiment] calendar window.

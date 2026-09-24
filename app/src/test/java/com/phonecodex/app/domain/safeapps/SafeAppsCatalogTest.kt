@@ -17,6 +17,18 @@ class SafeAppsCatalogTest {
     }
 
     @Test
+    fun explicitBlockOverride_onlyAppliesToConvenienceSafeDefaults() {
+        assertTrue(SafeAppsCatalog.isNonOverridableDefaultPackage("com.phonecodex.app"))
+        assertTrue(SafeAppsCatalog.isNonOverridableDefaultPackage("com.google.android.dialer"))
+        assertFalse(SafeAppsCatalog.canExplicitBlockOverrideSafeDefault("com.google.android.dialer"))
+
+        assertFalse(SafeAppsCatalog.isNonOverridableDefaultPackage("com.whatsapp"))
+        assertTrue(SafeAppsCatalog.canExplicitBlockOverrideSafeDefault("com.whatsapp"))
+        assertTrue(SafeAppsCatalog.canExplicitBlockOverrideSafeDefault("com.google.android.gm"))
+        assertTrue(SafeAppsCatalog.canExplicitBlockOverrideSafeDefault("com.openai.chatgpt"))
+    }
+
+    @Test
     fun defaultPackages_rejectUnknownPackage() {
         assertFalse(SafeAppsCatalog.isDefaultPackage("com.instagram.android"))
     }

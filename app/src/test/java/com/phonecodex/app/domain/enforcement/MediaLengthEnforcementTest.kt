@@ -285,17 +285,28 @@ class MediaLengthEnforcementTest {
         )
     }
 
+    /**
+     * Phase 2A: scope preflight has moved to
+     * [com.phonecodex.app.domain.scope.ScopeGate], which runs in the coordinator
+     * AND the AccessibilityService BEFORE MediaLengthEnforcement is called.
+     * The gate itself no longer filters by scope, so it BLOCKs on any registered
+     * media package whose player clock violates the length rule; the two legacy
+     * `enforcementScopePackages` / `contentBrands` parameters are inert here.
+     * Trace-level equivalence (out-of-scope traces reach ALLOW with
+     * `ENFORCEMENT_SCOPE_ALLOW`, not `MEDIA_BLOCK_*`) is asserted through the
+     * coordinator by `PhoneSurfaceTraceReplayTest` and by
+     * `ScopeGateEquivalenceTest` in `domain/scope/`.
+     */
     @Test
-    fun rematerializedChromeScope_doesNotEnforceOnYouTube() {
+    fun mediaLengthGate_noLongerFiltersByScope_bothPackagesBlockOverLimit() {
         val player = "Hide player controls Time duration 1 hour 25 minutes YouTube"
         assertEquals(
-            MediaLengthLocalDecision.NONE,
+            MediaLengthLocalDecision.BLOCK,
             MediaLengthEnforcement.decide(
                 packageName = VideoPlatformRegistry.YOUTUBE,
                 goal = lengthPromise,
                 screenText = player,
-                structuredMaxBlockMinutes = 40,
-                enforcementScopePackages = listOf(VideoPlatformRegistry.CHROME)
+                structuredMaxBlockMinutes = 40
             )
         )
         assertEquals(
@@ -304,25 +315,10 @@ class MediaLengthEnforcementTest {
                 packageName = VideoPlatformRegistry.CHROME,
                 goal = lengthPromise,
                 screenText = player,
-                structuredMaxBlockMinutes = 40,
-                enforcementScopePackages = listOf(VideoPlatformRegistry.CHROME)
+                structuredMaxBlockMinutes = 40
             )
         )
-    }
-
-    @Test
-    fun rematerializedYouTubeScope_doesNotEnforceOnChrome() {
-        val player = "Hide player controls Time duration 1 hour 25 minutes YouTube"
-        assertEquals(
-            MediaLengthLocalDecision.NONE,
-            MediaLengthEnforcement.decide(
-                packageName = VideoPlatformRegistry.CHROME,
-                goal = lengthPromise,
-                screenText = player,
-                structuredMaxBlockMinutes = 40,
-                enforcementScopePackages = listOf(VideoPlatformRegistry.YOUTUBE)
-            )
-        )
+        // Inert legacy params must not change the verdict.
         assertEquals(
             MediaLengthLocalDecision.BLOCK,
             MediaLengthEnforcement.decide(
@@ -330,7 +326,7 @@ class MediaLengthEnforcementTest {
                 goal = lengthPromise,
                 screenText = player,
                 structuredMaxBlockMinutes = 40,
-                enforcementScopePackages = listOf(VideoPlatformRegistry.YOUTUBE)
+                enforcementScopePackages = listOf(VideoPlatformRegistry.CHROME)
             )
         )
     }
@@ -352,18 +348,24 @@ class MediaLengthEnforcementTest {
         )
     }
 
+    /**
+     * Phase 2A: with the legacy scope check gone from the gate, Chrome on a Gmail
+     * SERP is no longer short-circuited to `NONE` by the gate itself -- it lands
+     * on the passive-surface arm and returns `PASS`. Scope-level filtering
+     * (Gmail is out of a YouTube-content promise) is asserted upstream by
+     * `ScopeGateEquivalenceTest`; downstream, `PASS` is mapped to `ALLOW`
+     * with `SURFACE_PASS_PASSIVE` by the coordinator (still a no-op).
+     */
     @Test
-    fun youtubeContentBrand_chromeGmail_isNone() {
+    fun youtubeContentBrand_chromeGmail_isPassivePass() {
         assertEquals(
-            MediaLengthLocalDecision.NONE,
+            MediaLengthLocalDecision.PASS,
             MediaLengthEnforcement.decide(
                 packageName = VideoPlatformRegistry.CHROME,
                 goal = "allow YouTube video longer than 40 min only",
                 screenText = "https://mail.google.com/mail Inbox Primary",
                 structuredMaxBlockMinutes = null,
-                structuredMinBlockMinutes = 40,
-                enforcementScopePackages = emptyList(),
-                contentBrands = listOf("youtube")
+                structuredMinBlockMinutes = 40
             )
         )
     }

@@ -5,6 +5,8 @@ import com.phonecodex.app.domain.model.DecisionType
 import com.phonecodex.app.domain.model.StudyWorldSettings
 import com.phonecodex.app.domain.promise.ConfirmedPromiseBinder
 import com.phonecodex.app.domain.promise.PromiseIntentRules
+import com.phonecodex.app.domain.scope.ScopeGate
+import com.phonecodex.app.domain.scope.ScopeMatch
 
 /**
  * Ordered law after safe/emergency and overlay-retain:
@@ -44,30 +46,54 @@ object PromiseEnforcementCoordinator {
             )
         }
 
-        if (!EntertainmentBanGate.mustEvaluate(
-                packageName = input.packageName,
-                screenText = input.screenText,
-                goal = input.goal,
-                enforcementScopePackages = input.settings.enforcementScopePackages,
-                contentBrands = input.settings.enforcementContentBrands
-            )
-        ) {
-            if (input.appRule == AppRuleBehavior.BLOCK) {
-                return decided(
-                    input,
-                    DecisionType.BLOCK,
-                    EnforcementReasonCodes.APP_RULE_BLOCK,
-                    "scope_app_rule",
-                    prelude
-                )
-            }
-            return decided(
+        // Phase 2A scope preflight -- shared with PhoneCodexAccessibilityService.
+        // ScopeGate calls ScopeMatcher(LegacyScopeAdapter.from(settings)) unless
+        // an explicit `settings.enforcementScope` is present (Phase 2B/3 path).
+        val scopeOutcome = ScopeGate.evaluate(
+            packageName = input.packageName,
+            screenText = input.screenText,
+            goal = input.goal,
+            settings = input.settings
+        )
+        when (val m = scopeOutcome.match) {
+            is ScopeMatch.Unresolved -> return decided(
                 input,
                 DecisionType.ALLOW,
-                EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW,
-                "scope",
+                EnforcementReasonCodes.SCOPE_UNRESOLVED_NO_ENFORCE,
+                "scope_unresolved",
                 prelude
             )
+            is ScopeMatch.Exempt -> return decided(
+                input,
+                DecisionType.ALLOW,
+                EnforcementReasonCodes.SCOPE_EXEMPT_ALLOW,
+                "scope_exempt",
+                prelude
+            )
+            ScopeMatch.OutOfScope -> {
+                if (!scopeOutcome.monkOverridesScope) {
+                    if (input.appRule == AppRuleBehavior.BLOCK) {
+                        return decided(
+                            input,
+                            DecisionType.BLOCK,
+                            EnforcementReasonCodes.APP_RULE_BLOCK,
+                            "scope_app_rule",
+                            prelude
+                        )
+                    }
+                    return decided(
+                        input,
+                        DecisionType.ALLOW,
+                        EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW,
+                        "scope",
+                        prelude
+                    )
+                }
+                // Monk override: fall through and let downstream gates fail-closed
+                // on unknown apps. Preserves EntertainmentBanGate.mustEvaluate semantics.
+                @Suppress("UNUSED_EXPRESSION") m
+            }
+            is ScopeMatch.InScope -> Unit // continue to downstream gates
         }
 
         val blankTree = BlankVideoTreeGate.evaluate(

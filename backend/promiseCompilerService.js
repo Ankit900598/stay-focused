@@ -16,6 +16,7 @@ const ALLOWED_PROMPT_VERSIONS = new Set([
   "promise_compiler_v06",
   "promise_compiler_v07",
   "promise_compiler_v08",
+  "promise_compiler_v09",
 ]);
 
 function resolvePromptVersion() {
@@ -31,6 +32,7 @@ function resolvePromptVersion() {
   if (raw === "v06" || raw === "06") return "promise_compiler_v06";
   if (raw === "v07" || raw === "07") return "promise_compiler_v07";
   if (raw === "v08" || raw === "08") return "promise_compiler_v08";
+  if (raw === "v09" || raw === "09") return "promise_compiler_v09";
   return "promise_compiler_v07";
 }
 
@@ -117,6 +119,347 @@ function userFacingHasPackageLeak(text) {
   if (typeof text !== "string") return false;
   return /\b(?:com|org|net|io)\.[a-zA-Z0-9_.]+\b/i.test(text);
 }
+
+// =============================================================================
+// Scope Semantics v1 — validateScope()
+//
+// The one boundary that turns the raw `scope` object emitted by promise_compiler_v09
+// into either an enforceable typed selector or `UNRESOLVED`.
+//
+// Contract (docs/scope-semantics-v1.md §3.1, §5):
+//   - `scope` is REQUIRED. Missing / null / non-object -> UNRESOLVED (MISSING_EVIDENCE).
+//   - `version` MUST equal SCOPE_VERSION_V1. Otherwise UNRESOLVED (BAD_VERSION).
+//   - `kind` MUST be one of SCOPE_KINDS. Otherwise UNRESOLVED (UNKNOWN_KIND).
+//   - Enum values on `resolution`, `identity`, clause `host` / `identity` / `surfaces`
+//     / `packageMatch` MUST be in their enum sets. Otherwise UNRESOLVED (MALFORMED_CLAUSE).
+//   - `appliesToText` MUST NOT contain a package id. Leak -> UNRESOLVED (PACKAGE_LEAK_IN_APPLIES_TO).
+//   - `evidenceSpans` MUST be verbatim substrings of `userPromise`, except for
+//     `PACKAGE_PINNED` (user literally named an app). Otherwise UNRESOLVED (MISSING_EVIDENCE).
+//   - A non-UNRESOLVED kind with an empty `include` -> UNRESOLVED (MALFORMED_CLAUSE).
+//
+// Any failure ALSO forces `canStartCommitment=false` and `clarificationRequired=true`
+// upstream — see enforceScopeStartGates(). Callers must pass the ORIGINAL userPromise so
+// evidenceSpans can be verified verbatim.
+// =============================================================================
+
+const SCOPE_VERSION_V1 = 1;
+
+const SCOPE_KINDS = new Set([
+  "APP_ONLY",
+  "BROWSER_ONLY",
+  "CONTENT_ANY_HOST",
+  "VIDEO_CLASS_ANY_HOST",
+  "SHORT_FORM_ANY_HOST",
+  "SOCIAL_MESSAGING_ONLY",
+  "SOCIAL_FEED_AND_REELS_ONLY",
+  "SITE_SCOPED",
+  "HOST_WITH_CATEGORY_EXEMPTIONS",
+  "PACKAGE_PINNED",
+  "UNRESOLVED",
+]);
+
+const SCOPE_RESOLUTIONS = new Set(["EXCLUSIVE", "ADDITIVE"]);
+
+const SCOPE_HOSTS = new Set(["NATIVE_APP", "BROWSER", "ANY_HOST"]);
+
+const SCOPE_IDENTITIES = new Set([
+  "YOUTUBE",
+  "INSTAGRAM",
+  "FACEBOOK",
+  "MESSENGER",
+  "TIKTOK",
+  "SNAPCHAT",
+  "WHATSAPP",
+  "VIDEO_ANY",
+  "SHORT_FORM_ANY",
+  "MOVIE_OTT_ANY",
+  "ADULT_ANY",
+  "SOCIAL_ANY",
+  "ANY",
+]);
+
+const SCOPE_SURFACE_CLASSES = new Set([
+  "PLAYER_ANY",
+  "PLAYER_SHORT",
+  "PLAYER_LONG",
+  "FEED",
+  "DM_LIST",
+  "DM_THREAD",
+  "SEARCH",
+  "BROWSE",
+  "INSTALL",
+  "PAYMENT",
+  "SYSTEM",
+  "ANY",
+]);
+
+const SCOPE_PACKAGE_MATCH_MODES = new Set(["PINNED", "CLASS_RESOLVED"]);
+
+const SCOPE_UNRESOLVED_REASONS = new Set([
+  "HOST_AMBIGUOUS",
+  "IDENTITY_SCOPE_AMBIGUOUS",
+  "BRAND_VS_CATEGORY",
+  "SURFACE_AMBIGUOUS",
+  "COMPANION_APP_AMBIGUOUS",
+  "SITE_LIST_UNRESOLVED",
+  "EXEMPTION_UNCLEAR",
+  "COMPOUND_SCOPE_CONFLICT",
+  "MISSING_EVIDENCE",
+  "UNKNOWN_KIND",
+  "BAD_VERSION",
+  "MALFORMED_CLAUSE",
+  "PACKAGE_LEAK_IN_APPLIES_TO",
+]);
+
+const SCOPE_PACKAGE_ID_RE = /\b(?:com|org|net|io)\.[a-zA-Z0-9_.]+\b/i;
+
+function unresolvedScope(reason, evidenceSpans) {
+  return {
+    version: SCOPE_VERSION_V1,
+    kind: "UNRESOLVED",
+    resolution: "EXCLUSIVE",
+    identity: null,
+    include: [],
+    exempt: [],
+    confidence: 0,
+    appliesToText: null,
+    unresolvedReason: SCOPE_UNRESOLVED_REASONS.has(reason)
+      ? reason
+      : "MISSING_EVIDENCE",
+    evidenceSpans: Array.isArray(evidenceSpans)
+      ? evidenceSpans.filter((s) => typeof s === "string")
+      : [],
+    candidateScopes: [],
+  };
+}
+
+function normalizeStringArray(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (trimmed) out.push(trimmed);
+  }
+  return out;
+}
+
+function spansAreVerbatim(spans, userPromise) {
+  if (!Array.isArray(spans) || spans.length === 0) return true;
+  if (typeof userPromise !== "string" || !userPromise) return false;
+  const hay = userPromise;
+  const hayLower = hay.toLowerCase();
+  return spans.every((span) => {
+    if (typeof span !== "string") return false;
+    const t = span.trim();
+    if (!t) return false;
+    return hay.includes(t) || hayLower.includes(t.toLowerCase());
+  });
+}
+
+function validateClauseList(rawList, listName) {
+  if (rawList == null) return { ok: true, list: [] };
+  if (!Array.isArray(rawList)) {
+    return { ok: false, reason: "MALFORMED_CLAUSE", where: listName };
+  }
+  const out = [];
+  for (let i = 0; i < rawList.length; i += 1) {
+    const raw = rawList[i];
+    if (!raw || typeof raw !== "object") {
+      return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}]` };
+    }
+    const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : "";
+    if (!id) {
+      return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}].id` };
+    }
+    const host = typeof raw.host === "string" ? raw.host.trim().toUpperCase() : "ANY_HOST";
+    if (!SCOPE_HOSTS.has(host)) {
+      return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}].host` };
+    }
+    const identity =
+      typeof raw.identity === "string" ? raw.identity.trim().toUpperCase() : "ANY";
+    if (!SCOPE_IDENTITIES.has(identity)) {
+      return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}].identity` };
+    }
+    const surfacesRaw = Array.isArray(raw.surfaces) ? raw.surfaces : ["ANY"];
+    const surfaces = [];
+    for (const s of surfacesRaw) {
+      if (typeof s !== "string") {
+        return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}].surfaces` };
+      }
+      const up = s.trim().toUpperCase();
+      if (!SCOPE_SURFACE_CLASSES.has(up)) {
+        return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}].surfaces` };
+      }
+      if (!surfaces.includes(up)) surfaces.push(up);
+    }
+    if (surfaces.length === 0) surfaces.push("ANY");
+    const sites = normalizeStringArray(raw.sites);
+    const packages = normalizeStringArray(raw.packages);
+    const packageMatch =
+      typeof raw.packageMatch === "string"
+        ? raw.packageMatch.trim().toUpperCase()
+        : "CLASS_RESOLVED";
+    if (!SCOPE_PACKAGE_MATCH_MODES.has(packageMatch)) {
+      return { ok: false, reason: "MALFORMED_CLAUSE", where: `${listName}[${i}].packageMatch` };
+    }
+    out.push({ id, host, identity, surfaces, sites, packages, packageMatch });
+  }
+  return { ok: true, list: out };
+}
+
+/**
+ * Validate the compiler-emitted `scope` object against Scope Semantics v1.
+ * Returns the normalized scope on success, or a rewritten UNRESOLVED scope on any failure.
+ *
+ * @param {object|null|undefined} rawScope  the model-emitted scope
+ * @param {string} userPromise              the original user promise (for evidenceSpans verify)
+ * @returns {object} normalized scope (either enforceable v1 or UNRESOLVED)
+ */
+function validateScope(rawScope, userPromise) {
+  if (rawScope == null || typeof rawScope !== "object" || Array.isArray(rawScope)) {
+    return unresolvedScope("MISSING_EVIDENCE");
+  }
+  const version =
+    typeof rawScope.version === "number" && Number.isFinite(rawScope.version)
+      ? rawScope.version
+      : null;
+  if (version !== SCOPE_VERSION_V1) {
+    return unresolvedScope("BAD_VERSION");
+  }
+  const kindRaw =
+    typeof rawScope.kind === "string" ? rawScope.kind.trim().toUpperCase() : "";
+  if (!kindRaw || !SCOPE_KINDS.has(kindRaw)) {
+    return unresolvedScope("UNKNOWN_KIND", normalizeStringArray(rawScope.evidenceSpans));
+  }
+
+  const evidenceSpans = normalizeStringArray(rawScope.evidenceSpans);
+  const resolution =
+    typeof rawScope.resolution === "string" &&
+    SCOPE_RESOLUTIONS.has(rawScope.resolution.trim().toUpperCase())
+      ? rawScope.resolution.trim().toUpperCase()
+      : "EXCLUSIVE";
+  const identity =
+    typeof rawScope.identity === "string" && rawScope.identity.trim()
+      ? SCOPE_IDENTITIES.has(rawScope.identity.trim().toUpperCase())
+        ? rawScope.identity.trim().toUpperCase()
+        : null
+      : null;
+  const confidence =
+    typeof rawScope.confidence === "number" && Number.isFinite(rawScope.confidence)
+      ? Math.max(0, Math.min(1, rawScope.confidence))
+      : 0;
+  const appliesToText =
+    typeof rawScope.appliesToText === "string" && rawScope.appliesToText.trim()
+      ? rawScope.appliesToText.trim()
+      : null;
+
+  if (appliesToText && SCOPE_PACKAGE_ID_RE.test(appliesToText)) {
+    return unresolvedScope("PACKAGE_LEAK_IN_APPLIES_TO", evidenceSpans);
+  }
+
+  const includeResult = validateClauseList(rawScope.include, "include");
+  if (!includeResult.ok) return unresolvedScope(includeResult.reason, evidenceSpans);
+  const exemptResult = validateClauseList(rawScope.exempt, "exempt");
+  if (!exemptResult.ok) return unresolvedScope(exemptResult.reason, evidenceSpans);
+
+  const unresolvedReasonRaw =
+    typeof rawScope.unresolvedReason === "string"
+      ? rawScope.unresolvedReason.trim().toUpperCase()
+      : "";
+  const unresolvedReason = SCOPE_UNRESOLVED_REASONS.has(unresolvedReasonRaw)
+    ? unresolvedReasonRaw
+    : null;
+
+  const candidateScopes = Array.isArray(rawScope.candidateScopes)
+    ? rawScope.candidateScopes
+        .map((c) => validateScope(c, userPromise))
+        .filter((c) => c && c.kind)
+    : [];
+
+  if (kindRaw === "UNRESOLVED") {
+    return {
+      version: SCOPE_VERSION_V1,
+      kind: "UNRESOLVED",
+      resolution,
+      identity,
+      include: [],
+      exempt: [],
+      confidence,
+      appliesToText: null,
+      unresolvedReason: unresolvedReason || "MISSING_EVIDENCE",
+      evidenceSpans,
+      candidateScopes,
+    };
+  }
+
+  // Non-UNRESOLVED kinds require evidence (except PACKAGE_PINNED — user named a literal app).
+  if (kindRaw !== "PACKAGE_PINNED") {
+    if (evidenceSpans.length === 0) {
+      return unresolvedScope("MISSING_EVIDENCE");
+    }
+    if (typeof userPromise === "string" && userPromise) {
+      if (!spansAreVerbatim(evidenceSpans, userPromise)) {
+        return unresolvedScope("MISSING_EVIDENCE", evidenceSpans);
+      }
+    }
+  }
+
+  if (includeResult.list.length === 0) {
+    return unresolvedScope("MALFORMED_CLAUSE", evidenceSpans);
+  }
+
+  return {
+    version: SCOPE_VERSION_V1,
+    kind: kindRaw,
+    resolution,
+    identity,
+    include: includeResult.list,
+    exempt: exemptResult.list,
+    confidence,
+    appliesToText,
+    unresolvedReason: null,
+    evidenceSpans,
+    candidateScopes,
+  };
+}
+
+/**
+ * Validate the `scope` attached to one clarificationOption. Same rules; used when a
+ * user picks A/B/C and the backend rematerializes the DTO — option.scope is the ONLY
+ * path from a pick to enforcement scope (v09 deletes the English-blob regex fallback).
+ */
+function validateOptionScope(optionScope, userPromise) {
+  return validateScope(optionScope, userPromise);
+}
+
+function isEnforceableScope(scope) {
+  return (
+    scope &&
+    scope.version === SCOPE_VERSION_V1 &&
+    scope.kind !== "UNRESOLVED" &&
+    Array.isArray(scope.include) &&
+    scope.include.length > 0
+  );
+}
+
+/**
+ * When scope is UNRESOLVED / invalid, force Start off and clarification on. Non-destructive:
+ * leaves the rest of the compiled DTO intact. Callers that opt into v09 should invoke this
+ * after normalizeCompiledPromise() to preserve fail-closed trust while keeping enforcement
+ * fail-open (nothing is blocked when scope is unresolved).
+ */
+function enforceScopeStartGates(dto, validatedScope) {
+  if (!dto || typeof dto !== "object") return dto;
+  const out = { ...dto, scope: validatedScope };
+  if (!isEnforceableScope(validatedScope)) {
+    out.canStartCommitment = false;
+    out.clarificationRequired = true;
+    out.followUpQuestionRequired = true;
+  }
+  return out;
+}
+
 
 function normalizeInternalPolicyPreview(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -3135,4 +3478,16 @@ module.exports = {
   needsCompoundIntentClarification,
   resolveCompoundCompileText,
   compilePromise,
+  // Scope Semantics v1 (Phase 1) — validate-or-UNRESOLVED
+  validateScope,
+  validateOptionScope,
+  enforceScopeStartGates,
+  isEnforceableScope,
+  SCOPE_VERSION_V1,
+  SCOPE_KINDS,
+  SCOPE_HOSTS,
+  SCOPE_IDENTITIES,
+  SCOPE_SURFACE_CLASSES,
+  SCOPE_PACKAGE_MATCH_MODES,
+  SCOPE_UNRESOLVED_REASONS,
 };

@@ -2,7 +2,7 @@ package com.phonecodex.app.domain.safeapps
 
 object SafeAppsCatalog {
 
-    val DEFAULT_PACKAGES: Set<String> = setOf(
+    val NON_OVERRIDABLE_DEFAULT_PACKAGES: Set<String> = setOf(
         "com.phonecodex.app",
         "com.android.dialer",
         "com.google.android.dialer",
@@ -12,11 +12,14 @@ object SafeAppsCatalog {
         "com.android.emergency",
         "com.android.mms",
         "com.google.android.apps.messaging",
-        "com.openai.chatgpt",
         "com.android.settings",
         "com.miui.home",
-        "com.android.systemui",
+        "com.android.systemui"
+    )
+
+    val OVERRIDABLE_DEFAULT_PACKAGES: Set<String> = setOf(
         "com.whatsapp",
+        "com.openai.chatgpt",
         // Productivity — unrelated promises must not WARN these by default.
         "com.google.android.apps.docs",
         "com.google.android.apps.docs.editors.docs",
@@ -25,6 +28,9 @@ object SafeAppsCatalog {
         "com.google.android.apps.drive",
         "com.google.android.gm"
     )
+
+    val DEFAULT_PACKAGES: Set<String> =
+        NON_OVERRIDABLE_DEFAULT_PACKAGES + OVERRIDABLE_DEFAULT_PACKAGES
 
     private val DEFAULT_LABELS: Map<String, String> = mapOf(
         "com.phonecodex.app" to "Strlix",
@@ -51,6 +57,14 @@ object SafeAppsCatalog {
 
     fun isDefaultPackage(packageName: String): Boolean {
         return packageName in DEFAULT_PACKAGES
+    }
+
+    fun isNonOverridableDefaultPackage(packageName: String): Boolean {
+        return packageName in NON_OVERRIDABLE_DEFAULT_PACKAGES
+    }
+
+    fun canExplicitBlockOverrideSafeDefault(packageName: String): Boolean {
+        return packageName in OVERRIDABLE_DEFAULT_PACKAGES
     }
 
     fun defaultLabel(packageName: String): String {

@@ -37,6 +37,20 @@ object EnforcementReasonCodes {
     const val UNKNOWN_VIDEO_APP_BLANK_TREE = "UNKNOWN_VIDEO_APP_BLANK_TREE"
     const val VIDEO_APP_DURATION_UNAVAILABLE = "VIDEO_APP_DURATION_UNAVAILABLE"
     const val ENFORCEMENT_SCOPE_ALLOW = "ENFORCEMENT_SCOPE_ALLOW"
+
+    /**
+     * Scope Semantics v1: no trusted scope for this promise (compiler returned UNRESOLVED
+     * or the legacy adapter yielded an unenforceable shape). Enforce nothing; Home
+     * shows "not protecting". Grep contract: value is append-only.
+     */
+    const val SCOPE_UNRESOLVED_NO_ENFORCE = "SCOPE_UNRESOLVED_NO_ENFORCE"
+
+    /**
+     * Scope Semantics v1: an exempt clause matched (e.g. DM inside a
+     * SOCIAL_FEED_AND_REELS_ONLY promise). Allow without touching the gates.
+     * Grep contract: value is append-only.
+     */
+    const val SCOPE_EXEMPT_ALLOW = "SCOPE_EXEMPT_ALLOW"
     const val VISION_EXPERIMENT_SKIPPED = "VISION_EXPERIMENT_SKIPPED"
     const val A11Y_BLIP_NO_LOCK = "A11Y_BLIP_NO_LOCK"
     const val MONK_ENTERTAINMENT_BLOCK = "MONK_ENTERTAINMENT_BLOCK"
@@ -62,7 +76,9 @@ object EnforcementDecisionLog {
         evidence: List<String> = emptyList(),
         activity: String? = null,
         durationSource: String? = null,
-        ruleId: String? = null
+        ruleId: String? = null,
+        scopeKind: String? = null,
+        scopeClause: String? = null
     ): String {
         val activityPart = activity?.let { " activity=$it" }.orEmpty()
         val ruleIdPart = ruleId?.let { " ruleId=$it" }.orEmpty()
@@ -77,8 +93,10 @@ object EnforcementDecisionLog {
         } else {
             " evidence=${evidence.take(4).joinToString("|")}"
         }
+        val scopeKindPart = scopeKind?.let { " scopeKind=$it" }.orEmpty()
+        val scopeClausePart = scopeClause?.let { " scopeClause=$it" }.orEmpty()
         return "pkg=$packageName surface=$surface$activityPart rule=$rule$ruleIdPart" +
-            "$durationSourcePart$countPart " +
+            "$durationSourcePart$countPart$scopeKindPart$scopeClausePart " +
             "decision=$decision code=$reasonCode reason=$reason$evidencePart"
     }
 }

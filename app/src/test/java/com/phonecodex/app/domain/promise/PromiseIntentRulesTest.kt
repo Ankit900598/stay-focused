@@ -140,6 +140,34 @@ class PromiseIntentRulesTest {
     }
 
     @Test
+    fun explicitKnownPackageBlockUnderstandsMessyWhatsappPromise() {
+        assertTrue(
+            PromiseIntentRules.explicitlyBlocksKnownPackage(
+                goal = "dp not allow to use whatsapp fo 3 days",
+                packageName = "com.whatsapp"
+            )
+        )
+        assertTrue(
+            PromiseIntentRules.explicitlyBlocksKnownPackage(
+                goal = "allow everything except whatsapp for 1 hour",
+                packageName = "com.whatsapp"
+            )
+        )
+        assertFalse(
+            PromiseIntentRules.explicitlyBlocksKnownPackage(
+                goal = "study for 30 minutes, whatsapp ok",
+                packageName = "com.whatsapp"
+            )
+        )
+        assertFalse(
+            PromiseIntentRules.explicitlyBlocksKnownPackage(
+                goal = "dp not allow to use whatsapp fo 3 days",
+                packageName = "com.android.phone"
+            )
+        )
+    }
+
+    @Test
     fun monkAndNoMovies_blockEntertainment_mediaLengthAloneDoesNot() {
         assertTrue(PromiseIntentRules.isLifestyleEntertainmentBan("monk mode for 2 hours"))
         assertTrue(PromiseIntentRules.isLifestyleEntertainmentBan("study only for 3 hours"))

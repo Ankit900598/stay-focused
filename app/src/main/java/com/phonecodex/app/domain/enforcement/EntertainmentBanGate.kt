@@ -47,11 +47,22 @@ object EntertainmentBanGate {
         dossier: AppDossier? = null
     ): Boolean = evaluate(packageName, screenText, goal, dossier) == EntertainmentBanAction.BLOCK
 
+    /**
+     * Phase 2A: scope preflight has moved to [com.phonecodex.app.domain.scope.ScopeGate],
+     * which runs in both live callers (coordinator + AccessibilityService) BEFORE
+     * this function. `enforcementScopePackages` and `contentBrands` are kept as
+     * `@Deprecated` no-op parameters so the 80+ trace callers compile unchanged.
+     * Do not re-introduce [EnforcementScopeLaw.matches] here -- see
+     * docs/scope-semantics-v1-phase2-review.md §1.3, §3.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun mustEvaluate(
         packageName: String,
         screenText: String,
         goal: String,
-        enforcementScopePackages: Collection<String>,
+        // @Deprecated: Scope handled by ScopeGate in Phase 2A. Kept for source compatibility
+        // with the 80+ existing trace callers. Do not read; ScopeGate ran upstream.
+        enforcementScopePackages: Collection<String> = emptyList(),
         contentBrands: Collection<String> = emptyList()
     ): Boolean {
         if (EntertainmentClassDetector.isMonkExemptPackage(packageName)) return false
@@ -60,16 +71,9 @@ object EntertainmentBanGate {
         ) {
             return true
         }
-        if (
-            EnforcementScopeLaw.matches(
-                packageName = packageName,
-                screenText = screenText,
-                scopePackages = enforcementScopePackages,
-                contentBrands = contentBrands
-            )
-        ) {
-            return true
-        }
+        // Scope-in verdict now comes from ScopeGate; if we got here, ScopeGate said
+        // InScope (or monk-overrode OutOfScope). Downstream logic that used to piggy-
+        // back on EnforcementScopeLaw.matches for "named scope allow" is preserved.
         return shouldOverrideNamedScopeAllow(packageName, screenText, goal)
     }
 
