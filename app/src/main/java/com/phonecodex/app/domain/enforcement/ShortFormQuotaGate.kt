@@ -220,11 +220,12 @@ class ShortFormQuotaGate(
         }
 
         val fingerprint = playFingerprint(packageName, screenText, surface)
+        val signatures = signaturesByDayKey.getOrPut(dayKey) { linkedSetOf() }
         pruneRecent(nowMillis)
         val lastSeen = recentPlayFingerprints[fingerprint]
         if (lastSeen != null && nowMillis - lastSeen < DEDUPE_WINDOW_MS) {
             val count = currentCount(dayKey)
-            val action = if (count >= limit) {
+            val action = if (count >= limit && fingerprint !in signatures) {
                 ShortFormQuotaAction.BLOCK_QUOTA_EXCEEDED
             } else {
                 ShortFormQuotaAction.ALLOW_DUPLICATE
@@ -242,18 +243,13 @@ class ShortFormQuotaGate(
             )
         }
 
-        val signatures = signaturesByDayKey.getOrPut(dayKey) { linkedSetOf() }
         val current = countsByDayKey.getOrDefault(dayKey, 0)
 
+        // A play counted today stays allowed even at the limit: plays 1..N may finish.
         if (fingerprint in signatures) {
             recentPlayFingerprints[fingerprint] = nowMillis
-            val action = if (current >= limit) {
-                ShortFormQuotaAction.BLOCK_QUOTA_EXCEEDED
-            } else {
-                ShortFormQuotaAction.ALLOW_DUPLICATE
-            }
             return ShortFormQuotaDecision(
-                action = action,
+                action = ShortFormQuotaAction.ALLOW_DUPLICATE,
                 count = current,
                 limit = limit,
                 counted = false,
@@ -400,16 +396,17 @@ class ShortFormQuotaGate(
             screenText: String,
             surface: SurfaceDetection
         ): String {
-            // Do NOT include duration/clocks — a11y thrash would double-count the same play.
-            val title = extractTitleHint(screenText)
-                ?.lowercase()
-                ?.replace(CLOCK_ANYWHERE, " ")
-                ?.replace(Regex("""\p{Cntrl}"""), " ")
-                ?.replace(Regex("""\s+"""), " ")
-                ?.trim()
-                ?.take(80)
-                .orEmpty()
-            return "$packageName|$title|${surface.surface.name}"
+            // Player chrome (pause/mute buttons, progress, counters, nav) appears and disappears
+            // on the same play; keying on it would double-count one short.
+            val text = screenText.lowercase().replace(CONTROL_CHARS, " ")
+            val handle = CHANNEL_HANDLE.find(text)?.groupValues?.get(1).orEmpty()
+            val content = PLAYER_CHROME
+                .fold(text) { acc, pattern -> acc.replace(pattern, " ") }
+                .replace(CLOCK_ANYWHERE, " ")
+                .replace(WHITESPACE, " ")
+                .trim()
+                .take(80)
+            return "$packageName|$handle|$content|${surface.surface.name}"
         }
 
         fun extractTitleHint(screenText: String): String? {
@@ -460,6 +457,33 @@ class ShortFormQuotaGate(
             "subscriptions",
             "you",
             "search"
+        )
+
+        private val CONTROL_CHARS = Regex("""\p{Cntrl}""")
+        private val WHITESPACE = Regex("""\s+""")
+        private const val HANDLE = """@[\w.\-]*[\w\-]"""
+        private val CHANNEL_HANDLE = Regex("""(?:go to channel|subscribe to)\s+($HANDLE)""")
+
+        /** Lowercased player chrome removed before keying a play; order matters (phrases before words). */
+        private val PLAYER_CHROME = listOf(
+            Regex("""(?:go to channel|subscribe to)\s+$HANDLE\.?"""),
+            Regex(HANDLE),
+            Regex("""like this video along with [\d.,]+\s*[kmb]? other people"""),
+            Regex("""view [\d.,]+\s*[kmb]? comments?"""),
+            Regex(
+                """(?:\d+ hours? )?(?:\d+ minutes? )?\d+ seconds? of (?:\d+ hours? )?(?:\d+ minutes? )?\d+ seconds?"""
+            ),
+            Regex("""subscriptions: new content is available|new content available"""),
+            Regex(
+                """see more videos using this sound|share this video|dislike this video|more actions|""" +
+                    """navigate up|action menu|hide player controls|show player controls|original audio"""
+            ),
+            Regex("""\b(?:pause|play|mute|unmute) video\b"""),
+            Regex(
+                """\b(?:play|pause|mute|unmute|subscribe|subscribed|like|liked|dislike|comments?|share|""" +
+                    """remix|save|saved|search|home|shorts|create|subscriptions|you|send|follow|following|""" +
+                    """reels?|audio)\b"""
+            )
         )
 
         private val CLOCK_ONLY = Regex("""^\d{1,2}:\d{2}(?::\d{2})?(?:\s*/\s*\d{1,2}:\d{2}(?::\d{2})?)?$""")

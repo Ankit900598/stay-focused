@@ -300,6 +300,68 @@ class ShortFormQuotaGateTest {
         assertEquals(ShortFormQuotaAction.SKIP_NOT_SHORT_PLAY, home.action)
     }
 
+    // Real YouTube Shorts accessibility text (2026-09-27 phone dumps), space-joined like collectScreenText.
+    private val ytNav = "Search More actions Home Home Shorts Shorts Create " +
+        "Subscriptions: New content is available New content available Subscriptions You You"
+    private val happyPlaying = "Go to channel @LearnwithJaspal Subscribe to @LearnwithJaspal. Be Happy! ❤️✨ " +
+        "like this video along with 6K other people View 41 comments Save Share this video Remix " +
+        "See more videos using this sound Navigate up $ytNav"
+    private val happyPaused = "$happyPlaying 0 minutes 15 seconds of 0 minutes 32 seconds"
+    private val happyResumed = "Go to channel @LearnwithJaspal Subscribe to @LearnwithJaspal. Be Happy! ❤️✨ " +
+        "like this video along with 6K other people View 41 comments Save Share this video Remix " +
+        "See more videos using this sound Navigate up Mute video $ytNav 0 minutes 18 seconds of 0 minutes 32 seconds"
+    private val happyPauseButton = "Pause video $happyPlaying"
+    private val politician = "Go to channel @RajShamani.Shorts Subscribe to @RajShamani.Shorts. " +
+        "A Politician's Craziest Demand | Abhinav Tripathi - Raj Shamani #shorts " +
+        "You Can Make Money as a Jet Broker | Abhinav Tripathi - Raj Shamani #shorts " +
+        "like this video along with 7.5K other people View 38 comments Save Share this video Remix " +
+        "See more videos using this sound $ytNav"
+    private val sameChannelOther = politician.replace("A Politician's Craziest Demand", "Why Founders Fail Early")
+
+    @Test
+    fun realShortsChrome_playPauseResume_isOnePlay() {
+        val yt = VideoPlatformRegistry.YOUTUBE
+        val keys = listOf(happyPlaying, happyPaused, happyResumed, happyPauseButton).map {
+            ShortFormQuotaGate.playFingerprint(yt, it, SurfaceDetector.detect(yt, it))
+        }
+        assertEquals(keys.toString(), 1, keys.toSet().size)
+        assertTrue(keys.first(), keys.first().contains("@learnwithjaspal") && keys.first().contains("be happy"))
+    }
+
+    @Test
+    fun realShorts_differentShortsAndSameChannelTitles_areDistinctPlays() {
+        val yt = VideoPlatformRegistry.YOUTUBE
+        fun key(t: String) = ShortFormQuotaGate.playFingerprint(yt, t, SurfaceDetector.detect(yt, t))
+        assertTrue(key(happyPlaying) != key(politician))
+        assertTrue(key(politician) != key(sameChannelOther))
+    }
+
+    @Test
+    fun pauseResumeAcrossTheDedupeWindow_countsOnce_andTheLimitShortKeepsPlaying() {
+        val yt = VideoPlatformRegistry.YOUTUBE
+        var now = 1_790_000_000_000L
+        val g = ShortFormQuotaGate(zoneId = java.time.ZoneId.of("UTC"), clock = { now })
+        assertEquals(SurfaceDetectionResult.SHORT_FORM_PLAYER, SurfaceDetector.detect(yt, politician).surface)
+        assertEquals(ShortFormQuotaAction.ALLOW_AND_COUNT, g.evaluate(yt, politician, 2).action)
+
+        now += 20_000L
+        val second = g.evaluate(yt, happyPlaying, 2)
+        assertEquals(ShortFormQuotaAction.ALLOW_AND_COUNT, second.action)
+        assertEquals(2, second.count)
+
+        for (variant in listOf(happyPaused, happyPauseButton, happyResumed, happyPlaying)) {
+            now += ShortFormQuotaGate.DEDUPE_WINDOW_MS + 1_000L
+            val d = g.evaluate(yt, variant, 2)
+            assertEquals(variant.take(40), ShortFormQuotaAction.ALLOW_DUPLICATE, d.action)
+            assertEquals(2, d.count)
+        }
+
+        now += 20_000L
+        assertEquals(ShortFormQuotaAction.BLOCK_QUOTA_EXCEEDED, g.evaluate(yt, sameChannelOther, 2).action)
+        now += 1_000L
+        assertEquals(ShortFormQuotaAction.ALLOW_DUPLICATE, g.evaluate(yt, happyPlaying, 2).action)
+    }
+
     @Test
     fun aiBlockCannotOverrideSafeAppAllow() {
         assertEquals(

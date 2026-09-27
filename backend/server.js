@@ -85,6 +85,7 @@ app.get("/health", (_req, res) => {
   const promiseCompiler = getPromiseCompilerProvider();
   res.json({
     ok: true,
+    build: process.env.STRLIX_BUILD_ID || null,
     classifier: provider
       ? {
           provider: provider.kind,
