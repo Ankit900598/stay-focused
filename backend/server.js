@@ -183,6 +183,26 @@ app.post("/compile-promise", async (req, res) => {
     const promise = body.promise;
     const selectedClarificationOptionId =
       body.selectedClarificationOptionId || body.selectedOptionId || null;
+    // Reliability design 2026-09-25 §Fix 1: turn 2 must not re-derive scope
+    // from the model. Android echoes the exact option the user tapped
+    // (label + internalPolicyPreview) and the snapshot of options shown on
+    // turn 1 so the server can verify + rematerialize deterministically.
+    // Both are optional so old clients keep working (they fail closed).
+    const selectedClarificationOptionFullText =
+      body.selectedClarificationOptionFullText &&
+      typeof body.selectedClarificationOptionFullText === "object"
+        ? body.selectedClarificationOptionFullText
+        : null;
+    const priorClarificationOptionsSnapshot = Array.isArray(
+      body.priorClarificationOptionsSnapshot
+    )
+      ? body.priorClarificationOptionsSnapshot
+      : null;
+    // Promise text the snapshot was shown for; a mismatch means the promise was edited.
+    const priorClarificationPromiseText =
+      typeof body.priorClarificationPromiseText === "string"
+        ? body.priorClarificationPromiseText
+        : undefined;
 
     if (typeof promise !== "string" || promise.trim().length === 0) {
       return res.status(400).json({
@@ -199,6 +219,9 @@ app.post("/compile-promise", async (req, res) => {
 
     const result = await compilePromise(promise, {
       selectedClarificationOptionId,
+      selectedClarificationOptionFullText,
+      priorClarificationOptionsSnapshot,
+      priorClarificationPromiseText,
     });
     return res.json(result);
   } catch (err) {

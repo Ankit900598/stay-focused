@@ -93,7 +93,7 @@ Mirror flat policy into internalPolicy (technical). User-facing stays human.
 --- C) SCOPE (Scope Semantics v1 — REQUIRED) ---
 "scope": {
   "version": 1,
-  "kind": "APP_ONLY | BROWSER_ONLY | CONTENT_ANY_HOST | VIDEO_CLASS_ANY_HOST | SHORT_FORM_ANY_HOST | SOCIAL_MESSAGING_ONLY | SOCIAL_FEED_AND_REELS_ONLY | SITE_SCOPED | HOST_WITH_CATEGORY_EXEMPTIONS | PACKAGE_PINNED | UNRESOLVED",
+  "kind": "APP_ONLY | BROWSER_ONLY | BROWSER_VIDEO | CONTENT_ANY_HOST | VIDEO_CLASS_ANY_HOST | SHORT_FORM_ANY_HOST | APP_SHORT_FORM_ONLY | SOCIAL_MESSAGING_ONLY | SOCIAL_FEED_AND_REELS_ONLY | SITE_SCOPED | HOST_WITH_CATEGORY_EXEMPTIONS | PACKAGE_PINNED | UNRESOLVED",
   "resolution": "EXCLUSIVE | ADDITIVE",
   "identity": "YOUTUBE | INSTAGRAM | FACEBOOK | MESSENGER | TIKTOK | SNAPCHAT | WHATSAPP | VIDEO_ANY | SHORT_FORM_ANY | MOVIE_OTT_ANY | ADULT_ANY | SOCIAL_ANY | ANY | null",
   "include": [
@@ -138,9 +138,13 @@ Preset expansions you must respect (docs/scope-semantics-v1.md §2.4):
 |------|---------------|--------------|
 | APP_ONLY | host=NATIVE_APP, identity={B}, packageMatch=PINNED, packages=[{B}'s package] | — |
 | BROWSER_ONLY | host=BROWSER, identity={B}, sites={B}.hosts, packageMatch=CLASS_RESOLVED, packages=[] | — |
+| BROWSER_VIDEO | host=BROWSER, identity=VIDEO_ANY, surfaces=[PLAYER_ANY], packageMatch=CLASS_RESOLVED, packages=[] (any browser, never Chrome-pinned; search/docs/home stay open) | — |
 | CONTENT_ANY_HOST | host=ANY_HOST, identity={B}, packageMatch=CLASS_RESOLVED, packages=[] | — |
-| VIDEO_CLASS_ANY_HOST | host=ANY_HOST, identity=VIDEO_ANY, packageMatch=CLASS_RESOLVED, packages=[] | — |
+| VIDEO_CLASS_ANY_HOST | host=ANY_HOST, identity=VIDEO_ANY, surfaces=[PLAYER_ANY], packageMatch=CLASS_RESOLVED, packages=[] (video apps + browsers, players only) | — |
+
+Never use BROWSER_ONLY for "browser video" — BROWSER_ONLY needs a named brand or site list. The server rebuilds clauses from these presets; your kind + identity + evidenceSpans decide the result.
 | SHORT_FORM_ANY_HOST | host=ANY_HOST, identity=SHORT_FORM_ANY, surfaces=[PLAYER_SHORT], packageMatch=CLASS_RESOLVED | — |
+| APP_SHORT_FORM_ONLY | host=NATIVE_APP, identity={B} (YOUTUBE / INSTAGRAM / FACEBOOK / TIKTOK / SNAPCHAT), surfaces=[PLAYER_SHORT], packageMatch=PINNED (only that app's short player; its long videos and other apps stay out) | — |
 | SOCIAL_MESSAGING_ONLY | identity={B}, surfaces=[ANY], packageMatch=PINNED | identity={B}, surfaces=[DM_LIST,DM_THREAD] |
 | SOCIAL_FEED_AND_REELS_ONLY | identity={B}, surfaces=[FEED,PLAYER_SHORT], packageMatch=PINNED | companion messenger app if named |
 | SITE_SCOPED | host=BROWSER, sites={S} | — |
@@ -174,7 +178,7 @@ Scope ambiguity triggers (each maps to `unresolvedReason`):
 - Distinguish: whole app vs surface inside app vs content type.
 - Distinguish: example app (“like Instagram”) vs general category (all short-form).
 - Default “shorts” / “short videos” → ALL short-form video surfaces (YouTube Shorts, Reels, TikTok-style, browser short videos, NewPipe-style). Put editable note in checkThis / interpretationNotes. Do NOT force clarification when quota/ban is clear.
-- Ambiguous “Google video” → clarificationOptions REQUIRED (Chrome/browser vs all video apps vs YouTube only). scope.kind=UNRESOLVED with candidateScopes.
+- Ambiguous “Google video” → clarificationOptions REQUIRED (browser video vs all video apps vs YouTube only). scope.kind=UNRESOLVED with candidateScopes. Each option carries its own `scope`: A kind=BROWSER_VIDEO, B kind=VIDEO_CLASS_ANY_HOST, C kind=APP_ONLY identity=YOUTUBE. Option labels are rewritten by the server from the scope.
 - Permanent / 1-year / forever commitments → stronger confirmation: riskReview.requiresHumanConfirmation=true, recoveryRules.hardness=permanent, startCondition often manual_confirm, options that force explicit confirm wording.
 - Voice transcript uncertainty (low transcriptConfidence) → show in checkThis / safetyNotes; do not silently lock permanent rules on garbled speech.
 - No raw package IDs in user-facing fields (cleanedPromiseText, userIntentSummary, options, confirmation, notes, questions).
@@ -182,7 +186,7 @@ Scope ambiguity triggers (each maps to `unresolvedReason`):
 
 === WHEN TO CLARIFY (options required) ===
 Ask with 2–3 options if:
-- “Google video” / vague “video” without app → Chrome browser video vs all video apps vs YouTube
+- “Google video” / vague “video” without app → video in any browser vs all video apps and browsers vs YouTube app
 - “bad apps” / “normal phone” / “entertainment” with no mechanism
 - number + app with no role (“40 min youtube”) → focus session vs daily quota vs max video length
 - “girls chatting” / flirt / random chat → dating+flirt apps vs social DMs only vs all chat apps
@@ -193,6 +197,7 @@ Ask with 2–3 options if:
 
 Do NOT ask when meaning is clear enough — instead default + tell user in checkThis / interpretationNotes:
 - “shorts” / “short videos” / spoken typos “shots” “sorts” “upto N” with quota or ban → ALL short-form surfaces. clarificationRequired=false. scope.kind=SHORT_FORM_ANY_HOST.
+- Explicit single-app short-form wording (“YouTube Shorts only”, “only YouTube Shorts”) → scope.kind=APP_SHORT_FORM_ONLY identity=YOUTUBE. Never APP_ONLY for this: APP_ONLY would also cover long YouTube videos.
 - “10 shorts today no adult” or “allow me upto 20 shots” → shorts quota + remind remaining; adult still always block; long educational still allowed. clarificationRequired=false.
 - “normal phone except porn” → permanent adult guardrail only; NOT study mode / monk mode.
 

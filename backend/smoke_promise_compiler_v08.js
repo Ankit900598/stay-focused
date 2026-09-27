@@ -7,8 +7,11 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const service = require("./promiseCompilerService");
+// v08-contract smoke: pinned so a v09 process env cannot change what it asserts.
+const normalizeCompiledPromise = (parsed, text, options = {}, trusted) =>
+  service.normalizeCompiledPromise(parsed, text, { promptVersion: "promise_compiler_v08", ...options }, trusted);
 const {
-  normalizeCompiledPromise,
   sanitizeUserFacingCopy,
   userFacingHasPackageLeak,
   ALLOWED_PROMPT_VERSIONS,
@@ -345,10 +348,27 @@ const beforePick = normalizeCompiledPromise(
 eq(beforePick.clarificationRequired, true, "CK-OPTION-MAP before pick clarify");
 eq(beforePick.canStartCommitment, false, "CK-OPTION-MAP before pick no start");
 
-const afterPickChrome = normalizeCompiledPromise(
+/** What Android sends on a pick: the shown options snapshot + the tapped option. */
+function pickFrom(turn1, id) {
+  const snapshot = JSON.parse(JSON.stringify(turn1.clarificationOptions || []));
+  return {
+    selectedClarificationOptionId: id,
+    priorClarificationOptionsSnapshot: snapshot,
+    selectedClarificationOptionFullText: snapshot.find((o) => o.id === id) || null,
+  };
+}
+
+const idOnlyPick = normalizeCompiledPromise(
   base(optionBase),
   "don't let me watch google video less than 30 min for 1 hour",
   { selectedClarificationOptionId: "A" }
+);
+eq(idOnlyPick.canStartCommitment, false, "CK-OPTION-MAP id-only pick cannot be verified");
+
+const afterPickChrome = normalizeCompiledPromise(
+  base(optionBase),
+  "don't let me watch google video less than 30 min for 1 hour",
+  pickFrom(beforePick, "A")
 );
 eq(afterPickChrome.clarificationRequired, false, "CK-OPTION-MAP clarify cleared");
 eq(afterPickChrome.canStartCommitment, true, "CK-OPTION-MAP start after valid pick");
@@ -376,12 +396,12 @@ check(!userFacingHasPackageLeak(userFacingBlob(afterPickChrome)), "CK-OPTION-MAP
 const afterPickAll = normalizeCompiledPromise(
   base(optionBase),
   "don't let me watch google video less than 30 min for 1 hour",
-  { selectedClarificationOptionId: "B" }
+  pickFrom(beforePick, "B")
 );
 const afterPickYt = normalizeCompiledPromise(
   base(optionBase),
   "don't let me watch google video less than 30 min for 1 hour",
-  { selectedClarificationOptionId: "C" }
+  pickFrom(beforePick, "C")
 );
 check(
   afterPickYt.scopePackages.includes("com.google.android.youtube"),
@@ -452,10 +472,11 @@ const shortsOptBase = {
     },
   ],
 };
+const shortsTurn1 = normalizeCompiledPromise(base(shortsOptBase), "shorts later maybe");
 const shortsAll = normalizeCompiledPromise(
   base(shortsOptBase),
   "shorts later maybe",
-  { selectedClarificationOptionId: "A" }
+  pickFrom(shortsTurn1, "A")
 );
 check(shortsAll.optionRematerialized, "shorts all-surfaces rematerialized");
 check(
@@ -470,7 +491,7 @@ eq(shortsAll.canStartCommitment, true, "shorts all-surfaces can start");
 const shortsYtOnly = normalizeCompiledPromise(
   base(shortsOptBase),
   "shorts later maybe",
-  { selectedClarificationOptionId: "B" }
+  pickFrom(shortsTurn1, "B")
 );
 check(
   shortsYtOnly.scopePackages.length === 1 &&

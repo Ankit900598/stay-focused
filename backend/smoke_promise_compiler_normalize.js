@@ -6,8 +6,12 @@
  * Prints ASSERTIONS_PASSED=N on success.
  */
 const assert = require("assert");
+const service = require("./promiseCompilerService");
+// Legacy-contract smoke: pinned to v07 so a v09 process env cannot change what it asserts.
+// v09 behavior is covered by smoke_scope_contract_v1.js + smoke_v09_clarification_scope.js.
+const normalizeCompiledPromise = (parsed, text, options = {}, trusted) =>
+  service.normalizeCompiledPromise(parsed, text, { promptVersion: "promise_compiler_v07", ...options }, trusted);
 const {
-  normalizeCompiledPromise,
   parseShortFormLimitFromText,
   needsCompoundIntentClarification,
   resolveCompoundCompileText,
@@ -38,6 +42,23 @@ function eq(actual, expected, message) {
 function deepEq(actual, expected, message) {
   assert.deepStrictEqual(actual, expected, message);
   ASSERTIONS += 1;
+}
+
+/** What Android sends on a pick: the shown options snapshot + the tapped option. */
+function pickFrom(turn1, id, extra = {}) {
+  const snapshot = JSON.parse(JSON.stringify(turn1.clarificationOptions || []));
+  return {
+    selectedClarificationOptionId: id,
+    priorClarificationOptionsSnapshot: snapshot,
+    selectedClarificationOptionFullText: snapshot.find((o) => o.id === id) || null,
+    ...extra,
+  };
+}
+
+/** Turn 1 shows `parsed`'s options; turn 2 picks `id` from that snapshot. */
+function pickAgainstOwnTurn1(parsed, promiseText, id) {
+  const turn1 = normalizeCompiledPromise(structuredClone(parsed), promiseText);
+  return normalizeCompiledPromise(structuredClone(parsed), promiseText, pickFrom(turn1, id));
 }
 
 function basePolicy(overrides = {}) {
@@ -407,7 +428,7 @@ const twoWorldsPicked = normalizeCompiledPromise(
     duration: { kind: "fixed", value: 4, unit: "hours", until: null },
   }),
   "allow only calculus, allow only monk 4 hrs",
-  { selectedClarificationOptionId: "A" }
+  pickFrom(twoWorlds, "A")
 );
 eq(twoWorldsPicked.canStartCommitment, true);
 eq(twoWorldsPicked.optionRematerialized, true);
@@ -680,8 +701,9 @@ check(threw, "expected invalid model to throw 502");
 check(
   PROMPT_VERSION.includes("v06") ||
     PROMPT_VERSION.includes("v07") ||
-    PROMPT_VERSION.includes("v08"),
-  `expected v06/v07/v08 prompt, got ${PROMPT_VERSION}`
+    PROMPT_VERSION.includes("v08") ||
+    PROMPT_VERSION.includes("v09"),
+  `expected v06/v07/v08/v09 prompt, got ${PROMPT_VERSION}`
 );
 
 // ========== v08: package leak strip ==========
@@ -964,7 +986,7 @@ check(
 );
 
 // Selected clarification option rematerializes enforceable scope (not preview-only)
-const afterPick = normalizeCompiledPromise(
+const afterPick = pickAgainstOwnTurn1(
   basePolicy({
     duration: { kind: "fixed", value: 1, unit: "hours", until: null },
     quotas: [{ metric: "min_item_minutes", limit: 30, period: "item" }],
@@ -995,7 +1017,7 @@ const afterPick = normalizeCompiledPromise(
     ],
   }),
   "don't let me watch google video less than 30 min for 1 hour",
-  { selectedClarificationOptionId: "A" }
+  "A"
 );
 eq(afterPick.clarificationRequired, false);
 eq(afterPick.canStartCommitment, true);
@@ -1010,7 +1032,7 @@ check(
   "Chrome stamped onto contentRules"
 );
 
-const afterPickYt = normalizeCompiledPromise(
+const afterPickYt = pickAgainstOwnTurn1(
   basePolicy({
     duration: { kind: "fixed", value: 1, unit: "hours", until: null },
     quotas: [{ metric: "min_item_minutes", limit: 30, period: "item" }],
@@ -1034,7 +1056,7 @@ const afterPickYt = normalizeCompiledPromise(
     ],
   }),
   "don't let me watch google video less than 30 min for 1 hour",
-  { selectedClarificationOptionId: "C" }
+  "C"
 );
 check(
   afterPickYt.scopePackages.includes("com.google.android.youtube") &&
@@ -1051,7 +1073,7 @@ check(
 assertNoPackageLeak(afterPickYt, "afterPickYt");
 assertNoPackageLeak(afterPick, "afterPickChrome");
 
-const noPreviewPick = normalizeCompiledPromise(
+const noPreviewPick = pickAgainstOwnTurn1(
   basePolicy({
     followUpQuestionRequired: true,
     clarificationOptions: [
@@ -1059,12 +1081,12 @@ const noPreviewPick = normalizeCompiledPromise(
     ],
   }),
   "be strict for exam mode tonight",
-  { selectedClarificationOptionId: "A" }
+  "A"
 );
 eq(noPreviewPick.canStartCommitment, false, "missing preview cannot start");
 eq(noPreviewPick.clarificationRequired, true);
 
-const shortsAllPick = normalizeCompiledPromise(
+const shortsAllPick = pickAgainstOwnTurn1(
   basePolicy({
     followUpQuestionRequired: true,
     clarificationOptions: [
@@ -1079,7 +1101,7 @@ const shortsAllPick = normalizeCompiledPromise(
     ],
   }),
   "shorts later maybe",
-  { selectedClarificationOptionId: "A" }
+  "A"
 );
 check(shortsAllPick.scopePackages.length >= 5, "shorts all-surfaces expands");
 check(shortsAllPick.optionRematerialized);
@@ -1166,7 +1188,13 @@ check(
   "checkThis must not keep unrecognized warning without invalid pick"
 );
 
-const leftoverIdNoOptions = normalizeCompiledPromise(
+// Reliability design 2026-09-25 §Fix 1: a leftover `selectedClarificationOptionId`
+// with no fresh options AND no carry-through payload MUST fail closed. This
+// used to fall into `clearGhostClarificationIfConcrete` and silently unlock
+// Start on whatever narrower scope the model happened to produce on turn 2 —
+// that is the "silently swapped to Browser videos only" bug. Never invent
+// a scope the user did not confirm.
+const leftoverIdNoOptionsNoCarryFailsClosed = normalizeCompiledPromise(
   basePolicy({
     duration: { kind: "fixed", value: 1, unit: "hours", until: null },
     clarificationRequired: true,
@@ -1181,13 +1209,174 @@ const leftoverIdNoOptions = normalizeCompiledPromise(
   messyLonger50,
   { selectedClarificationOptionId: "A" }
 );
-eq(leftoverIdNoOptions.clarificationRequired, false, "leftover id + no options + concrete");
-eq(leftoverIdNoOptions.canStartCommitment, true);
+eq(
+  leftoverIdNoOptionsNoCarryFailsClosed.canStartCommitment,
+  false,
+  "leftover id + no options + no carry-through must NOT unlock Start"
+);
+eq(
+  leftoverIdNoOptionsNoCarryFailsClosed.clarificationRequired,
+  true,
+  "leftover id + no options + no carry-through must re-clarify"
+);
+eq(
+  leftoverIdNoOptionsNoCarryFailsClosed.optionVerification,
+  "unrecognized_fail_closed",
+  "unmatched id logs unrecognized_fail_closed"
+);
 check(
-  !(leftoverIdNoOptions.cautionMessages || []).some((s) =>
+  (leftoverIdNoOptionsNoCarryFailsClosed.cautionMessages || []).some((s) =>
     /clarification choice was not recognized/i.test(s)
   ),
-  "leftover id against empty options is not an unrecognized pick"
+  "leftover id without carry-through emits unrecognized warning"
+);
+
+// Carry-through happy path: same shape, but the client echoed the exact option
+// (full text + internalPolicyPreview). Server must apply it deterministically
+// and Start must unlock without re-deriving scope from the model.
+const leftoverIdWithCarryVerifies = normalizeCompiledPromise(
+  basePolicy({
+    duration: { kind: "fixed", value: 1, unit: "hours", until: null },
+    clarificationRequired: true,
+    clarificationOptions: [],
+    allowedContent: [
+      { type: "long_form_video", description: "videos longer than 50 minutes" },
+    ],
+    blockedContent: [
+      { type: "long_form_video", description: "videos shorter than 50 minutes" },
+    ],
+  }),
+  messyLonger50,
+  {
+    selectedClarificationOptionId: "A",
+    selectedClarificationOptionFullText: {
+      id: "A",
+      label: "Videos inside Chrome / browser",
+      description: "Chrome",
+      recommended: true,
+      policyPreview: "Apply length rules in Chrome for 1 hour",
+      internalPolicyPreview: {
+        scopeKind: "chrome_browser",
+        appliesTo: "Chrome / browser video",
+        packages: [
+          { packageName: "com.android.chrome", appLabel: "Chrome" },
+        ],
+      },
+    },
+  }
+);
+eq(
+  leftoverIdWithCarryVerifies.canStartCommitment,
+  true,
+  "carry-through with internalPolicyPreview unlocks Start"
+);
+eq(
+  leftoverIdWithCarryVerifies.clarificationRequired,
+  false,
+  "carry-through clears clarification"
+);
+eq(
+  leftoverIdWithCarryVerifies.optionVerification,
+  "carried_full_text",
+  "carry-through logs carried_full_text"
+);
+check(
+  leftoverIdWithCarryVerifies.scopePackages.includes("com.android.chrome"),
+  "carry-through rematerializes the exact scope the user picked"
+);
+check(
+  !(leftoverIdWithCarryVerifies.cautionMessages || []).some((s) =>
+    /clarification choice was not recognized/i.test(s)
+  ),
+  "carry-through must not surface unrecognized warning"
+);
+
+// Snapshot fallback: no carry-through object but a matching snapshot entry.
+const leftoverIdWithSnapshotVerifies = normalizeCompiledPromise(
+  basePolicy({
+    duration: { kind: "fixed", value: 1, unit: "hours", until: null },
+    clarificationRequired: true,
+    clarificationOptions: [],
+    allowedContent: [
+      { type: "long_form_video", description: "videos longer than 50 minutes" },
+    ],
+    blockedContent: [
+      { type: "long_form_video", description: "videos shorter than 50 minutes" },
+    ],
+  }),
+  messyLonger50,
+  {
+    selectedClarificationOptionId: "A",
+    priorClarificationOptionsSnapshot: [
+      {
+        id: "A",
+        label: "All video apps and browsers",
+        description: "Apply length rules everywhere",
+        recommended: true,
+        policyPreview: "Applies to major video apps and browser video",
+        internalPolicyPreview: {
+          scopeKind: "all_video_apps",
+          appliesTo: "Major video apps and browser video",
+          packages: [
+            { packageName: "com.google.android.youtube", appLabel: "YouTube" },
+            { packageName: "com.android.chrome", appLabel: "Chrome" },
+          ],
+        },
+      },
+    ],
+  }
+);
+eq(
+  leftoverIdWithSnapshotVerifies.canStartCommitment,
+  true,
+  "snapshot verify unlocks Start"
+);
+eq(
+  leftoverIdWithSnapshotVerifies.optionVerification,
+  "snapshot_verified",
+  "snapshot fallback logs snapshot_verified"
+);
+check(
+  leftoverIdWithSnapshotVerifies.scopePackages.includes(
+    "com.google.android.youtube"
+  ),
+  "snapshot rematerialize preserves original scope"
+);
+
+// Carry-through with a MALFORMED internalPolicyPreview must fail closed —
+// never invent a fallback. Old client would still land here.
+const leftoverIdWithMalformedCarryFailsClosed = normalizeCompiledPromise(
+  basePolicy({
+    duration: { kind: "fixed", value: 1, unit: "hours", until: null },
+    clarificationRequired: true,
+    clarificationOptions: [],
+    allowedContent: [
+      { type: "long_form_video", description: "videos longer than 50 minutes" },
+    ],
+    blockedContent: [
+      { type: "long_form_video", description: "videos shorter than 50 minutes" },
+    ],
+  }),
+  messyLonger50,
+  {
+    selectedClarificationOptionId: "A",
+    selectedClarificationOptionFullText: {
+      id: "A",
+      label: "Mystery option with no preview",
+      description: "",
+      recommended: false,
+    },
+  }
+);
+eq(
+  leftoverIdWithMalformedCarryFailsClosed.canStartCommitment,
+  false,
+  "malformed carry-through preview cannot start"
+);
+eq(
+  leftoverIdWithMalformedCarryFailsClosed.optionVerification,
+  "unrecognized_fail_closed",
+  "malformed carry-through logs unrecognized_fail_closed"
 );
 
 const hallucinatedAdultOnWhatsapp = normalizeCompiledPromise(
@@ -1252,6 +1441,92 @@ check(
   ),
   "explicit adult safety promise still keeps adult guardrail copy"
 );
+
+// ========== Phone P0 2026-09-25: media-length direction never collapses to min=max ==========
+function lengthSides(dto) {
+  return dto.contentRules
+    .filter((r) => r.unit === "minutes" && r.contentType !== "usage_quota")
+    .map((r) => `${r.action}:${r.operator}:${r.value}`);
+}
+const noShorterThan30 = normalizeCompiledPromise(
+  basePolicy({
+    quotas: [{ metric: "min_item_minutes", limit: 30, period: "item" }],
+    blockedContent: [
+      { type: "short_form_video", description: "videos shorter than 30 min", apps: [] },
+    ],
+  }),
+  "do not allow videos shorter than 30 minutes for next 1 hour"
+);
+check(lengthSides(noShorterThan30).includes("BLOCK:lt:30"), "block-shorter keeps lt 30");
+check(
+  !lengthSides(noShorterThan30).some((s) => /BLOCK:gte?:/.test(s)),
+  `block-shorter must not add a max rule, got ${lengthSides(noShorterThan30)}`
+);
+
+const allowOnlyLonger30 = normalizeCompiledPromise(
+  basePolicy({
+    quotas: [{ metric: "max_item_minutes", limit: 30, period: "item" }],
+  }),
+  "allow only videos longer than 30 minutes"
+);
+check(lengthSides(allowOnlyLonger30).includes("BLOCK:lt:30"), "allow-only-longer → lt 30");
+check(
+  !lengthSides(allowOnlyLonger30).some((s) => /BLOCK:gte?:/.test(s)),
+  `allow-only-longer must not keep a max rule, got ${lengthSides(allowOnlyLonger30)}`
+);
+
+const blockLonger30 = normalizeCompiledPromise(
+  basePolicy({
+    quotas: [{ metric: "min_item_minutes", limit: 30, period: "item" }],
+  }),
+  "block videos longer than 30 minutes"
+);
+check(lengthSides(blockLonger30).includes("BLOCK:gt:30"), "block-longer → gt 30");
+check(
+  !lengthSides(blockLonger30).some((s) => /BLOCK:lte?:/.test(s)),
+  `block-longer must not keep a min rule, got ${lengthSides(blockLonger30)}`
+);
+
+const misencodedEntertainment = normalizeCompiledPromise(
+  basePolicy({
+    quotas: [{ metric: "entertainment_minutes", limit: 30, period: "session" }],
+  }),
+  "do not allow videos shorter than 30 minutes for next 1 hour"
+);
+deepEq(
+  lengthSides(misencodedEntertainment),
+  ["BLOCK:lt:30"],
+  "mis-encoded entertainment quota repaired in the promise's direction"
+);
+
+const {
+  inferMediaLengthIntent,
+  reconcileMediaLengthRules,
+} = require("./promiseCompilerService");
+deepEq(inferMediaLengthIntent("do not allow videos shorter than 30 minutes"), {
+  minBlock: 30,
+  maxBlock: null,
+  exact: false,
+});
+deepEq(inferMediaLengthIntent("allow only videos shorter than 20 min"), {
+  minBlock: null,
+  maxBlock: 20,
+  exact: false,
+});
+deepEq(inferMediaLengthIntent("only exactly 30 minutes videos"), {
+  minBlock: 30,
+  maxBlock: 30,
+  exact: true,
+});
+const silentCollision = reconcileMediaLengthRules(
+  [
+    { action: "BLOCK", operator: "lt", value: 30, unit: "minutes", contentType: "long_form_video", surface: "video" },
+    { action: "BLOCK", operator: "gt", value: 30, unit: "minutes", contentType: "long_form_video", surface: "video" },
+  ],
+  "focus for 1 hour"
+);
+eq(silentCollision.rules.length, 1, "min=max collision without text keeps one side");
+eq(silentCollision.rules[0].operator, "lt", "collision keeps block-shorter");
 
 console.log(`ASSERTIONS_PASSED=${ASSERTIONS}`);
 console.log(
