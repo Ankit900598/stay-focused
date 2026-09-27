@@ -779,11 +779,20 @@ function applyScopeContract(dto, parsed, ctx) {
     return dto;
   }
   const promiseText = ctx.promiseText;
-  dto.clarificationOptions = (dto.clarificationOptions || []).map((opt) => {
-    const { scope } = optionTypedScope(opt, promiseText, true);
-    const label = scopeOptionLabel(scope);
-    return { ...opt, scope, label: label || opt.label };
-  });
+  const seenScopes = new Set();
+  dto.clarificationOptions = (dto.clarificationOptions || [])
+    .map((opt) => {
+      const { scope } = optionTypedScope(opt, promiseText, true);
+      const label = scopeOptionLabel(scope);
+      return { ...opt, scope, label: label || opt.label };
+    })
+    .filter((opt) => {
+      const key = typedScopeFingerprint(opt.scope);
+      if (key == null) return true;
+      if (seenScopes.has(key)) return false;
+      seenScopes.add(key);
+      return true;
+    });
 
   const promiseUnchanged =
     typeof ctx.priorPromiseText === "string" &&
@@ -4187,14 +4196,9 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
 
   const shortsClarify = inferShortFormScopeClarification(promiseText);
   if (shortsClarify && !googleClarify) {
-    const optsMentionShorts = clarificationOptions.some((o) =>
-      /short-form|shorts|reels|youtube shorts/i.test(
-        `${o.label} ${o.description || ""} ${o.policyPreview || ""}`
-      )
-    );
-    if (clarificationOptions.length === 0 || !optsMentionShorts) {
-      clarificationOptions = normalizeClarificationOptions(shortsClarify.options);
-    }
+    // Server-built A/B only: model-authored shorts options carried their own typed
+    // scopes and often collapsed both choices to SHORT_FORM_ANY_HOST.
+    clarificationOptions = normalizeClarificationOptions(shortsClarify.options);
     if (!clarificationQuestion) {
       clarificationQuestion = shortsClarify.question;
     }

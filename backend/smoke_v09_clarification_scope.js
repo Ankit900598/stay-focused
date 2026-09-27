@@ -304,6 +304,33 @@ const FIXTURES = {};
     eq(r.dto.canStartCommitment, true, "shorts B: Start opens");
     FIXTURES.v09_shorts_pick_b_youtube_shorts = { promise: SHORTS, modelScope: sSnap[1].scope, dto: r.dto };
   }
+  // Hosted v09 2026-09-27: model options that mention shorts, both typed SHORT_FORM_ANY_HOST,
+  // rendered as two identical "Short videos everywhere" choices. Server A/B must win.
+  {
+    const anyShort = { version: 1, kind: "SHORT_FORM_ANY_HOST", resolution: "EXCLUSIVE", identity: "SHORT_FORM_ANY", include: [{ id: "i1", host: "ANY_HOST", identity: "SHORT_FORM_ANY", surfaces: ["PLAYER_SHORT"] }], exempt: [], evidenceSpans: ["shorts"] };
+    const modelOpts = [
+      { id: "A", label: "All short videos", description: "Shorts, Reels, TikTok everywhere.", recommended: true, scope: anyShort },
+      { id: "B", label: "Only YouTube Shorts", description: "Just YouTube Shorts.", recommended: false, scope: anyShort },
+    ];
+    const t1 = await compile(SHORTS, {}, basePolicy({ scope: UNRESOLVED, followUpQuestionRequired: true, clarificationOptions: modelOpts }));
+    const snap = t1.dto.clarificationOptions;
+    deepEq(snap.map((o) => o.label), ["Short videos everywhere", "YouTube short videos only"], "model shorts options replaced by server A/B");
+    deepEq(snap.map((o) => o.scope.kind), ["SHORT_FORM_ANY_HOST", "APP_SHORT_FORM_ONLY"], "server A/B typed scopes distinct");
+    const r = await compile(SHORTS, pickOptions(SHORTS, snap, "B"), basePolicy({ scope: UNRESOLVED }));
+    eq(scopeOf(r.dto).kind, "APP_SHORT_FORM_ONLY", "model-options turn 1 -> pick B still YouTube shorts only");
+    eq(r.dto.canStartCommitment, true, "model-options turn 1 -> pick B: Start opens");
+  }
+  // Two options resolving to the same enforceable typed scope are one choice.
+  {
+    const chrome = { version: 1, kind: "BROWSER_VIDEO", resolution: "EXCLUSIVE", identity: "VIDEO_ANY", include: [{ id: "i1", host: "ANY_BROWSER", identity: "VIDEO_ANY", surfaces: ["ANY"] }], exempt: [], evidenceSpans: ["videos"] };
+    const dupOpts = [
+      { id: "A", label: "Browser videos", description: "x", recommended: true, scope: chrome },
+      { id: "B", label: "Videos in Chrome", description: "y", recommended: false, scope: chrome },
+    ];
+    const t1 = await compile("no videos in my browser tonight", {}, basePolicy({ scope: UNRESOLVED, followUpQuestionRequired: true, clarificationOptions: dupOpts }));
+    const typed = t1.dto.clarificationOptions.filter((o) => o.scope && o.scope.kind !== "UNRESOLVED").map((o) => JSON.stringify([o.scope.kind, o.scope.identity, o.scope.include]));
+    eq(new Set(typed).size, typed.length, "no two displayed options share an enforceable typed scope");
+  }
   // New kind: canonical, and only for short-form app identities.
   {
     const ok = canonicalizeScope({ version: 1, kind: "APP_SHORT_FORM_ONLY", identity: "INSTAGRAM", include: [{ id: "i1", host: "ANY_HOST", identity: "INSTAGRAM", surfaces: ["ANY"] }], exempt: [], evidenceSpans: ["reels"] });
