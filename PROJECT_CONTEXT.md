@@ -124,6 +124,19 @@ When a hard problem appears, do not immediately patch one symptom. First ask the
 
 This current/main Codex conversation is the control room. It decides which track gets the next task, verifies outputs, keeps the north star intact, and prevents random one-off fixes.
 
+For difficult or uncertain work, use this handoff in order:
+
+1. Codex diagnoses the current code/state and defines the question to prove before proposing a fix.
+2. Claude Research investigates the hard unknown and returns evidence, alternatives, constraints, and verification criteria.
+3. Codex checks that research against the repository and product goals, then writes one cohesive implementation task.
+4. Cursor Backend (or the appropriate Cursor implementation chat) implements the validated approach and runs focused tests.
+5. After implementation, Cursor gets a separate phone-verification task with exact steps, expected outcomes, and evidence to collect.
+6. Codex independently reviews the actual diff, tests, logs, screenshots, and phone result. A “done” message alone is not proof.
+
+Skip Claude research for small, already-understood fixes, but keep independent verification. Codex owns coordination and should not send Ankit to copy technical handoffs or make routine decisions; ask him only when genuine on-device confirmation, product intent, or security approval is required.
+
+Every task must name the product horizon it advances and the user outcome it unlocks. Turn a reported bug into a reusable rule plus representative regression cases, not a one-app patch; define a measurable exit gate, and once it passes, move to the next horizon instead of reopening the same class without new evidence. Keep the full arc visible: reliable commitment runtime → conversational text/voice experience → safe, least-privilege delegated connectors and user-approved operations.
+
 ## Long-Term Direction
 
 After the core blocker is reliable, Strlix should grow toward:

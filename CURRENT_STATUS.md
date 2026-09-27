@@ -18,6 +18,26 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
+## Latest Verified Checkpoint — 2026-09-27 evening (release audit)
+
+- Full Android unit suite, forced fresh rerun at 16:03 IST on the current tree: **884 tests, 0 failures, 0 errors, 0 skipped**. No source file changed after that run. Debug APK built 16:01, SHA-256 `E0917876…7C1E6A17`; this same APK is installed on the phone.
+- All 12 backend `smoke_*.js` scripts re-run at 19:25 IST, all exit 0 (local; mock/fake endpoints, no Azure call).
+- Hosted `/health` re-checked read-only at 19:24 IST: compiler `pc-lab-astra` / **`promise_compiler_v07`**, classifier `pc-lab-terra` / `v04`, vision OFF, app secret required. **Hosted is not v09.** `/health` exposes no code revision/build id, so a deploy cannot yet be proven from it. There is no staging slot; `phonecodex-backend` is the only web app.
+- Quota phone test (daily limit 2, long educational allowed) on the 16:01 APK: passive screens PASS, distinct shorts count once PASS, play N+1 blocks PASS. **FAIL: pausing/resuming one Short counted it twice and then false-blocked it** (title hint picks up the "Pause video" label). Long lecture was allowed but via `COMMENTS`/passive, not `ALLOW_LONG_EDUCATIONAL`. Unreadable-quota handling is unit-tested only.
+- After that test the phone was restored: all 9 preference files match the pre-test backup byte-for-byte, the new quota file was deleted, **no commitment is active**, and **Accessibility is bound** (`dumpsys accessibility`; Home says Protected, no timed commitment). Evidence: `.tmp-phone-verify-20260927-quota/` (local, ignored).
+- Working tree: **73 modified + 85 untracked entries**, nothing staged, no secrets found in tracked or untracked source (keyword hits are env reads/error strings only). Local evidence folders `.tmp-*` are ignored.
+
+### Earlier checkpoint — 2026-09-27 morning
+
+- Full Android unit suite was forced to rerun: **833 tests, 0 failures, 0 errors, 0 skipped**.
+- All 12 backend `smoke_*.js` scripts passed; `smoke_scoped_app_block.js` passed 114 assertions.
+- Phone-tested a v09 Shorts-only promise using the local backend and Azure lab deployment `pc-lab-astra`: YouTube Home stayed available; the Shorts player showed the structured-surface BLOCK overlay; a regular 2:52 YouTube player stayed unobstructed. This does not prove a 40-minute lecture, Chrome, or other social apps.
+- The test session was ended through the app. Session storage is empty, all seven app rules are restored to `AI_DECIDE`, and Accessibility is bound with a fresh heartbeat.
+- Rebuilt/reinstalled the Azure-configured debug APK; installed SHA-256 matched the build. Local backend stopped and `adb reverse tcp:8787` removed.
+- Azure `/health` confirms compiler deployment `pc-lab-astra` is still on `promise_compiler_v07`; classifier is `pc-lab-terra` / `v04`. The v09 change was **not** deployed to the hosted backend.
+- At that time the working tree was **62 modified + 42 untracked** (superseded above). Local Azure/phone captures and screenshots are retained but ignored by Git.
+- A local Logcat artifact (`.tmp-phone-verify-20260925/18_D_logcat.txt`) contains password-like strings. Values were not printed; keep the file local and do not share or stage it.
+
 ## Built So Far
 
 - Android Kotlin app exists and runs on the phone.
