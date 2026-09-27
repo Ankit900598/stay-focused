@@ -25,6 +25,10 @@ local.properties
 .android-cloud-phone/
 .tmp-phone-debug/
 .tmp-azure-deploy/
+.tmp-phone-verify-*/
+.tmp-azure-*/
+.tmp-deployed-inspect-*/
+phone_screen_*.png
 
 __pycache__/
 *.pyc
