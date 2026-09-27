@@ -12,18 +12,25 @@ Do these in order before widening the tester release:
 
 1. Review and partition the existing dirty tree into coherent, tested changes. Do not stage the whole tree.
 2. The hosted `/health` endpoint already identifies compiler deployment/version: it currently reports `pc-lab-astra` / `promise_compiler_v07` and classifier `pc-lab-terra` / `v04`. Do not mistake a local v09 phone test for hosted v09 behavior.
-3. Deploy the reviewed backend change to an existing staging target, if available; do not create another Azure service just for this.
+3. Deploy the reviewed backend change to staging (`phonecodex-backend-staging`; the F1 plan has no slots).
 4. Run the same typed-scope phone flow through hosted Azure: confirmation copy, YouTube Home ALLOW, Shorts BLOCK, regular long-player ALLOW, Chrome, and safe/emergency paths.
 5. Promote only after logs prove the hosted revision/version and the phone behavior matches the preview. Preserve local v09 evidence and rollback state.
 
 Current proof (2026-09-27 19:25 IST): 884 Android unit tests pass; all 12 backend smoke scripts pass; the phone proved YouTube Home and Shorts behavior against the local v09 backend; hosted `/health` still reports `promise_compiler_v07`. Still unproven: hosted-v09 parity, a true 40-minute lecture, Chrome under this scope, and other social apps.
 
-Blockers found by the 2026-09-27 audit:
+Update 2026-09-27 night: steps 1–3 done. Commits are on branch `checkpoint/2026-09-27`; `/health` reports `build`; `phonecodex-backend-staging` (same F1 plan) runs `37ac85c` with v09. Next, in order:
 
-- **Quota false block (phone-verified):** pause/resume on one Short counts twice. Fix the title-hint/fingerprint (drop player-control labels such as "Pause video", "Play video", "Go to channel") with a trace from the phone log before any tester build that uses a shorts quota.
-- **No provable hosted revision:** `/health` has prompt version but no code revision. Add a build id (for example the deployed commit SHA via an App Setting) before the hosted run, or the gate cannot prove what was tested.
-- **No staging target:** only the production web app exists. Step 3 needs an explicit decision (see the audit's staging plan) before any deploy.
-- **Unreviewed checkpoint:** the Android tree is one interlocked compile unit; checkpoint it as a single reviewed batch, not piecemeal.
+1. **Hosted phone flow** against staging: build the APK with `strlix.backendUrl=https://phonecodex-backend-staging.azurewebsites.net` (restore `local.properties` after), `adb install -r`, re-toggle Accessibility (MIUI unbinds on reinstall), and confirm Home says Protected. Promise "Block YouTube Shorts for 1 hour", pick YouTube-only, tick confirm, Start. Record YouTube Home ALLOW, Shorts BLOCK (overlay clears on Back/Home), 40+ min lecture ALLOW (record which stage allowed it), Chrome `m.youtube.com/shorts` and an article, dialer/emergency/SMS/Accessibility settings never blocked, emergency exit, and end commitment restores rules. Do not force-stop Strlix on Xiaomi.
+2. **Quota phone re-test** on the new build: pause/resume one Short = one play; the N-th short keeps playing; N+1 blocks.
+3. Ask Ankit before promoting to production (set `PROMISE_COMPILER_PROMPT_VERSION=promise_compiler_v09` + `STRLIX_BUILD_ID`, deploy the same SHA). Then delete `phonecodex-backend-staging`.
+
+Open findings (not fixed):
+
+- A complaint-style promise ("I waste my evenings on shorts") plus a scope pick ends with a free-text question, no options, and Start closed: a dead end. Offer concrete block/limit choices instead.
+- "Block YouTube Shorts for 1 hour" still asks YouTube-only vs everywhere (the model returns UNRESOLVED). Prompt/eval track.
+- The restored 16:01 build shows "Not protecting" after an Accessibility rebind although the service is logging decisions; check the heartbeat on the current build.
+- From the quota phone test: the long lecture was allowed via passive/`COMMENTS`, not `ALLOW_LONG_EDUCATIONAL`; the "shorts remaining" overlay never showed; the card says "rest of today" but the deadline is +24h; card copy has ".," typos.
+- The Android tree is one WIP commit (`993a274`); review it before any tester build.
 
 ### Launch bar (closed APK, not Play Store)
 

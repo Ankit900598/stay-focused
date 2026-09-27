@@ -18,7 +18,20 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
-## Latest Verified Checkpoint — 2026-09-27 evening (release audit)
+## Latest Verified Checkpoint — 2026-09-27 night (hosted-v09 staging)
+
+- Branch `checkpoint/2026-09-27` (local, not pushed; `master` unchanged): `b6f799f` gitignore, `bb7611a` backend v09, `993a274` WIP Android runtime v1, `19dfea6` docs, `68c7532` quota fingerprint fix plus `/health` `build`, `37ac85c` bare-shorts options fix.
+- Quota fix (code + tests only, **not yet phone-verified**): a short is keyed by channel handle plus title with player chrome stripped, so play/pause/resume is one play; a short already counted today stays `ALLOW_DUPLICATE` at the limit, and only a new short past N blocks. Regression tests use the real 2026-09-27 YouTube dumps. **887 Android tests pass** (forced rerun), `assembleDebug` OK, 12/12 backend smokes pass.
+- `/health` now returns `build` = App Setting `STRLIX_BUILD_ID` (null when unset).
+- The plan is **F1 Free**, which allows no deployment slots. With approval, a second web app, **`phonecodex-backend-staging`**, was created on the same F1 plan (settings copied from production, Node 20, `PROMISE_COMPILER_PROMPT_VERSION=promise_compiler_v09`). It shares F1's daily CPU quota with production; delete it when the hosted gate is done.
+- Staging gate PASS: `/health` reports `build=37ac85cb3bd4…`, compiler `pc-lab-astra` / `promise_compiler_v09`, vision OFF, secret required; POST without secret -> 401. Production is unchanged: `promise_compiler_v07`, no `build`.
+- Hosted API parity (staging, real model):
+  - Found and fixed: for "I waste my evenings on shorts", 6/7 turn-1 runs showed two identical "Short videos everywhere" options (model-authored options kept, then relabeled from their own `SHORT_FORM_ANY_HOST` scope). After `37ac85c`: 3/3 runs show the server-built A (all short video) and B (YouTube short videos only).
+  - Pick B: scope matches the fixture exactly (`APP_SHORT_FORM_ONLY`, YouTube app, `PLAYER_SHORT`, pinned), `snapshot_and_carry_verified`. Start stays closed: the model treats the sentence as a complaint, not a rule, and asks a free-text block-or-warn question with no options, so the user is stuck (safe, but a UX dead end).
+  - "Block YouTube Shorts for 1 hour": always asks YouTube-only vs everywhere (extra tap); after the pick, the scope is correct and Start needs the "Confirm before Start" checkbox (the model sets `requiresHumanConfirmation`).
+- Phone: **the hosted-v09 phone flow has NOT been run.** The staging APK (`88A6E580…`) was installed briefly, then the phone was restored to the 16:01 APK (`E0917876…`). 7/9 pref files match the backup byte-for-byte; `debug_state` and `runtime_diag` differ only in live last-event fields. No commitment is active. After `install -r`, MIUI leaves Strlix Accessibility enabled but unbound; re-toggling the setting (same value) rebinds it and decisions are logged, but the restored 16:01 build's Home still says "Not protecting" (the staging build showed "Protected" after the same rebind). Tap Reconnect Accessibility on the phone if it persists.
+
+## Earlier checkpoint — 2026-09-27 evening (release audit)
 
 - Full Android unit suite, forced fresh rerun at 16:03 IST on the current tree: **884 tests, 0 failures, 0 errors, 0 skipped**. No source file changed after that run. Debug APK built 16:01, SHA-256 `E0917876…7C1E6A17`; this same APK is installed on the phone.
 - All 12 backend `smoke_*.js` scripts re-run at 19:25 IST, all exit 0 (local; mock/fake endpoints, no Azure call).
