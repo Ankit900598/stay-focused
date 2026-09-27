@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.phonecodex.app.accessibility.AccessibilityHealthChecker
+import com.phonecodex.app.data.CommitmentTeardown
 import com.phonecodex.app.data.ProtectionViolationStore
 import com.phonecodex.app.domain.model.SessionStatus
 import com.phonecodex.app.domain.protection.ProtectionHeartbeatLogic
@@ -107,9 +108,10 @@ private suspend fun pollCoreHomeState(state: HomeScreenState) {
         )
     ) {
         withContext(Dispatchers.IO) {
-            state.sessionStore.clearSession()
-            state.eventLogStore.addEvent(SessionExpiryPolicy.EXPIRED_EVENT_MESSAGE)
+            CommitmentTeardown(state.sessionStore, state.appRulesStore, state.eventLogStore::addEvent)
+                .end(CommitmentTeardown.Kind.EXPIRED, expectedSessionId = currentSession.id)
         }
+        state.appRules = withContext(Dispatchers.IO) { state.appRulesStore.getRules() }
         ProtectionHeartbeatController.stop(state.context)
         if (state.showAdvancedControls) {
             state.recentEvents = withContext(Dispatchers.IO) {

@@ -47,6 +47,19 @@ class ProtectionStatusUiModelTest {
     }
 
     @Test
+    fun accessibilityEnabledButServiceDead_showsReconnectNotTurnOn() {
+        val model = evaluate(
+            accessibilityEnabled = true,
+            accessibilityAlive = false,
+            lastEventMillis = now - 3_000_000L,
+            hasActiveCommitment = true
+        )
+        assertEquals(ProtectionReliabilityLevel.NOT_PROTECTING, model.level)
+        assertEquals("Reconnect Accessibility", model.primaryActionLabel)
+        assertTrue(model.summary.contains("not connected"))
+    }
+
+    @Test
     fun protected_collapsesDetailsAndAllowsReadyGreeting() {
         val model = evaluate(
             accessibilityEnabled = true,
@@ -70,6 +83,13 @@ class ProtectionStatusUiModelTest {
         )
         assertEquals(HomeListItem.ProtectionStatus, items[1])
         assertTrue(items.indexOf(HomeListItem.ProtectionStatus) < items.indexOf(HomeListItem.PromiseComposer))
+    }
+
+    @Test
+    fun noTimedCommitmentWarning_isHiddenWhenPermanentCommitmentExists() {
+        assertFalse(shouldShowNoActiveCommitmentWarning(false, 1))
+        assertFalse(shouldShowNoActiveCommitmentWarning(true, 0))
+        assertTrue(shouldShowNoActiveCommitmentWarning(false, 0))
     }
 
     private fun evaluate(

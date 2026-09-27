@@ -27,7 +27,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.phonecodex.app.domain.recovery.RecoveryPolicyDefaults
 import com.phonecodex.app.ui.theme.PhoneCodexTheme
 
 /**
@@ -38,7 +37,21 @@ import com.phonecodex.app.ui.theme.PhoneCodexTheme
 fun HomeScreen(modifier: Modifier = Modifier) {
     val state = rememberHomeScreenState()
     val coroutineScope = rememberCoroutineScope()
-    val recoveryPolicy = remember { RecoveryPolicyDefaults.default() }
+    state.pendingExitFriction?.takeIf { state.session != null }?.let { friction ->
+        EndCommitmentDialog(
+            friction = friction,
+            phraseError = state.exitPhraseError,
+            onConfirm = state::confirmEndCommitment,
+            onKeep = state::cancelEndCommitment
+        )
+    }
+    if (state.pendingEmergencyExit && state.session != null) {
+        EmergencyExitDialog(
+            onConfirm = state::confirmEmergencyExit,
+            onKeep = state::cancelEmergencyExit
+        )
+    }
+    val recoveryPolicy = state.recoveryPolicy
     val listState = rememberLazyListState()
     val firstRenderLogged = remember { booleanArrayOf(false) }
     val speechLauncher = rememberLauncherForActivityResult(
@@ -206,9 +219,11 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                             isLocked = state.isSessionLocked,
                             nowMillis = state.nowMillis,
                             recoveryPolicy = recoveryPolicy,
-                            onEndCommitment = state::endCommitment,
-                            onEmergencyExit = state::logEmergencyExit,
-                            onCooldownUnlock = state::logCooldownUnlock
+                            onEndCommitment = state::requestEndCommitment,
+                            emergencyExit = state.emergencyExitAvailability(),
+                            emergencyExitNextAvailable = state.emergencyExitNextAvailableAtMillis()
+                                ?.let(::formatClockTime),
+                            onEmergencyExit = state::requestEmergencyExit
                         )
                         Spacer(modifier = Modifier.height(28.dp))
                     }

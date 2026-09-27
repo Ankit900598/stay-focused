@@ -10,12 +10,14 @@ import java.time.ZoneId
  * Boundary: plays 1..N ALLOW (counted); play N+1+ BLOCK until local day ends.
  * Adult/sexual short-form BLOCK immediately and does NOT consume quota.
  * Non-player surfaces never count.
+ * Unreadable saved state BLOCKs only an active short-form play; nothing else changes.
  */
 enum class ShortFormQuotaAction {
     NONE,
     ALLOW_AND_COUNT,
     ALLOW_DUPLICATE,
     BLOCK_QUOTA_EXCEEDED,
+    BLOCK_QUOTA_UNREADABLE,
     BLOCK_ADULT,
     ALLOW_LONG_EDUCATIONAL,
     SKIP_NOT_SHORT_PLAY
@@ -23,7 +25,8 @@ enum class ShortFormQuotaAction {
 
 data class ShortFormQuotaDecision(
     val action: ShortFormQuotaAction,
-    val count: Int,
+    /** Plays counted today; null when the saved counter could not be read. */
+    val count: Int?,
     val limit: Int,
     val counted: Boolean,
     val surface: SurfaceDetectionResult,
@@ -40,6 +43,7 @@ data class ShortFormQuotaDecision(
             ShortFormQuotaAction.ALLOW_DUPLICATE,
             ShortFormQuotaAction.ALLOW_LONG_EDUCATIONAL -> "ALLOW"
             ShortFormQuotaAction.BLOCK_QUOTA_EXCEEDED,
+            ShortFormQuotaAction.BLOCK_QUOTA_UNREADABLE,
             ShortFormQuotaAction.BLOCK_ADULT -> "BLOCK"
         }
 
@@ -49,36 +53,56 @@ data class ShortFormQuotaDecision(
 }
 
 /**
- * In-memory daily counter. TODO: persist via SharedPreferences / DataStore so
- * process death does not reset mid-day quota.
+ * Daily counter keyed by local day. The live service passes
+ * [com.phonecodex.app.data.ShortFormQuotaStore] (SharedPreferences) as [ledger]; each day
+ * key is read once, then kept in memory and written back on every counted play. Replay and
+ * tests pass a fake or no ledger.
+ *
+ * Durability is best effort: the store writes with `SharedPreferences.apply()`, which is
+ * asynchronous, so if the process dies before the disk write lands the latest counted plays
+ * can be lost and the next process resumes from an older, lower count.
+ *
+ * Every save keeps `count == signatures.size` (one new distinct fingerprint per counted play).
+ * An unreadable record is re-read at most once per [UNREADABLE_RETRY_MS] per day key.
+ *
+ * The local day is derived from [zone] on every call, so a device timezone change is
+ * picked up without restarting the service. Pass [zoneId] to pin a zone in tests.
  */
 class ShortFormQuotaGate(
-    private val zoneId: ZoneId = ZoneId.systemDefault(),
+    zoneId: ZoneId? = null,
     private val clock: () -> Long = { System.currentTimeMillis() },
-    private val ledger: Ledger? = null
+    private val ledger: Ledger? = null,
+    private val zone: () -> ZoneId = if (zoneId != null) ({ zoneId }) else ({ ZoneId.systemDefault() })
 ) {
     interface Ledger {
-        fun load(dayKey: String): Pair<Int, Set<String>>
+        fun load(dayKey: String): LedgerRead
         fun save(dayKey: String, count: Int, signatures: Set<String>)
+    }
+
+    sealed interface LedgerRead {
+        data class Counted(val count: Int, val signatures: Set<String>) : LedgerRead
+        data class Unreadable(val detail: String) : LedgerRead
     }
 
     private val countsByDayKey = mutableMapOf<String, Int>()
     private val signaturesByDayKey = mutableMapOf<String, MutableSet<String>>()
     private val recentPlayFingerprints = mutableMapOf<String, Long>()
     private val hydratedKeys = mutableSetOf<String>()
+    private var lastUnreadable: Triple<String, LedgerRead.Unreadable, Long>? = null
 
     fun reset() {
         countsByDayKey.clear()
         signaturesByDayKey.clear()
         recentPlayFingerprints.clear()
         hydratedKeys.clear()
+        lastUnreadable = null
     }
 
     fun currentCount(dayKey: String = todayKey()): Int =
         countsByDayKey.getOrDefault(dayKey, 0)
 
     fun todayKey(nowMillis: Long = clock()): String =
-        java.time.Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate().toString() +
+        java.time.Instant.ofEpochMilli(nowMillis).atZone(zone()).toLocalDate().toString() +
             ":" + QUOTA_TYPE
 
     /**
@@ -100,14 +124,15 @@ class ShortFormQuotaGate(
         contentBrands: Collection<String> = emptyList()
     ): ShortFormQuotaDecision {
         val dayKey = todayKey(nowMillis)
-        hydrate(dayKey)
+        val stored = hydrate(dayKey, nowMillis)
+        val known = if (stored is LedgerRead.Counted) currentCount(dayKey) else null
         val surface = SurfaceDetector.detect(packageName, screenText)
         val titleHint = extractTitleHint(screenText)
 
         if (limit <= 0) {
             return ShortFormQuotaDecision(
                 action = ShortFormQuotaAction.NONE,
-                count = currentCount(dayKey),
+                count = known,
                 limit = limit,
                 counted = false,
                 surface = surface.surface,
@@ -121,7 +146,7 @@ class ShortFormQuotaGate(
         if (!VideoPlatformRegistry.participatesInShortFormQuota(packageName)) {
             return ShortFormQuotaDecision(
                 action = ShortFormQuotaAction.NONE,
-                count = currentCount(dayKey),
+                count = known,
                 limit = limit,
                 counted = false,
                 surface = surface.surface,
@@ -140,7 +165,7 @@ class ShortFormQuotaGate(
         ) {
             return ShortFormQuotaDecision(
                 action = ShortFormQuotaAction.ALLOW_LONG_EDUCATIONAL,
-                count = currentCount(dayKey),
+                count = known,
                 limit = limit,
                 counted = false,
                 surface = surface.surface,
@@ -154,7 +179,7 @@ class ShortFormQuotaGate(
         if (surface.surface != SurfaceDetectionResult.SHORT_FORM_PLAYER) {
             return ShortFormQuotaDecision(
                 action = ShortFormQuotaAction.SKIP_NOT_SHORT_PLAY,
-                count = currentCount(dayKey),
+                count = known,
                 limit = limit,
                 counted = false,
                 surface = surface.surface,
@@ -169,13 +194,27 @@ class ShortFormQuotaGate(
         if (isAdultSexual(screenText)) {
             return ShortFormQuotaDecision(
                 action = ShortFormQuotaAction.BLOCK_ADULT,
-                count = currentCount(dayKey),
+                count = known,
                 limit = limit,
                 counted = false,
                 surface = surface.surface,
                 durationSeconds = surface.durationSeconds,
                 dayKey = dayKey,
                 reason = "Adult/sexual short-form blocked without consuming quota",
+                titleHint = titleHint
+            )
+        }
+
+        if (stored is LedgerRead.Unreadable) {
+            return ShortFormQuotaDecision(
+                action = ShortFormQuotaAction.BLOCK_QUOTA_UNREADABLE,
+                count = null,
+                limit = limit,
+                counted = false,
+                surface = surface.surface,
+                durationSeconds = surface.durationSeconds,
+                dayKey = dayKey,
+                reason = "Saved short-form count unreadable (${stored.detail}); shorts blocked, count unknown",
                 titleHint = titleHint
             )
         }
@@ -262,13 +301,42 @@ class ShortFormQuotaGate(
         )
     }
 
-    private fun hydrate(dayKey: String) {
-        if (dayKey in hydratedKeys) return
-        ledger?.load(dayKey)?.let { (count, signatures) ->
-            countsByDayKey[dayKey] = count
-            signaturesByDayKey[dayKey] = signatures.toMutableSet()
+    /**
+     * Unreadable state is never hydrated or overwritten, so no counted play can replace it
+     * with a fabricated count. It is remembered for [UNREADABLE_RETRY_MS] so accessibility
+     * events do not re-read preferences each time; after that (or on a new day key, or if the
+     * clock moves backwards) the ledger is read again, so a repaired record recovers.
+     */
+    private fun hydrate(dayKey: String, nowMillis: Long): LedgerRead {
+        if (dayKey in hydratedKeys || ledger == null) {
+            hydratedKeys += dayKey
+            return LedgerRead.Counted(currentCount(dayKey), signaturesByDayKey[dayKey].orEmpty())
         }
-        hydratedKeys += dayKey
+        lastUnreadable?.let { (key, read, at) ->
+            if (key == dayKey && nowMillis - at in 0 until UNREADABLE_RETRY_MS) return read
+        }
+        val read = try {
+            ledger.load(dayKey)
+        } catch (e: RuntimeException) {
+            LedgerRead.Unreadable("ledger threw ${e.javaClass.simpleName}")
+        }
+        val checked = if (read is LedgerRead.Counted &&
+            (read.count < 0 || read.signatures.size > read.count)
+        ) {
+            LedgerRead.Unreadable("count=${read.count} signatures=${read.signatures.size}")
+        } else {
+            read
+        }
+        when (checked) {
+            is LedgerRead.Counted -> {
+                countsByDayKey[dayKey] = checked.count
+                signaturesByDayKey[dayKey] = checked.signatures.toMutableSet()
+                hydratedKeys += dayKey
+                lastUnreadable = null
+            }
+            is LedgerRead.Unreadable -> lastUnreadable = Triple(dayKey, checked, nowMillis)
+        }
+        return checked
     }
 
     private fun persist(dayKey: String) {
@@ -287,6 +355,7 @@ class ShortFormQuotaGate(
     companion object {
         const val QUOTA_TYPE = "short_form_video"
         const val DEDUPE_WINDOW_MS = 8_000L
+        const val UNREADABLE_RETRY_MS = 30_000L
 
         fun parseDailyShortFormLimit(goal: String): Int? {
             return ShortFormLanguage.parseLimit(goal)
@@ -335,6 +404,7 @@ class ShortFormQuotaGate(
             val title = extractTitleHint(screenText)
                 ?.lowercase()
                 ?.replace(CLOCK_ANYWHERE, " ")
+                ?.replace(Regex("""\p{Cntrl}"""), " ")
                 ?.replace(Regex("""\s+"""), " ")
                 ?.trim()
                 ?.take(80)
@@ -359,7 +429,7 @@ class ShortFormQuotaGate(
             val title = decision.titleHint?.take(40)?.let { " title=$it" }.orEmpty()
             val dur = decision.durationSeconds?.let { " durationSec=$it" }.orEmpty()
             return "ShortQuota pkg=$packageName surface=${decision.surface.name} " +
-                "count=${decision.count}/${decision.limit} " +
+                "count=${decision.count ?: "unreadable"}/${decision.limit} " +
                 "counted=${decision.counted} action=${decision.decisionName}" +
                 dur + title + " reason=${decision.reason}"
         }

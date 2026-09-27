@@ -1,0 +1,152 @@
+{
+  "promise": "Block Instagram messages only for 1 hour",
+  "response": {
+    "rawText": "Block Instagram messages only for 1 hour",
+    "cleanedPromiseText": "Block Instagram messages only for 1 hour",
+    "detectedLanguage": "en",
+    "transcriptConfidence": null,
+    "userIntentSummary": "Block Instagram messages only for 1 hour",
+    "recommendedInterpretation": null,
+    "alternativeInterpretations": [],
+    "interpretationConfidence": 0.9,
+    "ambiguityLevel": "high",
+    "clarificationRequired": true,
+    "clarificationOptions": [],
+    "userFacingConfirmation": {
+      "understood": "Review the allow and block lists below.",
+      "allowed": [],
+      "blocked": [],
+      "time": "About 60 minutes",
+      "appliesTo": "Apps and content named in your promise",
+      "checkThis": [],
+      "safetyNotes": [],
+      "understoodSummary": "Review the allow and block lists below.",
+      "allowedBullets": [],
+      "blockedBullets": [],
+      "timeWindowText": "About 60 minutes",
+      "appliesToText": "Apps and content named in your promise",
+      "hiddenInternalScope": []
+    },
+    "internalPolicy": {
+      "timeWindow": {
+        "kind": "session_fixed",
+        "minutes": 60,
+        "label": "About 60 minutes"
+      },
+      "surfaceRules": [],
+      "contentRules": [],
+      "appRules": [
+        {
+          "packageName": "com.instagram.android",
+          "label": "Instagram",
+          "behavior": "BLOCK"
+        }
+      ],
+      "quotaRules": [],
+      "recoveryRules": {
+        "hardness": "normal",
+        "requiresExplicitConfirm": false,
+        "notes": ""
+      },
+      "guardrails": []
+    },
+    "riskReview": {
+      "falseAllowRisk": "low",
+      "falseBlockRisk": "low",
+      "safetyRisk": "none",
+      "requiresHumanConfirmation": false
+    },
+    "hiddenInternalScope": [],
+    "emergencyExceptions": [],
+    "sessionDurationMinutes": 60,
+    "timeWindowKind": "session_fixed",
+    "quotaBoundary": "allow_first_n",
+    "strictness": "STRICT",
+    "allowedSummaries": [],
+    "blockedSummaries": [],
+    "conditionalSummaries": [],
+    "confirmationPreview": [],
+    "interpretationNotes": [],
+    "scopePackages": [],
+    "scopeKind": null,
+    "contentBrands": [],
+    "surfaceScope": [],
+    "contentScope": [],
+    "contentRules": [],
+    "clarificationQuestion": "What should Strlix block in Instagram? Edit the promise to say.",
+    "cautionMessages": [
+      "Strlix can't block only Instagram messages yet: it can't reliably tell messages apart from other Instagram screens. Edit the promise to block all of Instagram, or only its short videos, before Start."
+    ],
+    "source": "azure_promise_compiler",
+    "confidence": 0.9,
+    "suggestedAppRules": [
+      {
+        "packageName": "com.instagram.android",
+        "label": "Instagram",
+        "behavior": "BLOCK"
+      }
+    ],
+    "commitmentType": "focus_session",
+    "promptVersion": "promise_compiler_v09",
+    "canStartCommitment": false,
+    "isPermanentCommitment": false,
+    "requiresStrongerConfirmation": false,
+    "isStudyModeLike": false,
+    "scopeContract": "v1",
+    "scope": {
+      "version": 1,
+      "kind": "SOCIAL_MESSAGING_ONLY",
+      "resolution": "EXCLUSIVE",
+      "identity": "INSTAGRAM",
+      "include": [
+        {
+          "id": "i1",
+          "host": "ANY_HOST",
+          "identity": "INSTAGRAM",
+          "surfaces": [
+            "ANY"
+          ],
+          "sites": [],
+          "packages": [
+            "com.instagram.android"
+          ],
+          "packageMatch": "PINNED"
+        }
+      ],
+      "exempt": [
+        {
+          "id": "x1",
+          "host": "ANY_HOST",
+          "identity": "INSTAGRAM",
+          "surfaces": [
+            "DM_LIST",
+            "DM_THREAD"
+          ],
+          "sites": [],
+          "packages": [
+            "com.instagram.android"
+          ],
+          "packageMatch": "PINNED"
+        }
+      ],
+      "confidence": 0.9,
+      "appliesToText": null,
+      "unresolvedReason": null,
+      "evidenceSpans": [
+        "Instagram messages"
+      ],
+      "candidateScopes": []
+    },
+    "policyConflict": "messages_surface_unsupported",
+    "policyConflictReasons": [
+      "messages_surface_unsupported"
+    ],
+    "selectedClarificationOptionId": null,
+    "meta": {
+      "provider": "test",
+      "deployment": "test",
+      "promptVersion": "promise_compiler_v09",
+      "latencyMs": 0
+    }
+  }
+}

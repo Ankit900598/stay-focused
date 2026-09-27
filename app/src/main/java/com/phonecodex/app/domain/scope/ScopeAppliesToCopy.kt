@@ -19,13 +19,16 @@ object ScopeAppliesToCopy {
         if (scope.kind == ScopeKind.UNRESOLVED || !scope.isEnforceable) {
             return "Not set yet — finish setting up this promise."
         }
-        val identity = scope.identity ?: scope.include.firstOrNull()?.identity ?: ScopeIdentity.ANY
+        val identity = identityOf(scope)
+        // appliesToText is model prose: never rendered, so copy is identical across compiles.
         val body = when (scope.kind) {
             ScopeKind.APP_ONLY -> "the ${identityLabel(identity)} app only — the browser and other players stay untouched"
             ScopeKind.BROWSER_ONLY -> "${identityLabel(identity)} pages inside your browser — the ${identityLabel(identity)} app stays untouched"
+            ScopeKind.BROWSER_VIDEO -> "videos playing in any browser — search, docs, and normal browsing stay open"
             ScopeKind.CONTENT_ANY_HOST -> "${identityLabel(identity)} videos anywhere — the app, browser pages, and other players"
-            ScopeKind.VIDEO_CLASS_ANY_HOST -> "video everywhere — YouTube, browser video, and other video players"
+            ScopeKind.VIDEO_CLASS_ANY_HOST -> "videos playing in any video app or browser — search and normal browsing stay open"
             ScopeKind.SHORT_FORM_ANY_HOST -> "short videos everywhere — Shorts, Reels, TikTok-style clips, and short videos in your browser"
+            ScopeKind.APP_SHORT_FORM_ONLY -> "short videos in the ${identityLabel(identity)} app only — long videos and other apps stay untouched"
             ScopeKind.SOCIAL_MESSAGING_ONLY -> "${identityLabel(identity)} — messages stay open, the rest is covered"
             ScopeKind.SOCIAL_FEED_AND_REELS_ONLY -> "the ${identityLabel(identity)} feed and short videos — messaging stays open"
             ScopeKind.SITE_SCOPED -> "specific sites in your browser only"
@@ -33,8 +36,35 @@ object ScopeAppliesToCopy {
             ScopeKind.PACKAGE_PINNED -> "specific apps you named"
             ScopeKind.UNRESOLVED -> "Not set yet — finish setting up this promise."
         }
-        return sanitize(scope.appliesToText ?: body)
+        return sanitize(body)
     }
+
+    /**
+     * Clarification option label for an enforceable scope. Mirrors `scopeOptionLabel`
+     * in backend/promiseCompilerService.js so card, pick, and saved scope agree.
+     */
+    fun optionLabel(scope: EnforcementScope?): String? {
+        if (scope == null || !scope.isEnforceable) return null
+        val name = identityLabel(identityOf(scope))
+        return when (scope.kind) {
+            ScopeKind.APP_ONLY -> "$name app only"
+            ScopeKind.BROWSER_ONLY -> "$name in your browser only"
+            ScopeKind.BROWSER_VIDEO -> "Video in any browser"
+            ScopeKind.CONTENT_ANY_HOST -> "$name anywhere"
+            ScopeKind.VIDEO_CLASS_ANY_HOST -> "All video apps and browsers"
+            ScopeKind.SHORT_FORM_ANY_HOST -> "Short videos everywhere"
+            ScopeKind.APP_SHORT_FORM_ONLY -> "$name short videos only"
+            ScopeKind.SOCIAL_MESSAGING_ONLY -> "$name except messages"
+            ScopeKind.SOCIAL_FEED_AND_REELS_ONLY -> "$name feed and short videos"
+            ScopeKind.SITE_SCOPED -> "Specific sites in your browser"
+            ScopeKind.HOST_WITH_CATEGORY_EXEMPTIONS -> "Adult, movie, and video pages in your browser"
+            ScopeKind.PACKAGE_PINNED -> "Specific apps you named"
+            ScopeKind.UNRESOLVED -> null
+        }
+    }
+
+    private fun identityOf(scope: EnforcementScope): ScopeIdentity =
+        scope.identity ?: scope.include.firstOrNull()?.identity ?: ScopeIdentity.ANY
 
     /** Return `true` if the string is guaranteed free of `com.*`/`org.*`/etc. IDs. */
     fun containsPackageId(text: String): Boolean = PACKAGE_ID_REGEX.containsMatchIn(text)

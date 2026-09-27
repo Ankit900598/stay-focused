@@ -9,7 +9,10 @@ import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.StudyWorldSettings
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
 import com.phonecodex.app.domain.enforcement.ShortFormLanguage
+import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
 import com.phonecodex.app.domain.promise.ConfirmedPromiseBinder
+import com.phonecodex.app.domain.promise.EffectivePromisePolicy
+import com.phonecodex.app.domain.promise.LegacyScopeContractGuard
 import com.phonecodex.app.domain.promise.PromiseClarificationLaw
 
 /**
@@ -24,6 +27,15 @@ internal data class PromiseUnderstanding(
     val sessionTimeLabel: String,
     val allowedLabel: String,
     val blockedLabel: String,
+    /**
+     * Always-on Life Rules (e.g. "adult content" from
+     * [com.phonecodex.app.data.PermanentGuardrailsStore]) rendered as a SEPARATE
+     * UI section from [blockedLabel]. Merging them lied to the user: "do not
+     * allow WhatsApp for 10 minutes" was showing "adult content" in the same
+     * bullet list as "WhatsApp" as if the user had asked for both.
+     * Enforcement is unchanged — this is copy-only (see reliability design §Fix 3).
+     */
+    val alwaysOnLifeRules: List<String>,
     val conditionalLabel: String?,
     val strictnessLabel: String,
     val driftLabel: String,
@@ -63,11 +75,14 @@ internal data class PromiseUnderstanding(
         driftLabel,
         understoodSummary,
         strongerConfirmLabel,
-        managedApps.joinToString(", ").takeIf { it.isNotBlank() }
+        managedApps.joinToString(", ").takeIf { it.isNotBlank() },
+        alwaysOnLifeRules.joinToString(", ").takeIf { it.isNotBlank() }
     ).plus(cautions).plus(
         clarificationOptions.flatMap { listOf(it.label, it.description, it.policyPreview.orEmpty()) }
     ).joinToString("\n")
 }
+
+internal const val LEGACY_CONTRACT_STATUS_LABEL = "Needs a newer promise compiler"
 
 internal enum class UnderstandingSource {
     LOCAL_PREVIEW,
@@ -77,10 +92,14 @@ internal enum class UnderstandingSource {
 internal fun understandingStatusLabel(
     source: UnderstandingSource,
     needsClarification: Boolean,
-    requiresStrongerConfirmation: Boolean
+    requiresStrongerConfirmation: Boolean,
+    isPermanentCommitment: Boolean = false,
+    requiresOnlineCompiler: Boolean = false
 ): String = when {
     needsClarification -> "Needs one clarification"
-    requiresStrongerConfirmation -> "Permanent commitment"
+    requiresOnlineCompiler -> "Reconnect to verify this promise"
+    requiresStrongerConfirmation && isPermanentCommitment -> "Permanent commitment"
+    requiresStrongerConfirmation -> "Confirm before Start"
     source == UnderstandingSource.PROMISE_COMPILER -> "AI preview ready"
     else -> "Basic offline preview"
 }
@@ -90,7 +109,8 @@ internal fun understandingStatusDetail(
     needsClarification: Boolean,
     clarificationQuestion: String?,
     hasClarificationOptions: Boolean,
-    requiresStrongerConfirmation: Boolean
+    requiresStrongerConfirmation: Boolean,
+    requiresOnlineCompiler: Boolean = false
 ): String = when {
     needsClarification && hasClarificationOptions ->
         clarificationQuestion?.takeIf { it.isNotBlank() }
@@ -98,6 +118,8 @@ internal fun understandingStatusDetail(
     needsClarification ->
         clarificationQuestion?.takeIf { it.isNotBlank() }
             ?: "Answer the question below, then tap Understand Promise again."
+    requiresOnlineCompiler ->
+        "${BackendHealthProbe.reachabilityHint()} This promise contains a specific app, surface, or content rule. Reconnect to verify it; Start is disabled while offline."
     requiresStrongerConfirmation ->
         "Check the box below to confirm how long this lasts, then Start Commitment."
     source == UnderstandingSource.PROMISE_COMPILER ->
@@ -161,8 +183,16 @@ internal fun buildPromiseUnderstanding(
                 .filter { it.action == ContentRuleAction.BLOCK }
                 .forEach { add(ConfirmationUserCopy.describeContentRuleForUser(it, promiseText)) }
         }
-        addAll(alwaysBlockedLabels.map(::clean))
+        // NOTE: Life Rules (alwaysBlockedLabels) intentionally NOT merged here.
+        // They render as a separate section — see PromiseUnderstanding.alwaysOnLifeRules.
     }.map(::clean).filter { it.isNotBlank() }
+
+    val (effectiveAllowed, effectiveBlocked) = reconcileWithEffectivePolicy(draft, allowed, blocked)
+
+    // Life Rules (permanent guardrails) live in their own section so a promise
+    // like "do not allow whatsapp for 10 minutes" doesn't lie by saying it also
+    // blocks adult content as part of *this* promise. Enforcement is unchanged.
+    val alwaysOnLifeRules = alwaysBlockedLabels.map(::clean).filter { it.isNotBlank() }.distinct()
 
     val conditionalRaw = ConfirmationUserCopy.stripAppliesToLines(
         draft.conditionalSummaries.ifEmpty {
@@ -193,10 +223,16 @@ internal fun buildPromiseUnderstanding(
         .filter { it.isNotBlank() }
         .distinct()
 
+    // A recognized pick that the compiler/law accepted: the question is answered, so the
+    // card must stop rendering it and the A/B/C list.
+    val clarificationResolved = !selectedClarificationOptionId.isNullOrBlank() &&
+        !draft.clarificationRequired &&
+        (draft.canStartCommitment == true || draft.requiresStrongerConfirmation)
     val clarification = draft.clarificationQuestion
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf { it.isNotBlank() && !clarificationResolved }
         ?.let(::clean)
-    val options = draft.clarificationOptions.map { option ->
+    val sourceOptions = if (clarificationResolved) emptyList() else draft.clarificationOptions
+    val options = sourceOptions.map { option ->
         ClarificationOption(
             id = option.id,
             // A label that sanitizes to blank (e.g. raw package ID) must stay tappable.
@@ -212,7 +248,9 @@ internal fun buildPromiseUnderstanding(
     val ghostClarify = draft.clarificationRequired &&
         !hasRenderableClarify &&
         PromiseClarificationLaw.isConcreteClockPolicy(draft)
-    val needsClarification = !ghostClarify && (draft.needsClarification || needsOptionPick)
+    val needsClarification = !ghostClarify &&
+        !clarificationResolved &&
+        (draft.needsClarification || needsOptionPick)
     val requiresStrongerConfirm = draft.requiresStrongerConfirmation
     val strongerConfirmLabel = if (requiresStrongerConfirm) {
         strongerConfirmationLabel(draft)
@@ -227,6 +265,12 @@ internal fun buildPromiseUnderstanding(
         strongerConfirmAcknowledged = strongerConfirmAcknowledged,
         ghostClarify = ghostClarify
     )
+    val requiresOnlineCompiler = source == UnderstandingSource.LOCAL_PREVIEW &&
+        requiresOnlineCompilerForSafeStart(draft)
+    // Offline, a version gap is answered by reconnecting, not by a clarification question.
+    val needsClarificationForStatus = needsClarification &&
+        !(requiresOnlineCompiler && draft.legacyContractGap != null &&
+            !draft.copy(legacyContractGap = null).needsClarification)
     val quotaLimit = ShortFormLanguage.parseLimit(promiseText)
     val understood = draft.understoodSummary?.let(::clean)?.takeIf { it.isNotBlank() }
         .let { summary ->
@@ -246,8 +290,9 @@ internal fun buildPromiseUnderstanding(
         sessionTimeLabel = draft.userFacingTime?.let(::clean)
             ?.takeIf { it.isNotBlank() }
             ?: formatDuration(draft.sessionDurationMinutes),
-        allowedLabel = joinForDisplay(allowed).ifEmpty { "Anything that fits this promise" },
-        blockedLabel = joinForDisplay(blocked).ifEmpty { "Whatever pulls you away" },
+        allowedLabel = joinForDisplay(effectiveAllowed).ifEmpty { "Anything that fits this promise" },
+        blockedLabel = joinForDisplay(effectiveBlocked).ifEmpty { "Whatever pulls you away" },
+        alwaysOnLifeRules = alwaysOnLifeRules,
         conditionalLabel = joinForDisplay(conditionalRaw).ifEmpty { null },
         strictnessLabel = strictnessLabel(draft.strictness),
         driftLabel = driftLabel(draft.strictness, threshold),
@@ -263,20 +308,67 @@ internal fun buildPromiseUnderstanding(
         cautions = cautions,
         canStart = canStart,
         source = source,
-        statusLabel = understandingStatusLabel(
+        statusLabel = if (draft.legacyContractGap != null && !requiresOnlineCompiler) {
+            LEGACY_CONTRACT_STATUS_LABEL
+        } else {
+            understandingStatusLabel(
+                source = source,
+                needsClarification = needsClarificationForStatus,
+                requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged,
+                isPermanentCommitment = draft.isPermanentCommitment,
+                requiresOnlineCompiler = requiresOnlineCompiler
+            )
+        },
+        statusDetail = if (draft.legacyContractGap != null && !requiresOnlineCompiler) {
+            LegacyScopeContractGuard.START_BLOCKED_COPY
+        } else understandingStatusDetail(
             source = source,
-            needsClarification = needsClarification,
-            requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged
-        ),
-        statusDetail = understandingStatusDetail(
-            source = source,
-            needsClarification = needsClarification,
+            needsClarification = needsClarificationForStatus,
             clarificationQuestion = clarification,
             hasClarificationOptions = hasOptions,
-            requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged
+            requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged,
+            requiresOnlineCompiler = requiresOnlineCompiler
         )
     )
 }
+
+/**
+ * The card must describe what Start saves: a surface-only block reads "YouTube Shorts",
+ * never bare "YouTube"; an app blocked whole never also appears as allowed.
+ */
+private fun reconcileWithEffectivePolicy(
+    draft: FocusPromise,
+    allowed: List<String>,
+    blocked: List<String>
+): Pair<List<String>, List<String>> {
+    val narrow = EffectivePromisePolicy.narrowShortFormBlocks(draft).map { rule ->
+        val pkg = rule.packageName!!
+        val label = rule.appLabel
+            ?: draft.suggestedAppRules.firstOrNull { it.packageName == pkg }?.label
+            ?: VideoPlatformRegistry.entry(pkg)?.label
+            ?: pkg
+        label to EffectivePromisePolicy.shortFormSurfaceLabel(pkg, label)
+    }
+    var effectiveBlocked = blocked.filter { line -> narrow.none { (label, _) -> isBareAppLine(line, label) } }
+    narrow.forEach { (_, surfaceLabel) ->
+        if (effectiveBlocked.none { it.contains(surfaceLabel, ignoreCase = true) }) {
+            effectiveBlocked = effectiveBlocked + surfaceLabel
+        }
+    }
+    val wholeLabels = draft.suggestedAppRules
+        .filter { it.behavior == AppRuleBehavior.BLOCK }
+        .map { it.label }
+    val effectiveAllowed = allowed.filter { line ->
+        wholeLabels.none { label ->
+            Regex("""\b${Regex.escape(label)}\b""", RegexOption.IGNORE_CASE).containsMatchIn(line)
+        }
+    }
+    return effectiveAllowed to effectiveBlocked
+}
+
+private fun isBareAppLine(line: String, label: String): Boolean =
+    Regex("""^(?:all\s+of\s+|the\s+)?${Regex.escape(label)}(?:\s+app)?\.?$""", RegexOption.IGNORE_CASE)
+        .matches(line.trim())
 
 private fun computeCanStart(
     draft: FocusPromise,
@@ -286,6 +378,10 @@ private fun computeCanStart(
     strongerConfirmAcknowledged: Boolean,
     ghostClarify: Boolean
 ): Boolean {
+    if (draft.legacyContractGap != null) return false
+    if (source == UnderstandingSource.LOCAL_PREVIEW && requiresOnlineCompilerForSafeStart(draft)) {
+        return false
+    }
     // Fail-closed: unanswered A/B/C never Starts.
     if (needsOptionPick) return false
     // Concrete clocks + no options: never keep the user locked on a ghost flag.
@@ -315,6 +411,15 @@ private fun computeCanStart(
     // Local offline preview: legacy question gate only.
     return !draft.needsClarification
 }
+
+private fun requiresOnlineCompilerForSafeStart(draft: FocusPromise): Boolean =
+    draft.contentRules.isNotEmpty() ||
+        draft.contentBrands.isNotEmpty() ||
+        draft.surfaceScope.isNotEmpty() ||
+        draft.contentScope.isNotEmpty() ||
+        !draft.scopeKind.isNullOrBlank() ||
+        draft.enforcementScope != null ||
+        draft.unrepresentableAppScopes.isNotEmpty()
 
 private fun strongerConfirmationLabel(draft: FocusPromise): String {
     val duration = formatDuration(draft.sessionDurationMinutes)
@@ -395,6 +500,8 @@ internal fun startDisabledMessage(understanding: PromiseUnderstanding): String =
     understanding.requiresStrongerConfirmation &&
         !understanding.strongerConfirmAcknowledged ->
         "Start Commitment stays off until you confirm how long this lasts."
+    understanding.statusLabel == "Reconnect to verify this promise" ->
+        "Reconnect to verify this promise before starting."
     !understanding.clarificationQuestion.isNullOrBlank() ->
         "Start Commitment is unavailable until you answer the clarification. " +
             "Edit the promise, then tap Understand Promise again."
@@ -419,5 +526,5 @@ internal fun applyFocusPromiseDraft(
     if (!ConfirmedPromiseBinder.hasStructuredMediaRule(stored)) {
         android.util.Log.i("PhoneCodexPromiseStart", audit.missingStructuredMediaLine())
     }
-    return bound
+    return ConfirmedPromiseBinder.reflectStoredScopeIntegrity(bound, stored)
 }

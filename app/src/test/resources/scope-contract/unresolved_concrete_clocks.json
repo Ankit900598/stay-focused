@@ -1,0 +1,353 @@
+{
+  "promise": "No Google video shorter than 30 min for 1 hour",
+  "modelScope": {
+    "version": 1,
+    "kind": "UNRESOLVED",
+    "unresolvedReason": "HOST_AMBIGUOUS",
+    "evidenceSpans": [
+      "Google video"
+    ]
+  },
+  "response": {
+    "rawText": "No Google video shorter than 30 min for 1 hour",
+    "cleanedPromiseText": "No Google video shorter than 30 min for 1 hour",
+    "detectedLanguage": "en",
+    "transcriptConfidence": null,
+    "userIntentSummary": "No Google video shorter than 30 min for 1 hour",
+    "recommendedInterpretation": null,
+    "alternativeInterpretations": [],
+    "interpretationConfidence": 0.95,
+    "ambiguityLevel": "high",
+    "clarificationRequired": true,
+    "clarificationOptions": [
+      {
+        "id": "A",
+        "label": "Video in any browser",
+        "description": "Apply the time and length rules to videos you open in Chrome or browser pages.",
+        "recommended": true,
+        "policyPreview": "Browser/Chrome video follows your length and time rules; other apps unchanged unless named.",
+        "resultingPolicyPreview": "Browser/Chrome video follows your length and time rules; other apps unchanged unless named.",
+        "internalPolicyPreview": {
+          "scopeKind": "chrome_browser",
+          "appliesTo": "Chrome / browser video",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.android.chrome",
+              "appLabel": "Chrome"
+            }
+          ],
+          "scopePackages": [
+            "com.android.chrome"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "BROWSER_VIDEO",
+          "resolution": "EXCLUSIVE",
+          "identity": "VIDEO_ANY",
+          "include": [
+            {
+              "id": "i1",
+              "host": "BROWSER",
+              "identity": "VIDEO_ANY",
+              "surfaces": [
+                "PLAYER_ANY"
+              ],
+              "sites": [],
+              "packages": [],
+              "packageMatch": "CLASS_RESOLVED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 1,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Google video"
+          ],
+          "candidateScopes": []
+        }
+      },
+      {
+        "id": "B",
+        "label": "All video apps and browsers",
+        "description": "Apply the same rules across YouTube-style apps, browser video, and similar video apps.",
+        "recommended": false,
+        "policyPreview": "All major video apps and browser video follow your length and time rules.",
+        "resultingPolicyPreview": "All major video apps and browser video follow your length and time rules.",
+        "internalPolicyPreview": {
+          "scopeKind": "all_video_apps",
+          "appliesTo": "Major video apps and browser video",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.google.android.youtube",
+              "appLabel": "YouTube"
+            },
+            {
+              "packageName": "org.schabi.newpipe",
+              "appLabel": "NewPipe"
+            },
+            {
+              "packageName": "com.android.chrome",
+              "appLabel": "Chrome"
+            },
+            {
+              "packageName": "com.vanced.android.youtube",
+              "appLabel": "YouTube Vanced"
+            }
+          ],
+          "scopePackages": [
+            "com.google.android.youtube",
+            "org.schabi.newpipe",
+            "com.android.chrome",
+            "com.vanced.android.youtube"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "VIDEO_CLASS_ANY_HOST",
+          "resolution": "EXCLUSIVE",
+          "identity": "VIDEO_ANY",
+          "include": [
+            {
+              "id": "i1",
+              "host": "ANY_HOST",
+              "identity": "VIDEO_ANY",
+              "surfaces": [
+                "PLAYER_ANY"
+              ],
+              "sites": [],
+              "packages": [],
+              "packageMatch": "CLASS_RESOLVED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 1,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Google video"
+          ],
+          "candidateScopes": []
+        }
+      },
+      {
+        "id": "C",
+        "label": "YouTube app only",
+        "description": "Limit the rules to the YouTube app only.",
+        "recommended": false,
+        "policyPreview": "Only YouTube follows these rules for this commitment.",
+        "resultingPolicyPreview": "Only YouTube follows these rules for this commitment.",
+        "internalPolicyPreview": {
+          "scopeKind": "youtube_only",
+          "appliesTo": "YouTube only",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.google.android.youtube",
+              "appLabel": "YouTube"
+            }
+          ],
+          "scopePackages": [
+            "com.google.android.youtube"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "APP_ONLY",
+          "resolution": "EXCLUSIVE",
+          "identity": "YOUTUBE",
+          "include": [
+            {
+              "id": "i1",
+              "host": "NATIVE_APP",
+              "identity": "YOUTUBE",
+              "surfaces": [
+                "ANY"
+              ],
+              "sites": [],
+              "packages": [
+                "com.google.android.youtube"
+              ],
+              "packageMatch": "PINNED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 1,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Google video"
+          ],
+          "candidateScopes": []
+        }
+      }
+    ],
+    "userFacingConfirmation": {
+      "understood": "Blocked: video → BLOCK",
+      "allowed": [],
+      "blocked": [
+        "video → BLOCK",
+        "videos shorter than 30 min → BLOCK"
+      ],
+      "time": "About 60 minutes",
+      "appliesTo": "Apps and content named in your promise",
+      "checkThis": [],
+      "safetyNotes": [],
+      "understoodSummary": "Blocked: video → BLOCK",
+      "allowedBullets": [],
+      "blockedBullets": [
+        "video → BLOCK",
+        "videos shorter than 30 min → BLOCK"
+      ],
+      "timeWindowText": "About 60 minutes",
+      "appliesToText": "Apps and content named in your promise",
+      "hiddenInternalScope": []
+    },
+    "internalPolicy": {
+      "timeWindow": {
+        "kind": "session_fixed",
+        "minutes": 60,
+        "label": "About 60 minutes"
+      },
+      "surfaceRules": [
+        {
+          "surface": "any",
+          "action": "BLOCK",
+          "note": ""
+        },
+        {
+          "surface": "video",
+          "action": "BLOCK",
+          "note": "videos shorter than 30 min"
+        }
+      ],
+      "contentRules": [
+        {
+          "appLabel": null,
+          "packageName": null,
+          "surface": "any",
+          "contentType": "video",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "BLOCK",
+          "description": ""
+        },
+        {
+          "appLabel": null,
+          "packageName": null,
+          "surface": "video",
+          "contentType": "long_form_video",
+          "operator": "lt",
+          "value": 30,
+          "unit": "minutes",
+          "action": "BLOCK",
+          "description": "videos shorter than 30 min"
+        }
+      ],
+      "appRules": [],
+      "quotaRules": [],
+      "recoveryRules": {
+        "hardness": "normal",
+        "requiresExplicitConfirm": false,
+        "notes": ""
+      },
+      "guardrails": []
+    },
+    "riskReview": {
+      "falseAllowRisk": "medium",
+      "falseBlockRisk": "low",
+      "safetyRisk": "none",
+      "requiresHumanConfirmation": true
+    },
+    "hiddenInternalScope": [],
+    "emergencyExceptions": [],
+    "sessionDurationMinutes": 60,
+    "timeWindowKind": "session_fixed",
+    "quotaBoundary": "allow_first_n",
+    "strictness": "STRICT",
+    "allowedSummaries": [],
+    "blockedSummaries": [
+      "video → BLOCK",
+      "videos shorter than 30 min → BLOCK"
+    ],
+    "conditionalSummaries": [],
+    "confirmationPreview": [
+      "Blocked: video → BLOCK",
+      "Blocked: videos shorter than 30 min → BLOCK"
+    ],
+    "interpretationNotes": [],
+    "scopePackages": [],
+    "scopeKind": null,
+    "contentBrands": [],
+    "surfaceScope": [],
+    "contentScope": [],
+    "contentRules": [
+      {
+        "appLabel": null,
+        "packageName": null,
+        "surface": "any",
+        "contentType": "video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": ""
+      },
+      {
+        "appLabel": null,
+        "packageName": null,
+        "surface": "video",
+        "contentType": "long_form_video",
+        "operator": "lt",
+        "value": 30,
+        "unit": "minutes",
+        "action": "BLOCK",
+        "description": "videos shorter than 30 min"
+      }
+    ],
+    "clarificationQuestion": "What should I cover for ‘Google video’? Videos inside Chrome/Google search, all video apps, or only YouTube?",
+    "cautionMessages": [
+      "AI interpretation was treated as uncertain, so confirmation is required.",
+      "“Google video” is ambiguous — pick Chrome, all video apps, or YouTube before Start."
+    ],
+    "source": "azure_promise_compiler",
+    "confidence": 0.95,
+    "suggestedAppRules": [],
+    "commitmentType": "focus_session",
+    "promptVersion": "promise_compiler_v07",
+    "canStartCommitment": false,
+    "isPermanentCommitment": false,
+    "requiresStrongerConfirmation": false,
+    "isStudyModeLike": false,
+    "scopeContract": "v1",
+    "scope": {
+      "version": 1,
+      "kind": "UNRESOLVED",
+      "resolution": "EXCLUSIVE",
+      "identity": null,
+      "include": [],
+      "exempt": [],
+      "confidence": 0,
+      "appliesToText": null,
+      "unresolvedReason": "HOST_AMBIGUOUS",
+      "evidenceSpans": [
+        "Google video"
+      ],
+      "candidateScopes": []
+    },
+    "followUpQuestionRequired": true
+  }
+}

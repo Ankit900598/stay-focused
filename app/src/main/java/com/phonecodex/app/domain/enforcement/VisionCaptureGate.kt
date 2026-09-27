@@ -102,9 +102,11 @@ object VisionCaptureGate {
     private val PROVEN_BLOCK_CODES = setOf(
         EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX,
         EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN,
+        EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN,
         EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL,
         EnforcementReasonCodes.QUOTA_BLOCK_EXCEEDED,
         EnforcementReasonCodes.QUOTA_BLOCK_ADULT,
+        EnforcementReasonCodes.QUOTA_BLOCK_STATE_UNREADABLE,
         EnforcementReasonCodes.UNKNOWN_VIDEO_APP_BLANK_TREE,
         EnforcementReasonCodes.APP_RULE_BLOCK,
         EnforcementReasonCodes.CONTENT_SIGNAL_BLOCK,

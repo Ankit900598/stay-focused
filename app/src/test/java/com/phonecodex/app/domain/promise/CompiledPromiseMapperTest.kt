@@ -252,7 +252,9 @@ class CompiledPromiseMapperTest {
             source = UnderstandingSource.LOCAL_PREVIEW
         )
         assertTrue(ui.cautions.any { it.contains("Basic offline preview", ignoreCase = true) })
-        assertEquals("Basic offline preview", ui.statusLabel)
+        assertEquals("Reconnect to verify this promise", ui.statusLabel)
+        assertFalse(ui.canStart)
+        assertTrue(ui.statusDetail.contains("Start is disabled while offline"))
         assertTrue(ui.statusDetail.contains(BackendHealthProbe.reachabilityHint(), ignoreCase = true))
     }
 
@@ -646,6 +648,34 @@ class CompiledPromiseMapperTest {
         assertTrue(scope.contains("com.instagram.android"))
         assertEquals(false, draft.clarificationRequired)
         assertEquals(true, draft.canStartCommitment)
+    }
+
+    @Test
+    fun contentFreeAllowRuleIsDropped_blockAndRealAllowSurvive() {
+        val json = """
+            {
+              "rawText": "block videos longer than 30 minutes",
+              "sessionDurationMinutes": 60,
+              "strictness": "STRICT",
+              "contentRules": [
+                {"action": "ALLOW", "contentType": "other", "surface": "any"},
+                {"action": "BLOCK", "contentType": "other", "surface": "any"},
+                {"action": "BLOCK", "contentType": "long_form_video", "surface": "video",
+                 "operator": "gt", "value": 30, "unit": "minutes"},
+                {"action": "ALLOW", "appLabel": "YouTube", "contentType": "other", "surface": "any"}
+              ]
+            }
+        """.trimIndent()
+        val draft = CompiledPromiseMapper.toFocusPromise(CompiledPromiseResponseParser.parse(json)!!)
+
+        assertEquals(3, draft.contentRules.size)
+        assertFalse(
+            draft.contentRules.any {
+                it.action == ContentRuleAction.ALLOW && it.appLabel == null && it.operator == null
+            }
+        )
+        assertTrue(draft.contentRules.any { it.action == ContentRuleAction.BLOCK && it.value == null })
+        assertTrue(draft.contentRules.any { it.action == ContentRuleAction.BLOCK && it.value == 30 })
     }
 }
 

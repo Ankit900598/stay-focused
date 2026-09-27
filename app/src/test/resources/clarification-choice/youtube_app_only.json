@@ -1,0 +1,234 @@
+{
+  "rawText": "do not allow videos shorter than 30 minutes for next 1 hour",
+  "cleanedPromiseText": "do not allow videos shorter than 30 minutes for next 1 hour",
+  "detectedLanguage": "en",
+  "transcriptConfidence": null,
+  "userIntentSummary": "do not allow videos shorter than 30 minutes for next 1 hour",
+  "recommendedInterpretation": "Only the YouTube app follows the length rule.",
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.9,
+  "ambiguityLevel": "low",
+  "clarificationRequired": false,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "All video apps and browsers",
+      "description": "Apply the limit wherever you watch videos.",
+      "recommended": true,
+      "policyPreview": "For one hour, block videos shorter than 30 minutes across video apps and browsers.",
+      "resultingPolicyPreview": "For one hour, block videos shorter than 30 minutes across video apps and browsers.",
+      "internalPolicyPreview": {
+        "scopeKind": "all_video_apps",
+        "appliesTo": "Major video apps and browser video",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          },
+          {
+            "packageName": "org.schabi.newpipe",
+            "appLabel": "NewPipe"
+          },
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          },
+          {
+            "packageName": "com.vanced.android.youtube",
+            "appLabel": "YouTube Vanced"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube",
+          "org.schabi.newpipe",
+          "com.android.chrome",
+          "com.vanced.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    },
+    {
+      "id": "B",
+      "label": "Browser video only",
+      "description": "Only videos opened in Chrome or other browsers.",
+      "recommended": false,
+      "policyPreview": "Only browser video follows the length rule.",
+      "resultingPolicyPreview": "Only browser video follows the length rule.",
+      "internalPolicyPreview": {
+        "scopeKind": "chrome_browser",
+        "appliesTo": "Chrome / browser video",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          }
+        ],
+        "scopePackages": [
+          "com.android.chrome"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    },
+    {
+      "id": "C",
+      "label": "YouTube app only",
+      "description": "Only the YouTube app.",
+      "recommended": false,
+      "policyPreview": "Only the YouTube app follows the length rule.",
+      "resultingPolicyPreview": "Only the YouTube app follows the length rule.",
+      "internalPolicyPreview": {
+        "scopeKind": "youtube_only",
+        "appliesTo": "YouTube only",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "I understood: block videos shorter than 30 minutes for the next hour.",
+    "allowed": [],
+    "blocked": [
+      "videos shorter than 30 min → BLOCK"
+    ],
+    "time": "About 60 minutes",
+    "appliesTo": "YouTube only",
+    "checkThis": [],
+    "safetyNotes": [],
+    "understoodSummary": "I understood: block videos shorter than 30 minutes for the next hour.",
+    "allowedBullets": [],
+    "blockedBullets": [
+      "videos shorter than 30 min → BLOCK"
+    ],
+    "timeWindowText": "About 60 minutes",
+    "appliesToText": "YouTube only",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "session_fixed",
+      "minutes": 60,
+      "label": "About 60 minutes"
+    },
+    "surfaceRules": [
+      {
+        "surface": "video",
+        "action": "BLOCK",
+        "note": "videos shorter than 30 min",
+        "packageName": "com.google.android.youtube"
+      }
+    ],
+    "contentRules": [
+      {
+        "appLabel": "YouTube",
+        "packageName": "com.google.android.youtube",
+        "surface": "video",
+        "contentType": "long_form_video",
+        "operator": "lt",
+        "value": 30,
+        "unit": "minutes",
+        "action": "BLOCK",
+        "description": "videos shorter than 30 min"
+      }
+    ],
+    "appRules": [
+      {
+        "packageName": "com.google.android.youtube",
+        "label": "YouTube",
+        "behavior": "ALLOW"
+      }
+    ],
+    "quotaRules": [],
+    "recoveryRules": {
+      "hardness": "normal",
+      "requiresExplicitConfirm": false,
+      "notes": ""
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "low",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": false
+  },
+  "hiddenInternalScope": [
+    "com.google.android.youtube"
+  ],
+  "emergencyExceptions": [],
+  "sessionDurationMinutes": 60,
+  "timeWindowKind": "session_fixed",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "STRICT",
+  "allowedSummaries": [],
+  "blockedSummaries": [
+    "videos shorter than 30 min → BLOCK"
+  ],
+  "conditionalSummaries": [
+    "Applies to: YouTube only"
+  ],
+  "confirmationPreview": [
+    "Blocked: videos shorter than 30 min → BLOCK"
+  ],
+  "interpretationNotes": [],
+  "scopePackages": [
+    "com.google.android.youtube"
+  ],
+  "scopeKind": "youtube_app_only",
+  "contentBrands": [],
+  "surfaceScope": [],
+  "contentScope": [],
+  "contentRules": [
+    {
+      "appLabel": "YouTube",
+      "packageName": "com.google.android.youtube",
+      "surface": "video",
+      "contentType": "long_form_video",
+      "operator": "lt",
+      "value": 30,
+      "unit": "minutes",
+      "action": "BLOCK",
+      "description": "videos shorter than 30 min"
+    }
+  ],
+  "clarificationQuestion": "Which of these matches what you meant?",
+  "cautionMessages": [
+    "Using your choice: YouTube app only"
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.9,
+  "suggestedAppRules": [
+    {
+      "packageName": "com.google.android.youtube",
+      "label": "YouTube",
+      "behavior": "ALLOW"
+    }
+  ],
+  "commitmentType": "focus_session",
+  "promptVersion": "promise_compiler_v07",
+  "canStartCommitment": true,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": false,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "C",
+  "optionRematerialized": true,
+  "optionScopeKind": "youtube_only",
+  "optionVerification": "snapshot_and_carry_verified",
+  "optionVerificationReason": "snapshot_and_carry_verified"
+}

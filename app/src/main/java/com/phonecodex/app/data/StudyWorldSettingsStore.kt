@@ -1,17 +1,20 @@
 package com.phonecodex.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
 import com.phonecodex.app.domain.model.StudyWorldSettings
+import com.phonecodex.app.domain.promise.BlockedSurfaceCodec
+import com.phonecodex.app.domain.scope.StoredScopeCodec
 
-class StudyWorldSettingsStore(context: Context) {
+class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
 
-    private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
 
     fun getSettings(): StudyWorldSettings {
+        val typedScope = readTypedScope()
         val maxVideoRaw = prefs.getInt(KEY_MAX_VIDEO_LENGTH_BLOCK_MINUTES, SENTINEL_NONE)
         val minVideoRaw = prefs.getInt(KEY_MIN_VIDEO_LENGTH_BLOCK_MINUTES, SENTINEL_NONE)
         val shortQuotaRaw = prefs.getInt(KEY_SHORT_FORM_DAILY_QUOTA, SENTINEL_NONE)
@@ -42,6 +45,12 @@ class StudyWorldSettingsStore(context: Context) {
                 ?.distinct()
                 .orEmpty(),
             enforcementScopeKind = prefs.getString(KEY_ENFORCEMENT_SCOPE_KIND, null)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() },
+            enforcementScope = typedScope.scope,
+            typedScopeCorruptDetail = typedScope.corruptDetail,
+            blockedSurfaces = BlockedSurfaceCodec.decode(prefs.getStringSet(KEY_BLOCKED_SURFACES, emptySet())),
+            compilerPromptVersion = prefs.getString(KEY_COMPILER_PROMPT_VERSION, null)
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() },
             visionExperimentEnabled = if (prefs.contains(KEY_VISION_EXPERIMENT_ENABLED)) {
@@ -84,8 +93,28 @@ class StudyWorldSettingsStore(context: Context) {
                 settings.enforcementContentBrands.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             )
             .putString(KEY_ENFORCEMENT_SCOPE_KIND, settings.enforcementScopeKind)
+            // Same commit as the legacy fields: typed scope and its fallback mirror never diverge.
+            .putString(KEY_ENFORCEMENT_SCOPE_JSON, StoredScopeCodec.encode(settings.enforcementScope))
+            .putStringSet(KEY_BLOCKED_SURFACES, BlockedSurfaceCodec.encode(settings.blockedSurfaces))
+            .putString(KEY_COMPILER_PROMPT_VERSION, settings.compilerPromptVersion)
             // Vision experiment is a debug flag, not a promise clock. Do not wipe it here.
             .commit()
+    }
+
+    private fun readTypedScope(): StoredScopeCodec.Decoded {
+        val decoded = StoredScopeCodec.readRecord(prefs.contains(KEY_ENFORCEMENT_SCOPE_JSON)) {
+            prefs.getString(KEY_ENFORCEMENT_SCOPE_JSON, null)
+        }
+        // getSettings() runs per Accessibility event; log each distinct corruption once.
+        if (decoded.corrupt && decoded.corruptDetail != lastLoggedCorruptDetail) {
+            Log.w(
+                "PhoneCodexScope",
+                "${StoredScopeCodec.CORRUPT_REASON} detail=${decoded.corruptDetail} " +
+                    "commitment unverified; legacy scope fields NOT substituted"
+            )
+        }
+        lastLoggedCorruptDetail = if (decoded.corrupt) decoded.corruptDetail else null
+        return decoded
     }
 
     fun setDurationMinutes(minutes: Int) {
@@ -152,6 +181,8 @@ class StudyWorldSettingsStore(context: Context) {
     }
 
     companion object {
+        @Volatile
+        private var lastLoggedCorruptDetail: String? = null
         private const val PREFS_NAME = "phonecodex_study_world_settings"
         private const val KEY_DURATION_MINUTES = "duration_minutes"
         private const val KEY_LOCK_ATTEMPT_THRESHOLD = "lock_attempt_threshold"
@@ -164,7 +195,10 @@ class StudyWorldSettingsStore(context: Context) {
         private const val KEY_ENFORCEMENT_SCOPE = "enforcement_scope_packages"
         private const val KEY_ENFORCEMENT_CONTENT_BRANDS = "enforcement_content_brands"
         private const val KEY_ENFORCEMENT_SCOPE_KIND = "enforcement_scope_kind"
+        private const val KEY_ENFORCEMENT_SCOPE_JSON = "enforcement_scope_v1_json"
         private const val KEY_VISION_EXPERIMENT_ENABLED = "vision_experiment_enabled"
+        private const val KEY_BLOCKED_SURFACES = "blocked_surfaces_v1"
+        private const val KEY_COMPILER_PROMPT_VERSION = "compiler_prompt_version"
         private const val SENTINEL_NONE = -1
 
         const val DEFAULT_DURATION_MINUTES = 30

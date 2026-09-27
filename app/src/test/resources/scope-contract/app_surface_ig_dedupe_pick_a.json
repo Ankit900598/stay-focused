@@ -1,0 +1,329 @@
+{
+  "promise": "Block Instagram Reels only for 1 hour; keep the feed and messages available.",
+  "response": {
+    "rawText": "Block Instagram Reels only for 1 hour; keep the feed and messages available.",
+    "cleanedPromiseText": "Block Instagram Reels only for 1 hour; keep the feed and messages available.",
+    "detectedLanguage": "en",
+    "transcriptConfidence": null,
+    "userIntentSummary": "Block Instagram Reels only for 1 hour; keep the feed and messages available.",
+    "recommendedInterpretation": "Instagram Reels are blocked; the rest of Instagram stays open.",
+    "alternativeInterpretations": [],
+    "interpretationConfidence": 0.9,
+    "ambiguityLevel": "low",
+    "clarificationRequired": false,
+    "clarificationOptions": [
+      {
+        "id": "A",
+        "label": "Instagram short videos only",
+        "description": "Blocks the Reels player only. The Instagram feed, Stories, and messages stay open.",
+        "recommended": false,
+        "policyPreview": "Instagram Reels are blocked; the rest of Instagram stays open.",
+        "resultingPolicyPreview": "Instagram Reels are blocked; the rest of Instagram stays open.",
+        "internalPolicyPreview": {
+          "scopeKind": "app_surface_short_form_instagram",
+          "appliesTo": "Instagram Reels",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.instagram.android",
+              "appLabel": "Instagram"
+            }
+          ],
+          "scopePackages": [
+            "com.instagram.android"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "APP_SHORT_FORM_ONLY",
+          "resolution": "EXCLUSIVE",
+          "identity": "INSTAGRAM",
+          "include": [
+            {
+              "id": "i1",
+              "host": "NATIVE_APP",
+              "identity": "INSTAGRAM",
+              "surfaces": [
+                "PLAYER_SHORT"
+              ],
+              "sites": [],
+              "packages": [
+                "com.instagram.android"
+              ],
+              "packageMatch": "PINNED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 1,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Instagram"
+          ],
+          "candidateScopes": []
+        }
+      },
+      {
+        "id": "B",
+        "label": "Instagram app only",
+        "description": "Blocks the whole Instagram app while this promise runs.",
+        "recommended": false,
+        "policyPreview": "All of Instagram is blocked.",
+        "resultingPolicyPreview": "All of Instagram is blocked.",
+        "internalPolicyPreview": {
+          "scopeKind": "app_surface_whole_app_instagram",
+          "appliesTo": "All of Instagram",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.instagram.android",
+              "appLabel": "Instagram"
+            }
+          ],
+          "scopePackages": [
+            "com.instagram.android"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "APP_ONLY",
+          "resolution": "EXCLUSIVE",
+          "identity": "INSTAGRAM",
+          "include": [
+            {
+              "id": "i1",
+              "host": "NATIVE_APP",
+              "identity": "INSTAGRAM",
+              "surfaces": [
+                "ANY"
+              ],
+              "sites": [],
+              "packages": [
+                "com.instagram.android"
+              ],
+              "packageMatch": "PINNED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 1,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Instagram"
+          ],
+          "candidateScopes": []
+        }
+      }
+    ],
+    "userFacingConfirmation": {
+      "understood": "Block Instagram Reels. The Instagram feed, Stories, and messages stay open.",
+      "allowed": [
+        "Instagram messages",
+        "The Instagram feed, Stories, and messages"
+      ],
+      "blocked": [
+        "Instagram Reels"
+      ],
+      "time": "About 60 minutes",
+      "appliesTo": "Instagram Reels",
+      "checkThis": [],
+      "safetyNotes": [],
+      "understoodSummary": "Block Instagram Reels. The Instagram feed, Stories, and messages stay open.",
+      "allowedBullets": [
+        "Instagram messages",
+        "The Instagram feed, Stories, and messages"
+      ],
+      "blockedBullets": [
+        "Instagram Reels"
+      ],
+      "timeWindowText": "About 60 minutes",
+      "appliesToText": "Instagram Reels",
+      "hiddenInternalScope": []
+    },
+    "internalPolicy": {
+      "timeWindow": {
+        "kind": "session_fixed",
+        "minutes": 60,
+        "label": "About 60 minutes"
+      },
+      "surfaceRules": [
+        {
+          "surface": "messages",
+          "action": "ALLOW",
+          "note": "Instagram messages",
+          "packageName": "com.instagram.android"
+        },
+        {
+          "surface": "shorts",
+          "action": "BLOCK",
+          "note": "Instagram Reels",
+          "packageName": "com.instagram.android"
+        }
+      ],
+      "contentRules": [
+        {
+          "appLabel": "Instagram",
+          "packageName": "com.instagram.android",
+          "surface": "messages",
+          "contentType": "social_dm",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "ALLOW",
+          "description": "Instagram messages"
+        },
+        {
+          "appLabel": "Instagram",
+          "packageName": "com.instagram.android",
+          "surface": "shorts",
+          "contentType": "short_form_video",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "BLOCK",
+          "description": "Instagram Reels"
+        }
+      ],
+      "appRules": [
+        {
+          "packageName": "com.whatsapp",
+          "label": "WhatsApp",
+          "behavior": "ALLOW"
+        }
+      ],
+      "quotaRules": [],
+      "recoveryRules": {
+        "hardness": "normal",
+        "requiresExplicitConfirm": false,
+        "notes": ""
+      },
+      "guardrails": []
+    },
+    "riskReview": {
+      "falseAllowRisk": "low",
+      "falseBlockRisk": "low",
+      "safetyRisk": "none",
+      "requiresHumanConfirmation": false
+    },
+    "hiddenInternalScope": [
+      "com.instagram.android"
+    ],
+    "emergencyExceptions": [],
+    "sessionDurationMinutes": 60,
+    "timeWindowKind": "session_fixed",
+    "quotaBoundary": "allow_first_n",
+    "strictness": "STRICT",
+    "allowedSummaries": [
+      "Instagram messages",
+      "The Instagram feed, Stories, and messages"
+    ],
+    "blockedSummaries": [
+      "Instagram Reels"
+    ],
+    "conditionalSummaries": [],
+    "confirmationPreview": [],
+    "interpretationNotes": [],
+    "scopePackages": [
+      "com.instagram.android"
+    ],
+    "scopeKind": "app_surface_short_form_instagram",
+    "contentBrands": [],
+    "surfaceScope": [],
+    "contentScope": [],
+    "contentRules": [
+      {
+        "appLabel": "Instagram",
+        "packageName": "com.instagram.android",
+        "surface": "messages",
+        "contentType": "social_dm",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "ALLOW",
+        "description": "Instagram messages"
+      },
+      {
+        "appLabel": "Instagram",
+        "packageName": "com.instagram.android",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "Instagram Reels"
+      }
+    ],
+    "clarificationQuestion": null,
+    "cautionMessages": [
+      "Using your choice: Instagram short videos only"
+    ],
+    "source": "azure_promise_compiler",
+    "confidence": 0.9,
+    "suggestedAppRules": [
+      {
+        "packageName": "com.whatsapp",
+        "label": "WhatsApp",
+        "behavior": "ALLOW"
+      }
+    ],
+    "commitmentType": "focus_session",
+    "promptVersion": "promise_compiler_v09",
+    "canStartCommitment": true,
+    "isPermanentCommitment": false,
+    "requiresStrongerConfirmation": false,
+    "isStudyModeLike": false,
+    "selectedClarificationOptionId": "A",
+    "appSurfaceChoice": {
+      "packageName": "com.instagram.android",
+      "choice": "short",
+      "uncoveredRules": []
+    },
+    "optionRematerialized": true,
+    "optionScopeKind": "app_surface_short_form_instagram",
+    "optionVerification": "snapshot_and_carry_verified",
+    "optionVerificationReason": "snapshot_and_carry_verified",
+    "scopeContract": "v1",
+    "scope": {
+      "version": 1,
+      "kind": "APP_SHORT_FORM_ONLY",
+      "resolution": "EXCLUSIVE",
+      "identity": "INSTAGRAM",
+      "include": [
+        {
+          "id": "i1",
+          "host": "NATIVE_APP",
+          "identity": "INSTAGRAM",
+          "surfaces": [
+            "PLAYER_SHORT"
+          ],
+          "sites": [],
+          "packages": [
+            "com.instagram.android"
+          ],
+          "packageMatch": "PINNED"
+        }
+      ],
+      "exempt": [],
+      "confidence": 1,
+      "appliesToText": null,
+      "unresolvedReason": null,
+      "evidenceSpans": [
+        "Instagram"
+      ],
+      "candidateScopes": []
+    },
+    "meta": {
+      "provider": "test",
+      "deployment": "test",
+      "promptVersion": "promise_compiler_v09",
+      "latencyMs": 0
+    }
+  }
+}

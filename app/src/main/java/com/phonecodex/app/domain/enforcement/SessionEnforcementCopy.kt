@@ -30,6 +30,10 @@ object SessionEnforcementCopy {
 
     const val QUOTA_KEEP_WATCHING = "Keep watching"
 
+    const val QUOTA_STATE_UNREADABLE_BLOCK =
+        "Strlix can't read today's shorts count, so shorts are paused. " +
+            "Other apps and non-short videos are not affected."
+
     fun shortsRemaining(count: Int, limit: Int): String {
         val left = (limit - count).coerceAtLeast(0)
         return if (left <= 0) {
@@ -60,6 +64,7 @@ object SessionEnforcementCopy {
         EnforcementReasonCodes.MONK_ENTERTAINMENT_BLOCK -> MONK_ENTERTAINMENT_BLOCK
         EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL,
         EnforcementReasonCodes.QUOTA_BLOCK_ADULT -> ADULT_GUARDRAIL_BLOCK
+        EnforcementReasonCodes.QUOTA_BLOCK_STATE_UNREADABLE -> QUOTA_STATE_UNREADABLE_BLOCK
         else -> fallback
     }
 
@@ -67,8 +72,10 @@ object SessionEnforcementCopy {
         EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
         EnforcementReasonCodes.UNKNOWN_VIDEO_APP_BLANK_TREE,
         EnforcementReasonCodes.MONK_ENTERTAINMENT_BLOCK,
+        EnforcementReasonCodes.STRUCTURED_SURFACE_BLOCK,
         EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL,
         EnforcementReasonCodes.QUOTA_BLOCK_ADULT,
+        EnforcementReasonCodes.QUOTA_BLOCK_STATE_UNREADABLE,
         EnforcementReasonCodes.QUOTA_ALLOW_COUNT -> true
         else -> false
     }

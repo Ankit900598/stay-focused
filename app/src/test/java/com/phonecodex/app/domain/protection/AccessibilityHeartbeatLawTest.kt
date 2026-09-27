@@ -91,6 +91,34 @@ class AccessibilityHeartbeatLawTest {
     }
 
     @Test
+    fun serviceLeaseFresh_onlyWhileRecentAndFromCurrentBoot() {
+        assertTrue(
+            AccessibilityHeartbeatLaw.isServiceLeaseFresh(
+                nowElapsedMillis = 100_000L,
+                lastLeaseElapsedMillis = 70_000L
+            )
+        )
+        assertFalse(
+            AccessibilityHeartbeatLaw.isServiceLeaseFresh(
+                nowElapsedMillis = 100_001L,
+                lastLeaseElapsedMillis = 70_000L
+            )
+        )
+        assertFalse(
+            AccessibilityHeartbeatLaw.isServiceLeaseFresh(
+                nowElapsedMillis = 50_000L,
+                lastLeaseElapsedMillis = 70_000L
+            )
+        )
+        assertFalse(
+            AccessibilityHeartbeatLaw.isServiceLeaseFresh(
+                nowElapsedMillis = 100_000L,
+                lastLeaseElapsedMillis = 0L
+            )
+        )
+    }
+
+    @Test
     fun formatAge_matchesHomeCopy() {
         assertEquals("no phone event yet", AccessibilityHeartbeatLaw.formatAge(null))
         assertEquals("last phone event just now", AccessibilityHeartbeatLaw.formatAge(400L))

@@ -1,0 +1,194 @@
+{
+  "rawText": "do not allow videos shorter than 30 minutes for next 1 hour",
+  "cleanedPromiseText": "do not allow videos shorter than 30 minutes for next 1 hour",
+  "detectedLanguage": "en",
+  "transcriptConfidence": null,
+  "userIntentSummary": "do not allow videos shorter than 30 minutes for next 1 hour",
+  "recommendedInterpretation": null,
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.9,
+  "ambiguityLevel": "high",
+  "clarificationRequired": true,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "Browser video only",
+      "description": "Chrome",
+      "recommended": false,
+      "policyPreview": "Chrome only",
+      "resultingPolicyPreview": "Chrome only",
+      "internalPolicyPreview": {
+        "scopeKind": "chrome_browser",
+        "appliesTo": "Chrome / browser video",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          }
+        ],
+        "scopePackages": [
+          "com.android.chrome"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    },
+    {
+      "id": "B",
+      "label": "All apps and browsers",
+      "description": "Everything",
+      "recommended": false,
+      "policyPreview": "All video",
+      "resultingPolicyPreview": "All video",
+      "internalPolicyPreview": {
+        "scopeKind": "all_video_apps",
+        "appliesTo": "Major video apps and browser video",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          },
+          {
+            "packageName": "org.schabi.newpipe",
+            "appLabel": "NewPipe"
+          },
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          },
+          {
+            "packageName": "com.vanced.android.youtube",
+            "appLabel": "YouTube Vanced"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube",
+          "org.schabi.newpipe",
+          "com.android.chrome",
+          "com.vanced.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "I understood: block videos shorter than 30 minutes for the next hour; the video sources still need confirmation.",
+    "allowed": [],
+    "blocked": [
+      "videos shorter than 30 min → BLOCK"
+    ],
+    "time": "About 60 minutes",
+    "appliesTo": "Apps and content named in your promise",
+    "checkThis": [
+      "Your selection A arrived without its earlier option text, so I cannot reliably map it to a scope."
+    ],
+    "safetyNotes": [],
+    "understoodSummary": "I understood: block videos shorter than 30 minutes for the next hour; the video sources still need confirmation.",
+    "allowedBullets": [],
+    "blockedBullets": [
+      "videos shorter than 30 min → BLOCK"
+    ],
+    "timeWindowText": "About 60 minutes",
+    "appliesToText": "Apps and content named in your promise",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "session_fixed",
+      "minutes": 60,
+      "label": "About 60 minutes"
+    },
+    "surfaceRules": [
+      {
+        "surface": "video",
+        "action": "BLOCK",
+        "note": "videos shorter than 30 min"
+      }
+    ],
+    "contentRules": [
+      {
+        "appLabel": null,
+        "packageName": null,
+        "surface": "video",
+        "contentType": "long_form_video",
+        "operator": "lt",
+        "value": 30,
+        "unit": "minutes",
+        "action": "BLOCK",
+        "description": "videos shorter than 30 min"
+      }
+    ],
+    "appRules": [],
+    "quotaRules": [],
+    "recoveryRules": {
+      "hardness": "normal",
+      "requiresExplicitConfirm": false,
+      "notes": ""
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "medium",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": true
+  },
+  "hiddenInternalScope": [],
+  "emergencyExceptions": [],
+  "sessionDurationMinutes": 60,
+  "timeWindowKind": "session_fixed",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "STRICT",
+  "allowedSummaries": [],
+  "blockedSummaries": [
+    "videos shorter than 30 min → BLOCK"
+  ],
+  "conditionalSummaries": [],
+  "confirmationPreview": [
+    "Blocked: videos shorter than 30 min → BLOCK"
+  ],
+  "interpretationNotes": [
+    "Your selection A has no earlier option list attached, so I need to confirm which video sources you mean."
+  ],
+  "scopePackages": [],
+  "scopeKind": null,
+  "contentBrands": [],
+  "surfaceScope": [],
+  "contentScope": [],
+  "contentRules": [
+    {
+      "appLabel": null,
+      "packageName": null,
+      "surface": "video",
+      "contentType": "long_form_video",
+      "operator": "lt",
+      "value": 30,
+      "unit": "minutes",
+      "action": "BLOCK",
+      "description": "videos shorter than 30 min"
+    }
+  ],
+  "clarificationQuestion": "Which of these matches what you meant?",
+  "cautionMessages": [
+    "Your selection A has no earlier option list attached, so I need to confirm which video sources you mean.",
+    "That clarification choice was not recognized. Pick an option again."
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.9,
+  "suggestedAppRules": [],
+  "commitmentType": "focus_session",
+  "promptVersion": "promise_compiler_v07",
+  "canStartCommitment": false,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": false,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "A",
+  "optionRematerialized": false,
+  "optionVerification": "unrecognized_fail_closed",
+  "optionVerificationReason": "no_verifiable_choice"
+}

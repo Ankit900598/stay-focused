@@ -104,11 +104,13 @@ object VisionCounselMerge {
         EnforcementReasonCodes.SURFACE_PASS_PASSIVE,
         EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX,
         EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN,
+        EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN,
         EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT,
         EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL,
         EnforcementReasonCodes.EMERGENCY_ALLOW,
         EnforcementReasonCodes.QUOTA_BLOCK_EXCEEDED,
         EnforcementReasonCodes.QUOTA_BLOCK_ADULT,
+        EnforcementReasonCodes.QUOTA_BLOCK_STATE_UNREADABLE,
         EnforcementReasonCodes.UNKNOWN_VIDEO_APP_BLANK_TREE
     )
 }

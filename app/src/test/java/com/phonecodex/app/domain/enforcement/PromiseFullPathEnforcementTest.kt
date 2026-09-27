@@ -177,7 +177,7 @@ class PromiseFullPathEnforcementTest {
             appRule = AppRuleBehavior.AI_DECIDE
         )
         assertEquals(DecisionType.BLOCK, result.decision)
-        assertEquals(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN, result.reasonCode)
+        assertEquals(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN, result.reasonCode)
         assertTrue(result.contentGatesRanBeforeAppRule)
     }
 
@@ -217,7 +217,7 @@ class PromiseFullPathEnforcementTest {
             appRule = AppRuleBehavior.ALLOW
         )
         assertEquals(DecisionType.BLOCK, result.decision)
-        assertEquals(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN, result.reasonCode)
+        assertEquals(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN, result.reasonCode)
         assertTrue(result.contentGatesRanBeforeAppRule)
     }
 
@@ -920,7 +920,48 @@ class BlankVideoTreeGateTest {
             )
         )
         assertEquals(DecisionType.BLOCK, result.decision)
-        assertEquals(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN, result.reasonCode)
+        assertEquals(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN, result.reasonCode)
+    }
+
+    @Test
+    fun shortOnlyPromise_blankYoutubeTree_doesNotClaimDurationLimit() {
+        val goal = "Block only YouTube shorts for 5 minutes"
+        val result = BlankVideoTreeGate.evaluate(
+            hasActiveSession = true,
+            packageName = VideoPlatformRegistry.YOUTUBE,
+            screenText = nearBlank,
+            goal = goal
+        )
+
+        assertFalse(PromiseIntentRules.hasMediaLengthLimit(goal))
+        assertEquals(BlankVideoTreeAction.NONE, result.action)
+    }
+
+    @Test
+    fun shortOnlyPromise_legacyYoutubeScope_blankTree_doesNotWarnInCoordinator() {
+        val goal = "Block only YouTube shorts for 5 minutes"
+        val settings = StudyWorldSettings(
+            durationMinutes = 5,
+            lockAttemptThreshold = 3,
+            blockAttemptCooldownMinutes = 2,
+            enforcementScopePackages = listOf(VideoPlatformRegistry.YOUTUBE)
+        )
+        val result = PromiseEnforcementCoordinator.evaluate(
+            PromiseEvalInput(
+                hasActiveSession = true,
+                goal = goal,
+                settings = settings,
+                appRule = AppRuleBehavior.AI_DECIDE,
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                screenText = nearBlank
+            )
+        )
+
+        assertNotEquals(DecisionType.WARN, result.decision)
+        assertNotEquals(
+            EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,
+            result.reasonCode
+        )
     }
 
     @Test

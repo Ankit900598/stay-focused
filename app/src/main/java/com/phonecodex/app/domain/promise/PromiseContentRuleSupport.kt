@@ -16,8 +16,48 @@ object PromiseContentRuleSupport {
      * video length is greater than this value. Null = no structured length gate.
      */
     fun maxVideoLengthBlockMinutes(draft: FocusPromise): Int? =
-        maxVideoLengthBlockMinutes(draft.contentRules)
-            ?: PromiseIntentRules.extractGoalMaxVideoLimitMinutes(draft.rawText)
+        videoLengthBounds(draft).maxBlockMinutes
+
+    /**
+     * Resolved per-video length gate for a confirmed promise.
+     *
+     * When the promise text names only one side ("shorter than 30" with a block
+     * cue, or "allow only longer than 30"), that side wins and a contradictory
+     * structured rule on the other side is dropped. min == max survives only
+     * for an explicit "exactly N minutes"; otherwise min >= max keeps min,
+     * because min == max would block every video except one exact length.
+     */
+    fun videoLengthBounds(draft: FocusPromise): PromiseIntentRules.MediaLengthIntent {
+        val intent = PromiseIntentRules.mediaLengthIntent(draft.rawText)
+        if (intent.exact) return intent
+        val ruleMin = minVideoLengthBlockMinutes(draft.contentRules)
+            ?: minFromAllowOnlyLongerRules(draft.contentRules)
+        val ruleMax = maxVideoLengthBlockMinutes(draft.contentRules)
+        val textMin = intent.minBlockMinutes
+        val textMax = intent.maxBlockMinutes
+        var min: Int?
+        var max: Int?
+        when {
+            textMin != null && textMax == null -> {
+                min = textMin
+                max = null
+            }
+            textMax != null && textMin == null -> {
+                min = null
+                max = ruleMax ?: textMax
+            }
+            textMin != null && textMax != null -> {
+                min = textMin
+                max = ruleMax ?: textMax
+            }
+            else -> {
+                min = ruleMin
+                max = ruleMax
+            }
+        }
+        if (min != null && max != null && min >= max) max = null
+        return PromiseIntentRules.MediaLengthIntent(min, max)
+    }
 
     fun maxVideoLengthBlockMinutes(rules: List<ContentRule>): Int? {
         val blockGt = rules.firstOrNull { rule ->
@@ -44,9 +84,7 @@ object PromiseContentRuleSupport {
      * video length is shorter than this value. Null = no structured min gate.
      */
     fun minVideoLengthBlockMinutes(draft: FocusPromise): Int? =
-        PromiseIntentRules.extractGoalMinVideoLimitMinutes(draft.rawText)
-            ?: minVideoLengthBlockMinutes(draft.contentRules)
-            ?: minFromAllowOnlyLongerRules(draft.contentRules)
+        videoLengthBounds(draft).minBlockMinutes
 
     fun minVideoLengthBlockMinutes(rules: List<ContentRule>): Int? {
         val blockLt = rules.firstOrNull { rule ->

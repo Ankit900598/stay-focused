@@ -37,7 +37,12 @@ object ConfirmedPromiseBinder {
             },
             enforcementScopePackages = PromiseContentRuleSupport.enforcementScopePackages(draft),
             enforcementContentBrands = PromiseContentRuleSupport.enforcementContentBrands(draft),
-            enforcementScopeKind = PromiseContentRuleSupport.enforcementScopeKind(draft)
+            enforcementScopeKind = PromiseContentRuleSupport.enforcementScopeKind(draft),
+            // v1 only; legacy fields above stay as the fallback mirror for the same promise.
+            enforcementScope = draft.enforcementScope
+                ?.takeIf { draft.scopeContractV1 && it.isEnforceable },
+            blockedSurfaces = EffectivePromisePolicy.blockedSurfaces(draft),
+            compilerPromptVersion = draft.compilerPromptVersion
         )
     }
 
@@ -60,8 +65,29 @@ object ConfirmedPromiseBinder {
             shortFormDailyQuotaLimit = stored.shortFormDailyQuotaLimit,
             enforcementScopePackages = stored.enforcementScopePackages,
             enforcementContentBrands = stored.enforcementContentBrands,
-            enforcementScopeKind = stored.enforcementScopeKind
+            enforcementScopeKind = stored.enforcementScopeKind,
+            typedScopeKind = stored.enforcementScope?.kind?.name,
+            typedScopeCorruptDetail = stored.typedScopeCorruptDetail,
+            blockedSurfaces = stored.blockedSurfaces,
+            compilerPromptVersion = stored.compilerPromptVersion,
+            scopeContract = if (draft.scopeContractV1) "v1" else "legacy",
+            confirmedStrictness = draft.strictness.name,
+            lockAttemptThreshold = stored.lockAttemptThreshold,
+            durationMinutes = stored.durationMinutes,
+            timeWindowKind = stored.timeWindowKind
         )
+
+    /**
+     * Home keeps the bound settings after Start. If the read-back of the typed scope is
+     * unreadable, carry that into what Home holds so it cannot claim Protected while
+     * Accessibility reports SCOPE_PERSISTENCE_CORRUPT. Clocks stay as bound.
+     */
+    fun reflectStoredScopeIntegrity(bound: StudyWorldSettings, stored: StudyWorldSettings): StudyWorldSettings =
+        if (stored.typedScopeCorruptDetail != null) {
+            bound.copy(enforcementScope = null, typedScopeCorruptDetail = stored.typedScopeCorruptDetail)
+        } else {
+            bound
+        }
 
     fun hasStructuredMediaRule(settings: StudyWorldSettings): Boolean =
         settings.minVideoLengthBlockMinutes != null ||
@@ -89,10 +115,31 @@ data class PromiseStartAudit(
     val shortFormDailyQuotaLimit: Int?,
     val enforcementScopePackages: List<String>,
     val enforcementContentBrands: List<String> = emptyList(),
-    val enforcementScopeKind: String? = null
+    val enforcementScopeKind: String? = null,
+    /** Typed scope kind when a v1 scope was saved; null = legacy adapter path. */
+    val typedScopeKind: String? = null,
+    val typedScopeCorruptDetail: String? = null,
+    val blockedSurfaces: List<String> = emptyList(),
+    /** Backend `meta.promptVersion` verbatim; `unknown` when absent. Never inferred. */
+    val compilerPromptVersion: String? = null,
+    val scopeContract: String = "legacy",
+    val confirmedStrictness: String? = null,
+    val lockAttemptThreshold: Int? = null,
+    val durationMinutes: Int? = null,
+    val timeWindowKind: String? = null
 ) {
+    private val typedScopeLabel: String
+        get() = when {
+            typedScopeCorruptDetail != null -> "corrupt(${typedScopeCorruptDetail})"
+            else -> typedScopeKind ?: "legacy"
+        }
+
     fun format(): String =
         "rawPromise=${rawPromise.replace("\n", " ").take(240)} " +
+            "typedScope=$typedScopeLabel " +
+            "compiler=${compilerPromptVersion ?: "unknown"} scopeContract=$scopeContract " +
+            "strictness=$confirmedStrictness lockThreshold=$lockAttemptThreshold " +
+            "durationMinutes=$durationMinutes timeWindow=$timeWindowKind " +
             "contentRules=[${contentRules.joinToString(";")}] " +
             "minVideoLengthBlockMinutes=$minVideoLengthBlockMinutes " +
             "maxVideoLengthBlockMinutes=$maxVideoLengthBlockMinutes " +
@@ -100,6 +147,7 @@ data class PromiseStartAudit(
             "enforcementScopePackages=[${enforcementScopePackages.joinToString(",")}] " +
             "enforcementContentBrands=[${enforcementContentBrands.joinToString(",")}] " +
             "enforcementScopeKind=$enforcementScopeKind " +
+            "blockedSurfaces=[${blockedSurfaces.joinToString(",")}] " +
             "stored settings after write: " +
             "min=$minVideoLengthBlockMinutes max=$maxVideoLengthBlockMinutes " +
             "quota=$shortFormDailyQuotaLimit scope=$enforcementScopePackages " +

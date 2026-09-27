@@ -1,0 +1,288 @@
+{
+  "rawText": "no shorts for 2 hours",
+  "cleanedPromiseText": "no shorts for 2 hours",
+  "detectedLanguage": "en",
+  "transcriptConfidence": null,
+  "userIntentSummary": "no shorts for 2 hours",
+  "recommendedInterpretation": "All short-form video surfaces follow this commitment (not YouTube only).",
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.9,
+  "ambiguityLevel": "low",
+  "clarificationRequired": false,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "All short-form surfaces",
+      "description": "Shorts, Reels, TikTok-style clips, and browser short video.",
+      "recommended": true,
+      "policyPreview": "All short-form video surfaces follow this commitment (not YouTube only).",
+      "resultingPolicyPreview": "All short-form video surfaces follow this commitment (not YouTube only).",
+      "internalPolicyPreview": {
+        "scopeKind": "short_form_all_surfaces",
+        "appliesTo": "Short-form video apps and browser short videos",
+        "expandShortForm": true,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          },
+          {
+            "packageName": "org.schabi.newpipe",
+            "appLabel": "NewPipe"
+          },
+          {
+            "packageName": "com.instagram.android",
+            "appLabel": "Instagram"
+          },
+          {
+            "packageName": "com.facebook.katana",
+            "appLabel": "Facebook"
+          },
+          {
+            "packageName": "com.zhiliaoapp.musically",
+            "appLabel": "TikTok"
+          },
+          {
+            "packageName": "com.snapchat.android",
+            "appLabel": "Snapchat"
+          },
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube",
+          "org.schabi.newpipe",
+          "com.instagram.android",
+          "com.facebook.katana",
+          "com.zhiliaoapp.musically",
+          "com.snapchat.android",
+          "com.android.chrome"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    },
+    {
+      "id": "B",
+      "label": "YouTube Shorts only",
+      "description": "Only YouTube Shorts.",
+      "recommended": false,
+      "policyPreview": "Only YouTube Shorts follow this commitment.",
+      "resultingPolicyPreview": "Only YouTube Shorts follow this commitment.",
+      "internalPolicyPreview": {
+        "scopeKind": "youtube_shorts_only",
+        "appliesTo": "YouTube Shorts only",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "I understood: block videos shorter than 30 minutes for the next hour.",
+    "allowed": [],
+    "blocked": [],
+    "time": "About 120 minutes",
+    "appliesTo": "Short-form video apps and browser short videos",
+    "checkThis": [],
+    "safetyNotes": [],
+    "understoodSummary": "I understood: block videos shorter than 30 minutes for the next hour.",
+    "allowedBullets": [],
+    "blockedBullets": [],
+    "timeWindowText": "About 120 minutes",
+    "appliesToText": "Short-form video apps and browser short videos",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "session_fixed",
+      "minutes": 120,
+      "label": "About 120 minutes"
+    },
+    "surfaceRules": [
+      {
+        "surface": "shorts",
+        "action": "BLOCK",
+        "note": "all short-form video",
+        "packageName": null
+      }
+    ],
+    "contentRules": [
+      {
+        "appLabel": null,
+        "packageName": null,
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "all short-form video"
+      }
+    ],
+    "appRules": [
+      {
+        "packageName": "com.google.android.youtube",
+        "label": "YouTube",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "org.schabi.newpipe",
+        "label": "NewPipe",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.instagram.android",
+        "label": "Instagram",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.facebook.katana",
+        "label": "Facebook",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.zhiliaoapp.musically",
+        "label": "TikTok",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.snapchat.android",
+        "label": "Snapchat",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.android.chrome",
+        "label": "Chrome",
+        "behavior": "ALLOW"
+      }
+    ],
+    "quotaRules": [],
+    "recoveryRules": {
+      "hardness": "normal",
+      "requiresExplicitConfirm": false,
+      "notes": ""
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "low",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": false
+  },
+  "hiddenInternalScope": [
+    "com.google.android.youtube",
+    "org.schabi.newpipe",
+    "com.instagram.android",
+    "com.facebook.katana",
+    "com.zhiliaoapp.musically",
+    "com.snapchat.android",
+    "com.android.chrome"
+  ],
+  "emergencyExceptions": [],
+  "sessionDurationMinutes": 120,
+  "timeWindowKind": "session_fixed",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "STRICT",
+  "allowedSummaries": [],
+  "blockedSummaries": [],
+  "conditionalSummaries": [
+    "Applies to: Short-form video apps and browser short videos"
+  ],
+  "confirmationPreview": [],
+  "interpretationNotes": [],
+  "scopePackages": [
+    "com.google.android.youtube",
+    "org.schabi.newpipe",
+    "com.instagram.android",
+    "com.facebook.katana",
+    "com.zhiliaoapp.musically",
+    "com.snapchat.android",
+    "com.android.chrome"
+  ],
+  "scopeKind": "short_form_all_surfaces",
+  "contentBrands": [],
+  "surfaceScope": [],
+  "contentScope": [],
+  "contentRules": [
+    {
+      "appLabel": null,
+      "packageName": null,
+      "surface": "shorts",
+      "contentType": "short_form_video",
+      "operator": null,
+      "value": null,
+      "unit": null,
+      "action": "BLOCK",
+      "description": "all short-form video"
+    }
+  ],
+  "clarificationQuestion": "Which of these matches what you meant?",
+  "cautionMessages": [
+    "Using your choice: All short-form surfaces"
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.9,
+  "suggestedAppRules": [
+    {
+      "packageName": "com.google.android.youtube",
+      "label": "YouTube",
+      "behavior": "ALLOW"
+    },
+    {
+      "packageName": "org.schabi.newpipe",
+      "label": "NewPipe",
+      "behavior": "ALLOW"
+    },
+    {
+      "packageName": "com.instagram.android",
+      "label": "Instagram",
+      "behavior": "ALLOW"
+    },
+    {
+      "packageName": "com.facebook.katana",
+      "label": "Facebook",
+      "behavior": "ALLOW"
+    },
+    {
+      "packageName": "com.zhiliaoapp.musically",
+      "label": "TikTok",
+      "behavior": "ALLOW"
+    },
+    {
+      "packageName": "com.snapchat.android",
+      "label": "Snapchat",
+      "behavior": "ALLOW"
+    },
+    {
+      "packageName": "com.android.chrome",
+      "label": "Chrome",
+      "behavior": "ALLOW"
+    }
+  ],
+  "commitmentType": "focus_session",
+  "promptVersion": "promise_compiler_v07",
+  "canStartCommitment": true,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": false,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "A",
+  "optionRematerialized": true,
+  "optionScopeKind": "short_form_all_surfaces",
+  "optionVerification": "snapshot_and_carry_verified",
+  "optionVerificationReason": "snapshot_and_carry_verified"
+}

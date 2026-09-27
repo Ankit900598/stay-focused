@@ -14,6 +14,9 @@ object PromiseClarificationLaw {
     const val UNRECOGNIZED_CLARIFICATION_CHOICE =
         "That clarification choice was not recognized. Pick an option again."
 
+    /** Backend `optionVerification` when the tapped option could not be proven. */
+    const val CHOICE_FAIL_CLOSED = "unrecognized_fail_closed"
+
     fun isUnrecognizedClarificationChoice(text: String): Boolean =
         text.contains("clarification choice was not recognized", ignoreCase = true)
 
@@ -59,6 +62,18 @@ object PromiseClarificationLaw {
         stripUnrecognizedWarnings: Boolean = true
     ): FocusPromise {
         val selected = selectedClarificationOptionId?.trim().orEmpty()
+        if (draft.choiceVerificationFailed || draft.typedScopeBlocksStart) {
+            // Unproven pick or unresolved v1 scope; no local law may unlock Start.
+            return draft.copy(clarificationRequired = true, canStartCommitment = false)
+        }
+        if (draft.appRuleScopeConflict) {
+            return draft.copy(
+                clarificationRequired = true,
+                canStartCommitment = false,
+                clarificationQuestion = draft.clarificationQuestion?.takeIf { it.isNotBlank() }
+                    ?: EffectivePromisePolicy.conflictQuestion(draft)
+            )
+        }
         val working = injectCompoundIfNeeded(draft, selected)
         val optionIds = working.clarificationOptions.map { it.id }
         val keepUnrecognized = shouldShowUnrecognizedClarificationChoice(
@@ -122,6 +137,10 @@ object PromiseClarificationLaw {
     }
 
     fun clearGhostClarification(draft: FocusPromise): FocusPromise {
+        if (draft.choiceVerificationFailed) return draft
+        // Concrete clocks say nothing about WHERE the promise applies.
+        if (draft.typedScopeBlocksStart) return draft
+        if (draft.appRuleScopeConflict) return draft
         if (draft.clarificationOptions.isNotEmpty()) return draft
         if (!isConcreteClockPolicy(draft)) return draft
         return draft.copy(

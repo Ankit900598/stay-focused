@@ -71,7 +71,7 @@ internal fun HomeScreenHeader(
         }
     }
 
-    if (!hasActiveCommitment) {
+    if (shouldShowNoActiveCommitmentWarning(hasActiveCommitment, permanentCommitmentCount)) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = SessionEnforcementCopy.NO_ACTIVE_COMMITMENT,
@@ -80,6 +80,11 @@ internal fun HomeScreenHeader(
         )
     }
 }
+
+internal fun shouldShowNoActiveCommitmentWarning(
+    hasActiveCommitment: Boolean,
+    permanentCommitmentCount: Int
+): Boolean = !hasActiveCommitment && permanentCommitmentCount == 0
 
 internal fun protectionStatusPillText(level: ProtectionReliabilityLevel): String = when (level) {
     ProtectionReliabilityLevel.PROTECTED -> "Protected"

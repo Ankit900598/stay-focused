@@ -3,6 +3,7 @@ package com.phonecodex.app.domain.promise
 import android.util.Log
 import com.phonecodex.app.domain.diagnostics.BackendConfig
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
@@ -21,14 +22,32 @@ class PromiseCompilerClient(
 
     fun compile(
         promise: String,
-        selectedClarificationOptionId: String? = null
+        selectedClarificationOptionId: String? = null,
+        /**
+         * Reliability design 2026-09-25 §Fix 1: verbatim JSON string of the
+         * option the user just tapped (from the previous compile response),
+         * including its `internalPolicyPreview`. Lets the stateless backend
+         * verify the pick deterministically instead of re-guessing.
+         */
+        selectedClarificationOptionFullTextJson: String? = null,
+        /**
+         * Reliability design 2026-09-25 §Fix 1: verbatim JSON string of the
+         * full `clarificationOptions` array shown to the user on turn 1.
+         * Used as a snapshot fallback if the fresh compile doesn't re-emit
+         * the same options list.
+         */
+        priorClarificationOptionsSnapshotJson: String? = null,
+        /** Promise text the snapshot was shown for; the backend fails closed on mismatch. */
+        priorClarificationPromiseText: String? = null
     ): CompiledPromiseResponse {
         val trimmed = promise.trim()
         require(trimmed.isNotEmpty()) { "promise must be non-empty" }
 
         Log.i(
             TAG,
-            "compile request started len=${trimmed.length} selected=${selectedClarificationOptionId ?: "none"}"
+            "compile request started len=${trimmed.length} selected=${selectedClarificationOptionId ?: "none"} " +
+                "carry=${selectedClarificationOptionFullTextJson?.length ?: 0} " +
+                "snapshot=${priorClarificationOptionsSnapshotJson?.length ?: 0}"
         )
         val url = URL("$baseUrl/compile-promise")
         val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -47,6 +66,26 @@ class PromiseCompilerClient(
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { bodyJson.put("selectedClarificationOptionId", it) }
+            // Fix 1 carry-through: attach the exact option object + full options
+            // snapshot verbatim so the backend can verify the pick without
+            // re-inferring scope from the prompt alone.
+            selectedClarificationOptionFullTextJson
+                ?.takeIf { it.isNotBlank() }
+                ?.let { raw ->
+                    runCatching { JSONObject(raw) }
+                        .getOrNull()
+                        ?.let { bodyJson.put("selectedClarificationOptionFullText", it) }
+                }
+            priorClarificationOptionsSnapshotJson
+                ?.takeIf { it.isNotBlank() }
+                ?.let { raw ->
+                    runCatching { JSONArray(raw) }
+                        .getOrNull()
+                        ?.let { bodyJson.put("priorClarificationOptionsSnapshot", it) }
+                }
+            priorClarificationPromiseText
+                ?.takeIf { it.isNotBlank() }
+                ?.let { bodyJson.put("priorClarificationPromiseText", it) }
             val body = bodyJson.toString()
             OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
                 writer.write(body)

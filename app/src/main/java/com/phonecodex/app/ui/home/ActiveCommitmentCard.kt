@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonecodex.app.domain.model.FocusSession
 import com.phonecodex.app.domain.model.RecoveryPolicy
+import com.phonecodex.app.domain.session.EmergencyExitGate
 
 /**
  * Shown while a commitment is running. Replaces the whole composer — during a session there is
@@ -26,8 +27,9 @@ internal fun ActiveCommitmentCard(
     nowMillis: Long,
     recoveryPolicy: RecoveryPolicy,
     onEndCommitment: () -> Unit,
-    onEmergencyExit: () -> Unit,
-    onCooldownUnlock: () -> Unit
+    emergencyExit: EmergencyExitGate.Availability,
+    emergencyExitNextAvailable: String?,
+    onEmergencyExit: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     var showRecovery by remember(isLocked) { mutableStateOf(false) }
@@ -56,7 +58,7 @@ internal fun ActiveCommitmentCard(
         HorizontalDivider(color = colors.outlineVariant)
         Spacer(modifier = Modifier.height(18.dp))
 
-        SummaryRow(label = "Strictness", value = strictnessLabel(session.strictness))
+        SummaryRow(label = "Strictness", value = strictnessLabel(session.confirmedStrictness))
         Spacer(modifier = Modifier.height(12.dp))
         SummaryRow(
             label = "Drifts",
@@ -84,8 +86,9 @@ internal fun ActiveCommitmentCard(
                 Spacer(modifier = Modifier.height(16.dp))
                 LockedSessionRecoverySection(
                     policy = recoveryPolicy,
-                    onEmergencyExit = onEmergencyExit,
-                    onCooldownUnlock = onCooldownUnlock
+                    emergencyExit = emergencyExit,
+                    emergencyExitNextAvailable = emergencyExitNextAvailable,
+                    onEmergencyExit = onEmergencyExit
                 )
             }
         }

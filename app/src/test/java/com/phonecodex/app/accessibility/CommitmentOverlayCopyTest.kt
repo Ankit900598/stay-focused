@@ -155,7 +155,14 @@ class CommitmentOverlayCopyTest {
     @Test
     fun headline_isContractToneNotShame() {
         assertEquals("Drift from your promise", CommitmentOverlayCopy.headline(OverlayKind.WARN))
-        assertEquals("Outside your promise", CommitmentOverlayCopy.headline(OverlayKind.BLOCK))
+        assertEquals("Blocked by your promise", CommitmentOverlayCopy.headline(OverlayKind.BLOCK))
+        assertEquals(
+            "Back to the previous screen",
+            CommitmentOverlayCopy.primaryActionLabel(
+                OverlayKind.BLOCK,
+                EnforcementReasonCodes.STRUCTURED_SURFACE_BLOCK
+            )
+        )
         assertEquals("Your commitment is locked", CommitmentOverlayCopy.headline(OverlayKind.LOCK))
         listOf(OverlayKind.WARN, OverlayKind.BLOCK, OverlayKind.LOCK).forEach { kind ->
             val copy = CommitmentOverlayCopy.headline(kind) + " " +

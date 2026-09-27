@@ -9,6 +9,8 @@ import com.phonecodex.app.domain.model.ContentRule
 import com.phonecodex.app.domain.model.ContentRuleAction
 import com.phonecodex.app.domain.model.FocusPromise
 import com.phonecodex.app.domain.model.StrictnessLevel
+import com.phonecodex.app.domain.scope.ScopeAppliesToCopy
+import com.phonecodex.app.domain.scope.ScopeCanonicalizer
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -42,7 +44,24 @@ data class CompiledPromiseResponse(
     val canStartCommitment: Boolean? = null,
     val requiresStrongerConfirmation: Boolean = false,
     val isPermanentCommitment: Boolean = false,
-    val userFacingConfirmation: UserFacingConfirmationDto? = null
+    val userFacingConfirmation: UserFacingConfirmationDto? = null,
+    /**
+     * Reliability design 2026-09-25 §Fix 1 (clarification carry-through).
+     * Verbatim JSON string of the top-level `clarificationOptions` array as the
+     * backend returned it, including any `internalPolicyPreview` payload.
+     * The mapper strips this to a UI-safe shape; this raw copy is kept so the
+     * NEXT compile call can echo the selected option + full snapshot back to
+     * the backend, letting it verify deterministically instead of guessing.
+     */
+    val clarificationOptionsRawJson: String? = null,
+    /** Backend verdict for a clarification pick (e.g. snapshot_verified, unrecognized_fail_closed). */
+    val optionVerification: String? = null,
+    /** `v1` = typed scope required (prompt v09); `legacy` or absent = old scope fields only. */
+    val scopeContract: String? = null,
+    /** Raw top-level `scope` object; parsed + canonicalized by the mapper, never trusted as-is. */
+    val scopeJson: String? = null,
+    /** `meta.promptVersion` as the backend reported it (e.g. hosted `promise_compiler_v07`). */
+    val compilerPromptVersion: String? = null
 )
 
 data class ClarificationOptionDto(
@@ -50,7 +69,8 @@ data class ClarificationOptionDto(
     val label: String,
     val description: String,
     val recommended: Boolean,
-    val policyPreview: String?
+    val policyPreview: String?,
+    val scopeJson: String? = null
 )
 
 data class UserFacingConfirmationDto(
@@ -66,7 +86,9 @@ data class UserFacingConfirmationDto(
 data class CompiledAppRuleDto(
     val packageName: String,
     val label: String,
-    val behavior: String
+    val behavior: String,
+    /** Surface the rule applies to inside the app ("" / "all" = whole app, "shorts", …). */
+    val scope: String = ""
 )
 
 data class CompiledContentRuleDto(
@@ -127,7 +149,16 @@ object CompiledPromiseResponseParser {
                 },
                 requiresStrongerConfirmation = json.optBoolean("requiresStrongerConfirmation", false),
                 isPermanentCommitment = json.optBoolean("isPermanentCommitment", false),
-                userFacingConfirmation = userFacingConfirmation(json.optJSONObject("userFacingConfirmation"))
+                userFacingConfirmation = userFacingConfirmation(json.optJSONObject("userFacingConfirmation")),
+                clarificationOptionsRawJson = json.optJSONArray("clarificationOptions")?.toString(),
+                optionVerification = json.optString("optionVerification")
+                    .takeIf { it.isNotBlank() && it != "null" },
+                scopeContract = json.optString("scopeContract")
+                    .takeIf { it.isNotBlank() && it != "null" },
+                scopeJson = json.optJSONObject("scope")?.toString(),
+                compilerPromptVersion = json.optJSONObject("meta")?.optString("promptVersion")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() && it != "null" }
             )
         } catch (_: Exception) {
             null
@@ -161,7 +192,8 @@ object CompiledPromiseResponseParser {
                 label = label,
                 description = obj.optString("description").trim(),
                 recommended = obj.optBoolean("recommended", false),
-                policyPreview = preview
+                policyPreview = preview,
+                scopeJson = obj.optJSONObject("scope")?.toString()
             )
         }
         return out
@@ -207,7 +239,8 @@ object CompiledPromiseResponseParser {
             val label = obj.optString("label").trim().ifBlank { packageName }
             val behavior = obj.optString("behavior").trim().uppercase()
             if (packageName.isEmpty() || behavior.isEmpty()) continue
-            out += CompiledAppRuleDto(packageName, label, behavior)
+            val scope = if (obj.isNull("scope")) "" else obj.optString("scope").trim()
+            out += CompiledAppRuleDto(packageName, label, behavior, scope)
         }
         return out
     }
@@ -280,6 +313,24 @@ object CompiledPromiseMapper {
             notes = ufc?.safetyNotes.orEmpty(),
             youtubeContentScope = youtubeContentScope
         )
+        val scopeContractV1 = response.scopeContract == SCOPE_CONTRACT_V1
+        val typedScope = if (scopeContractV1) {
+            ScopeCanonicalizer.fromCompilerJson(response.scopeJson, raw)
+        } else {
+            null
+        }
+        val scopeUnresolvedCaution = if (typedScope != null && !typedScope.isEnforceable) {
+            listOf(TYPED_SCOPE_UNRESOLVED_CAUTION)
+        } else {
+            emptyList()
+        }
+        val appRulePlan = planAppRules(response.suggestedAppRules)
+        val legacyGap = LegacyScopeContractGuard.gap(raw, scopeContractV1)
+        val legacyGapCaution = if (legacyGap != null) {
+            listOf(LegacyScopeContractGuard.START_BLOCKED_COPY)
+        } else {
+            emptyList()
+        }
         return PromiseClarificationLaw.clearGhostClarification(
             FocusPromise(
                 rawText = raw,
@@ -287,8 +338,11 @@ object CompiledPromiseMapper {
             allowedKeywords = emptyList(),
             blockedKeywords = emptyList(),
             strictness = parseStrictness(response.strictness),
-            suggestedAppRules = response.suggestedAppRules.mapNotNull(::mapAppRule),
-            contentRules = response.contentRules.mapNotNull(::mapContentRule),
+            suggestedAppRules = appRulePlan.appRules,
+            contentRules = mergeSurfaceRules(
+                response.contentRules.mapNotNull(::mapContentRule),
+                appRulePlan.surfaceRules
+            ),
             scopePackages = response.scopePackages
                 .mapNotNull { canonicalizePackage(it) }
                 .distinct(),
@@ -302,7 +356,8 @@ object CompiledPromiseMapper {
             scopeKind = scopeKind,
             clarificationQuestion = response.clarificationQuestion?.takeIf { it.isNotBlank() },
             warnings = sanitizeConfirmationLinesForScope(
-                lines = response.cautionMessages + response.interpretationNotes + checkThis + safetyNotes,
+                lines = legacyGapCaution + response.cautionMessages + response.interpretationNotes + checkThis +
+                    safetyNotes + scopeUnresolvedCaution,
                 youtubeContentScope = youtubeContentScope
             )
                 .filter { it.isNotBlank() }
@@ -319,28 +374,91 @@ object CompiledPromiseMapper {
                 ),
                 youtubeContentScope = youtubeContentScope
             ).distinct(),
-            clarificationOptions = response.clarificationOptions.map(::mapClarificationOption),
+            clarificationOptions = response.clarificationOptions.map { dto ->
+                mapClarificationOption(dto, if (scopeContractV1) raw else null)
+            },
             clarificationRequired = response.clarificationRequired,
             canStartCommitment = response.canStartCommitment,
+            choiceVerificationFailed =
+                response.optionVerification == PromiseClarificationLaw.CHOICE_FAIL_CLOSED,
             requiresStrongerConfirmation = response.requiresStrongerConfirmation,
             isPermanentCommitment = response.isPermanentCommitment,
             understoodSummary = ufc?.understood,
             userFacingTime = ufc?.time,
-            userFacingAppliesTo = ufc?.appliesTo,
+            // v1: "Applies to" comes from the typed scope only, never model prose.
+            userFacingAppliesTo = if (typedScope != null) {
+                ScopeAppliesToCopy.forScope(typedScope)
+            } else {
+                ufc?.appliesTo
+            },
             checkThisNotes = checkThis,
-            safetyNotes = safetyNotes
+            safetyNotes = safetyNotes,
+            scopeContractV1 = scopeContractV1,
+            enforcementScope = typedScope,
+            unrepresentableAppScopes = appRulePlan.unrepresentableLabels,
+            compilerPromptVersion = response.compilerPromptVersion,
+            legacyContractGap = legacyGap
         )
         )
     }
 
-    private fun mapClarificationOption(dto: ClarificationOptionDto): ClarificationOption =
-        ClarificationOption(
+    private data class AppRulePlan(
+        val appRules: List<AppRule>,
+        val surfaceRules: List<ContentRule>,
+        val unrepresentableLabels: List<String>
+    )
+
+    /**
+     * A BLOCK scoped to a surface ("YouTube, scope: shorts") is a structured short-form
+     * BLOCK on that package, not a package-wide BLOCK. An unknown scope is never widened
+     * to the whole app; it is dropped and reported so Start stays closed.
+     */
+    private fun planAppRules(dtos: List<CompiledAppRuleDto>): AppRulePlan {
+        val appRules = mutableListOf<AppRule>()
+        val surfaceRules = mutableListOf<ContentRule>()
+        val unrepresentable = mutableListOf<String>()
+        for (dto in dtos) {
+            val rule = mapAppRule(dto) ?: continue
+            if (rule.behavior != AppRuleBehavior.BLOCK) {
+                appRules += rule
+                continue
+            }
+            when (EffectivePromisePolicy.classifyAppScope(dto.scope)) {
+                EffectivePromisePolicy.AppScope.WHOLE_APP -> appRules += rule
+                EffectivePromisePolicy.AppScope.SHORT_FORM -> {
+                    appRules += rule.copy(behavior = AppRuleBehavior.AI_DECIDE)
+                    surfaceRules += EffectivePromisePolicy.shortFormSurfaceRule(rule.packageName, rule.label)
+                }
+                EffectivePromisePolicy.AppScope.UNKNOWN -> unrepresentable += rule.label
+            }
+        }
+        return AppRulePlan(appRules.distinctBy { it.packageName }, surfaceRules, unrepresentable)
+    }
+
+    private fun mergeSurfaceRules(existing: List<ContentRule>, surface: List<ContentRule>): List<ContentRule> =
+        existing + surface.filter { add ->
+            existing.none {
+                EffectivePromisePolicy.isShortFormSurfaceBlock(it) && it.packageName == add.packageName
+            }
+        }
+
+    /** v1 options are labelled from their structured scope so the card names what gets saved. */
+    private fun mapClarificationOption(dto: ClarificationOptionDto, v1PromiseText: String?): ClarificationOption {
+        val canonicalLabel = v1PromiseText?.let { promise ->
+            ScopeAppliesToCopy.optionLabel(ScopeCanonicalizer.fromCompilerJson(dto.scopeJson, promise))
+        }
+        return ClarificationOption(
             id = dto.id,
-            label = dto.label,
+            label = canonicalLabel ?: dto.label,
             description = dto.description,
             recommended = dto.recommended,
             policyPreview = dto.policyPreview
         )
+    }
+
+    const val SCOPE_CONTRACT_V1 = "v1"
+    const val TYPED_SCOPE_UNRESOLVED_CAUTION =
+        "Where this promise applies isn't clear yet. Pick an option or reword it before Start."
 
     private fun parseStrictness(value: String): StrictnessLevel =
         when (value.trim().uppercase()) {
@@ -367,6 +485,7 @@ object CompiledPromiseMapper {
         val action = runCatching {
             ContentRuleAction.valueOf(dto.action.trim().uppercase())
         }.getOrNull() ?: return null
+        if (isContentFreeAllow(dto, action)) return null
         return ContentRule(
             appLabel = dto.appLabel,
             packageName = dto.packageName?.let { canonicalizePackage(it) ?: it },
@@ -378,6 +497,17 @@ object CompiledPromiseMapper {
             action = action
         )
     }
+
+    /** Compiler filler like `ALLOW::::other:any:` names nothing; BLOCK rules are never dropped. */
+    private fun isContentFreeAllow(dto: CompiledContentRuleDto, action: ContentRuleAction): Boolean =
+        action == ContentRuleAction.ALLOW &&
+            dto.packageName.isNullOrBlank() &&
+            dto.appLabel.isNullOrBlank() &&
+            dto.operator.isNullOrBlank() &&
+            dto.value == null &&
+            dto.unit.isNullOrBlank() &&
+            dto.contentType.ifBlank { "other" } == "other" &&
+            dto.surface.ifBlank { "any" } == "any"
 
     private fun mergeBrandLists(vararg lists: List<String>): List<String> =
         lists.flatMap { list ->

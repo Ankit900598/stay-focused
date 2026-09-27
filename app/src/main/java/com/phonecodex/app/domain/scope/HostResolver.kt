@@ -59,11 +59,23 @@ object HostResolver {
         return ScopeHost.NATIVE_APP
     }
 
-    fun isBrowser(packageName: String): Boolean {
+    fun isBrowser(packageName: String): Boolean =
+        isVerifiedBrowser(packageName) || looksLikeBrowserByNameOnly(packageName)
+
+    /**
+     * Listed browser package. Typed scopes only treat these as BROWSER; a name hint
+     * ("browser", "webview", …) also fires on games and WebView shells.
+     */
+    fun isVerifiedBrowser(packageName: String): Boolean {
         val pkg = packageName.trim().lowercase()
         if (pkg.isEmpty()) return false
-        if (pkg in BROWSER_PACKAGES) return true
-        if (VideoPlatformRegistry.isChrome(pkg)) return true
+        return pkg in BROWSER_PACKAGES || VideoPlatformRegistry.isChrome(pkg)
+    }
+
+    /** Unlisted package whose id merely contains a browser hint. Uncertain host evidence. */
+    fun looksLikeBrowserByNameOnly(packageName: String): Boolean {
+        val pkg = packageName.trim().lowercase()
+        if (pkg.isEmpty() || isVerifiedBrowser(pkg)) return false
         return BROWSER_NAME_HINTS.any { hint -> pkg.contains(hint) }
     }
 

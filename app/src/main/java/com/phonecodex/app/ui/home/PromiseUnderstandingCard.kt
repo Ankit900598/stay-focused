@@ -106,6 +106,18 @@ internal fun PromiseUnderstandingCard(
         Spacer(modifier = Modifier.height(12.dp))
         SummaryRow(label = "I will block", value = understanding.blockedLabel)
 
+        // Always-on Life Rules render in their own row. Merging them into "I will
+        // block" (old behavior) lied by suggesting the current promise blocks them
+        // when in fact a separate permanent guardrail does — see reliability
+        // design 2026-09-25 §Fix 3.
+        if (understanding.alwaysOnLifeRules.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            SummaryRow(
+                label = "Always on",
+                value = understanding.alwaysOnLifeRules.joinToString(", ")
+            )
+        }
+
         understanding.conditionalLabel?.let { conditional ->
             Spacer(modifier = Modifier.height(12.dp))
             SummaryRow(label = "Also", value = conditional)

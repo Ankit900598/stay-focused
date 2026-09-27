@@ -5,6 +5,7 @@ import com.phonecodex.app.domain.model.ContentRuleAction
 import com.phonecodex.app.domain.model.FocusPromise
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.ui.home.buildPromiseUnderstanding
+import com.phonecodex.app.ui.home.UnderstandingSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -63,7 +64,10 @@ class PromiseClockSemanticsTest {
             ),
             blockedSummaries = listOf("videos longer than 40 min")
         )
-        val understanding = buildPromiseUnderstanding(draft)
+        val understanding = buildPromiseUnderstanding(
+            draft,
+            source = UnderstandingSource.PROMISE_COMPILER
+        )
         assertTrue(understanding.canStart)
         assertFalse(understanding.blockedLabel.contains("budget", ignoreCase = true))
         assertTrue(understanding.sessionTimeLabel.contains("1 hour") || understanding.durationMinutes == 60)

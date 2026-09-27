@@ -21,8 +21,10 @@ import com.phonecodex.app.domain.promise.PromiseIntentRules
  * Callers must handle the outcome themselves:
  *
  *   Unresolved -> ALLOW SCOPE_UNRESOLVED_NO_ENFORCE     (scope isn't trusted)
+ *   PersistenceCorrupt -> ALLOW SCOPE_PERSISTENCE_CORRUPT (stored scope unreadable; unverified)
  *   Exempt     -> ALLOW SCOPE_EXEMPT_ALLOW              (in scope but exempted)
  *   OutOfScope && !monkOverride -> appRule BLOCK ? BLOCK : ALLOW ENFORCEMENT_SCOPE_ALLOW
+ *   Indeterminate && !monkOverride -> WAIT SCOPE_EVIDENCE_INDETERMINATE (no block, no allow claim)
  *   otherwise (InScope or monk-override OutOfScope) -> continue existing gates
  *
  * PolicyEngine remains law: [ScopeGate] never produces a verdict on its own; it
@@ -48,30 +50,51 @@ object ScopeGate {
         val shortCircuits: Boolean
             get() = when (match) {
                 is ScopeMatch.Unresolved -> true
+                is ScopeMatch.PersistenceCorrupt -> true
                 is ScopeMatch.Exempt -> true
                 ScopeMatch.OutOfScope -> !monkOverridesScope
+                is ScopeMatch.Indeterminate -> !monkOverridesScope
                 is ScopeMatch.InScope -> false
             }
     }
 
     /**
      * Convenience: caller supplies the raw pieces; the gate builds detection and
-     * chooses the effective scope (explicit `settings.enforcementScope` overrides
-     * the [LegacyScopeAdapter] fallback so Phase 2B can enable the new path per-promise
-     * without touching call sites).
+     * chooses the effective scope from [StudyWorldSettings.typedScopeRecord]:
+     * VALID uses the typed scope, ABSENT uses the [LegacyScopeAdapter], and CORRUPT
+     * short-circuits to [ScopeMatch.PersistenceCorrupt] -- the legacy mirror is never
+     * treated as the confirmed scope.
      */
     fun evaluate(
         packageName: String,
         screenText: String,
         goal: String,
         settings: StudyWorldSettings
-    ): ScopeGateOutcome = evaluate(
-        packageName = packageName,
-        screenText = screenText,
-        detection = SurfaceDetector.detect(packageName, screenText),
-        goal = goal,
-        scope = settings.enforcementScope ?: LegacyScopeAdapter.from(settings)
-    )
+    ): ScopeGateOutcome {
+        val typed = settings.enforcementScope
+        return when (settings.typedScopeRecord) {
+            TypedScopeRecord.CORRUPT -> ScopeGateOutcome(
+                match = ScopeMatch.PersistenceCorrupt(settings.typedScopeCorruptDetail.orEmpty()),
+                monkOverridesScope = false,
+                scopeKind = ScopeKind.UNRESOLVED,
+                scopeClauseId = null
+            )
+            TypedScopeRecord.VALID -> evaluate(
+                packageName = packageName,
+                screenText = screenText,
+                detection = SurfaceDetector.detect(packageName, screenText),
+                goal = goal,
+                scope = typed!!
+            )
+            TypedScopeRecord.ABSENT -> evaluate(
+                packageName = packageName,
+                screenText = screenText,
+                detection = SurfaceDetector.detect(packageName, screenText),
+                goal = goal,
+                scope = LegacyScopeAdapter.from(settings)
+            )
+        }
+    }
 
     fun evaluate(
         packageName: String,
@@ -85,6 +108,7 @@ object ScopeGate {
         val clauseId = when (match) {
             is ScopeMatch.InScope -> match.clauseId
             is ScopeMatch.Exempt -> match.clauseId
+            is ScopeMatch.Indeterminate -> match.clauseId
             else -> null
         }
         return ScopeGateOutcome(

@@ -38,7 +38,7 @@ class ShortFormQuotaGateTest {
         var storedCount = 0
         var storedSigs = emptySet<String>()
         val ledger = object : ShortFormQuotaGate.Ledger {
-            override fun load(dayKey: String) = storedCount to storedSigs
+            override fun load(dayKey: String) = ShortFormQuotaGate.LedgerRead.Counted(storedCount, storedSigs)
             override fun save(dayKey: String, count: Int, signatures: Set<String>) {
                 storedCount = count
                 storedSigs = signatures
@@ -245,6 +245,59 @@ class ShortFormQuotaGateTest {
         val keyB = gateTimed.todayKey(nextDay)
         assertTrue(keyA != keyB)
         assertTrue(keyA.endsWith(":short_form_video"))
+    }
+
+    @Test
+    fun dayKey_followsDeviceTimezoneChange_forTheSameInstant() {
+        var deviceZone = java.time.ZoneId.of("UTC")
+        val instant = java.time.Instant.parse("2026-09-27T20:00:00Z").toEpochMilli()
+        val moving = ShortFormQuotaGate(clock = { instant }, zone = { deviceZone })
+        val shortA = "Hide player controls Shorts player swipe up for next 0:45 clipA"
+        val shortB = "Hide player controls Shorts player swipe up for next 0:30 clipB"
+
+        assertEquals("2026-09-27:short_form_video", moving.todayKey(instant))
+        assertEquals(1, moving.evaluate(VideoPlatformRegistry.YOUTUBE, shortA, 10).count)
+
+        deviceZone = java.time.ZoneId.of("Asia/Kolkata")
+        assertEquals("2026-09-28:short_form_video", moving.todayKey(instant))
+        val afterMove = moving.evaluate(VideoPlatformRegistry.YOUTUBE, shortB, 10)
+        assertEquals("2026-09-28:short_form_video", afterMove.dayKey)
+        assertEquals(1, afterMove.count)
+        assertEquals(1, moving.currentCount("2026-09-27:short_form_video"))
+    }
+
+    @Test
+    fun defaultZone_isReReadFromTheDeviceOnEveryCall() {
+        val original = java.util.TimeZone.getDefault()
+        val instant = java.time.Instant.parse("2026-09-27T20:00:00Z").toEpochMilli()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+            val live = ShortFormQuotaGate()
+            assertEquals("2026-09-27:short_form_video", live.todayKey(instant))
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Kolkata"))
+            assertEquals("2026-09-28:short_form_video", live.todayKey(instant))
+        } finally {
+            java.util.TimeZone.setDefault(original)
+        }
+    }
+
+    @Test
+    fun ledgerThatThrows_failsClosedOnActiveShortOnly() {
+        val broken = object : ShortFormQuotaGate.Ledger {
+            override fun load(dayKey: String): ShortFormQuotaGate.LedgerRead = throw ClassCastException("bad")
+            override fun save(dayKey: String, count: Int, signatures: Set<String>) =
+                error("unreadable state must never be overwritten")
+        }
+        val g = ShortFormQuotaGate(ledger = broken)
+        val short = g.evaluate(
+            VideoPlatformRegistry.YOUTUBE,
+            "Hide player controls Shorts player swipe up for next 0:45 clipA",
+            10
+        )
+        assertEquals(ShortFormQuotaAction.BLOCK_QUOTA_UNREADABLE, short.action)
+        assertEquals(null, short.count)
+        val home = g.evaluate(VideoPlatformRegistry.YOUTUBE, "Home Shorts Subscriptions Library Shorts shelf recommended", 10)
+        assertEquals(ShortFormQuotaAction.SKIP_NOT_SHORT_PLAY, home.action)
     }
 
     @Test

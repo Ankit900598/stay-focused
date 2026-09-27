@@ -1,7 +1,9 @@
 package com.phonecodex.app.domain.scope
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,9 +15,11 @@ class ScopeAppliesToCopyTest {
         val perKind = mapOf(
             ScopeKind.APP_ONLY to buildScope(ScopeKind.APP_ONLY, ScopeIdentity.YOUTUBE),
             ScopeKind.BROWSER_ONLY to buildScope(ScopeKind.BROWSER_ONLY, ScopeIdentity.YOUTUBE, sites = listOf("youtube.com")),
+            ScopeKind.BROWSER_VIDEO to buildScope(ScopeKind.BROWSER_VIDEO, ScopeIdentity.VIDEO_ANY),
             ScopeKind.CONTENT_ANY_HOST to buildScope(ScopeKind.CONTENT_ANY_HOST, ScopeIdentity.YOUTUBE),
             ScopeKind.VIDEO_CLASS_ANY_HOST to buildScope(ScopeKind.VIDEO_CLASS_ANY_HOST, ScopeIdentity.VIDEO_ANY),
             ScopeKind.SHORT_FORM_ANY_HOST to buildScope(ScopeKind.SHORT_FORM_ANY_HOST, ScopeIdentity.SHORT_FORM_ANY),
+            ScopeKind.APP_SHORT_FORM_ONLY to buildScope(ScopeKind.APP_SHORT_FORM_ONLY, ScopeIdentity.YOUTUBE),
             ScopeKind.SOCIAL_MESSAGING_ONLY to buildScope(ScopeKind.SOCIAL_MESSAGING_ONLY, ScopeIdentity.INSTAGRAM),
             ScopeKind.SOCIAL_FEED_AND_REELS_ONLY to buildScope(
                 ScopeKind.SOCIAL_FEED_AND_REELS_ONLY,
@@ -30,7 +34,9 @@ class ScopeAppliesToCopyTest {
                 packages = listOf("app.netmirror.newtv")
             )
         )
+        assertEquals(ScopeKind.values().toSet() - ScopeKind.UNRESOLVED, perKind.keys)
         for ((kind, scope) in perKind) {
+            assertNotNull("$kind option label", ScopeAppliesToCopy.optionLabel(scope))
             val copy = ScopeAppliesToCopy.forScope(scope)
             assertTrue("$kind copy must be non-empty", copy.isNotBlank())
             assertFalse(

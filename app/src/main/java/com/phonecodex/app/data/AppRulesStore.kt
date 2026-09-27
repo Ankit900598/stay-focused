@@ -1,14 +1,20 @@
 package com.phonecodex.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
+import com.phonecodex.app.data.CommitmentRuleRestore.Outcome
 import com.phonecodex.app.domain.model.AppRule
 import com.phonecodex.app.domain.model.AppRuleBehavior
 
-class AppRulesStore(context: Context) {
+/** Result of undoing (or declining to undo) a commitment's app-rule writes. */
+data class CommitmentRuleRestore(val outcome: Outcome, val eventMessage: String?) {
+    enum class Outcome { RESTORED, NO_LEDGER, SESSION_ACTIVE, UNREADABLE_LEDGER_RULES_KEPT }
+}
 
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
+class AppRulesStore(private val prefs: SharedPreferences) {
+
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
 
     fun getRules(): List<AppRule> {
@@ -78,28 +84,88 @@ class AppRulesStore(context: Context) {
     }
 
     /**
-     * Clears prior commitment overrides so old Instagram/YouTube behaviors cannot poison a new
-     * promise, then applies this promise's suggestions on top of catalog defaults.
+     * Applies this promise's suggestions for the session only. Existing overrides and custom
+     * entries have unprovable origin, so they are treated as the user's and only overlaid.
+     * A leftover readable ledger is undone first; an unreadable one is quarantined and
+     * reported, never guessed at. [restoreCommitmentRules] undoes this write.
      */
-    fun applyCommitmentSuggestions(suggested: List<AppRule>) {
-        clearOverrides()
-        val byPackage = suggested.associateBy { it.packageName }
-        DEFAULT_RULES.forEach { default ->
-            val fromPromise = byPackage[default.packageName]
-            applySuggestedRule(fromPromise ?: default)
+    fun applyCommitmentSuggestions(suggested: List<AppRule>): CommitmentRuleRestore {
+        val leftover = undoLedger(reportMissing = false)
+        val applied = CommitmentAppRuleLedger.apply(
+            readState(),
+            suggested,
+            DEFAULT_RULES.map { it.packageName }.toSet()
+        )
+        writeState(applied.state, CommitmentAppRuleLedger.encode(applied.ledger))
+        return if (leftover.outcome == Outcome.UNREADABLE_LEDGER_RULES_KEPT) {
+            leftover
+        } else {
+            CommitmentRuleRestore(Outcome.NO_LEDGER, eventMessage = null)
         }
-        suggested
-            .filter { rule -> DEFAULT_RULES.none { it.packageName == rule.packageName } }
-            .forEach { applySuggestedRule(it) }
     }
 
-    fun clearOverrides() {
+    /** Manual end / expiry: put back the pre-session rules the commitment still owns. */
+    fun restoreCommitmentRules(): CommitmentRuleRestore = undoLedger(reportMissing = true)
+
+    /** Process restart / stale session: a ledger with no running session is undone. */
+    fun restoreStaleCommitmentRules(hasActiveSession: Boolean): CommitmentRuleRestore {
+        if (hasActiveSession) return CommitmentRuleRestore(Outcome.SESSION_ACTIVE, eventMessage = null)
+        return undoLedger(reportMissing = false)
+    }
+
+    fun hasCommitmentLedger(): Boolean = prefs.contains(KEY_COMMITMENT_LEDGER)
+
+    private fun undoLedger(reportMissing: Boolean): CommitmentRuleRestore {
+        if (!prefs.contains(KEY_COMMITMENT_LEDGER)) {
+            return CommitmentRuleRestore(
+                Outcome.NO_LEDGER,
+                eventMessage = if (reportMissing) NO_LEDGER_MESSAGE else null
+            )
+        }
+        val raw = prefs.all[KEY_COMMITMENT_LEDGER]
+        val ledger = (raw as? String)?.let(CommitmentAppRuleLedger::decode)
+        if (ledger == null) {
+            quarantineLedger(raw)
+            return CommitmentRuleRestore(Outcome.UNREADABLE_LEDGER_RULES_KEPT, UNREADABLE_LEDGER_MESSAGE)
+        }
+        writeState(CommitmentAppRuleLedger.restore(readState(), ledger), ledger = null)
+        return CommitmentRuleRestore(Outcome.RESTORED, eventMessage = null)
+    }
+
+    /** Keeps current rules untouched and preserves every unreadable ledger for diagnosis. */
+    private fun quarantineLedger(raw: Any?) {
+        val earlier = prefs.all[KEY_LEDGER_QUARANTINE] as? String
+        val quarantined = listOfNotNull(earlier, raw.toString()).joinToString(QUARANTINE_SEPARATOR)
+        prefs.edit()
+            .putString(KEY_LEDGER_QUARANTINE, quarantined)
+            .putString(KEY_LEDGER_RECOVERY_NOTE, "${System.currentTimeMillis()} $UNREADABLE_LEDGER_MESSAGE")
+            .remove(KEY_COMMITMENT_LEDGER)
+            .commit()
+    }
+
+    private fun readState(): AppRuleState = AppRuleState(
+        behaviors = prefs.all
+            .filterKeys { it.startsWith(BEHAVIOR_PREFIX) }
+            .mapNotNull { (key, value) ->
+                (value as? String)?.let { key.removePrefix(BEHAVIOR_PREFIX) to it }
+            }
+            .toMap(),
+        customEntries = (prefs.all[KEY_CUSTOM_RULES] as? Set<*>).orEmpty().filterIsInstance<String>().toSet()
+    )
+
+    /** Writes only what changed, so values this store cannot read are never touched. */
+    private fun writeState(state: AppRuleState, ledger: String?) {
+        val current = readState()
         val editor = prefs.edit()
-        prefs.all.keys
-            .filter { key -> key.startsWith("behavior_") }
-            .forEach { key -> editor.remove(key) }
-        editor.putStringSet(KEY_CUSTOM_RULES, emptySet())
-        editor.apply()
+        (current.behaviors.keys - state.behaviors.keys).forEach { editor.remove(behaviorKey(it)) }
+        state.behaviors
+            .filter { (pkg, behavior) -> current.behaviors[pkg] != behavior }
+            .forEach { (pkg, behavior) -> editor.putString(behaviorKey(pkg), behavior) }
+        if (state.customEntries != current.customEntries) {
+            editor.putStringSet(KEY_CUSTOM_RULES, state.customEntries)
+        }
+        if (ledger == null) editor.remove(KEY_COMMITMENT_LEDGER) else editor.putString(KEY_COMMITMENT_LEDGER, ledger)
+        editor.commit()
     }
 
     fun isDefaultRule(packageName: String): Boolean {
@@ -149,12 +215,24 @@ class AppRulesStore(context: Context) {
     }
 
     private fun behaviorKey(packageName: String): String {
-        return "behavior_$packageName"
+        return "$BEHAVIOR_PREFIX$packageName"
     }
 
     companion object {
         private const val PREFS_NAME = "phonecodex_app_rules"
         private const val KEY_CUSTOM_RULES = "custom_rules"
+        private const val BEHAVIOR_PREFIX = "behavior_"
+        private const val KEY_COMMITMENT_LEDGER = "commitment_ledger_v1"
+        private const val KEY_LEDGER_QUARANTINE = "commitment_ledger_quarantine_v1"
+        private const val KEY_LEDGER_RECOVERY_NOTE = "commitment_ledger_recovery_note"
+        private const val QUARANTINE_SEPARATOR = "\n---\n"
+
+        const val NO_LEDGER_MESSAGE =
+            "App rules kept as they are: no record of this commitment's rule changes was found, " +
+                "so nothing was reset. Review App Rules if anything looks wrong."
+        const val UNREADABLE_LEDGER_MESSAGE =
+            "App rules kept as they are: this commitment's rule record could not be read, " +
+                "so nothing was guessed or reset. Review App Rules if anything looks wrong."
 
         private val DEFAULT_RULES = listOf(
             AppRule(

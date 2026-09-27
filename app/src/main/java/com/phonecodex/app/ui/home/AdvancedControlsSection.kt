@@ -105,7 +105,9 @@ internal fun AdvancedActiveSessionCard(state: HomeScreenState) {
         Spacer(modifier = Modifier.height(8.dp))
         SummaryRow(label = "Attempts", value = activeSession.attemptCount.toString())
         Spacer(modifier = Modifier.height(8.dp))
-        SummaryRow(label = "Strictness", value = activeSession.strictness.name)
+        SummaryRow(label = "Strictness", value = activeSession.confirmedStrictness.name)
+        Spacer(modifier = Modifier.height(8.dp))
+        SummaryRow(label = "World strictness", value = activeSession.strictness.name)
 
         if (state.isSessionActive) {
             Spacer(modifier = Modifier.height(14.dp))

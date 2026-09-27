@@ -21,14 +21,8 @@ class AppDossierStore(context: Context) {
         prefs.edit().putString(key(dossier.packageName), encode(dossier)).apply()
     }
 
-    fun merged(packageName: String, screenText: String): AppDossier {
-        val local = AppDossier.localOnly(packageName, screenText)
-        val stored = get(packageName) ?: return local
-        return stored.copy(
-            localClass = local.localClass,
-            playClass = local.playClass ?: stored.playClass
-        )
-    }
+    fun merged(packageName: String, screenText: String): AppDossier =
+        AppDossier.withLiveScreen(get(packageName), packageName, screenText)
 
     fun recordUserClaim(packageName: String, claimed: AppClass, screenText: String = "") {
         val current = merged(packageName, screenText)

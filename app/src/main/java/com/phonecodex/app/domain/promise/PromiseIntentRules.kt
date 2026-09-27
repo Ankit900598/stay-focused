@@ -4,6 +4,7 @@ import com.phonecodex.app.domain.enforcement.ShortFormLanguage
 import com.phonecodex.app.domain.enforcement.SurfaceDetector
 import com.phonecodex.app.domain.enforcement.VideoDurationParser
 import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
+import com.phonecodex.app.domain.model.AppRuleBehavior
 
 /**
  * Goal-text heuristics for accessibility enforcement.
@@ -264,6 +265,21 @@ object PromiseIntentRules {
         return !blocksDocs
     }
 
+    /**
+     * Stored app rule plus goal-text whole-app blocks, used by both enforcement paths.
+     * A surface-qualified alias ("block youtube shorts") is never a whole-app block.
+     */
+    fun effectiveAppRule(
+        stored: AppRuleBehavior?,
+        goal: String,
+        packageName: String
+    ): AppRuleBehavior? =
+        if (stored == AppRuleBehavior.BLOCK || explicitlyBlocksKnownPackage(goal, packageName)) {
+            AppRuleBehavior.BLOCK
+        } else {
+            stored
+        }
+
     fun explicitlyBlocksKnownPackage(goal: String, packageName: String): Boolean {
         val aliases = PACKAGE_ALIASES[packageName].orEmpty()
         if (aliases.isEmpty()) return false
@@ -288,7 +304,7 @@ object PromiseIntentRules {
      * matching implementation in FocusPromiseParser.explicitlyBlocksNamedApp.
      */
     private fun explicitlyBlocksAlias(normalized: String, alias: String): Boolean {
-        val a = Regex.escape(alias)
+        val a = Regex.escape(alias) + SURFACE_QUALIFIER_GUARD
 
         // (A) Block cue immediately governs the alias.
         val preCue = Regex(
@@ -326,41 +342,88 @@ object PromiseIntentRules {
         return lastAllow >= 0 && lastAllow > lastBlock
     }
 
-    /** Max length: block videos longer/greater than N minutes. */
-    fun extractGoalMaxVideoLimitMinutes(goal: String): Int? {
+    /**
+     * Which side of a per-video length threshold the promise blocks.
+     * [minBlockMinutes]: block videos shorter than N. [maxBlockMinutes]: block
+     * videos longer than N. Both equal only when [exact] ("exactly N minutes").
+     */
+    data class MediaLengthIntent(
+        val minBlockMinutes: Int?,
+        val maxBlockMinutes: Int?,
+        val exact: Boolean = false
+    )
+
+    /**
+     * Polarity-aware reading of per-video length language. The comparator word
+     * alone is not enough:
+     *   "do not allow videos shorter than 30"  → block < 30 (min)
+     *   "allow only videos shorter than 30"    → block > 30 (max)
+     *   "allow only videos longer than 30"     → block < 30 (min)
+     *   "block videos longer than 30"          → block > 30 (max)
+     * With no allow/block cue, "shorter" reads as min and "longer" as max.
+     */
+    fun mediaLengthIntent(goal: String): MediaLengthIntent {
         val normalized = goal.lowercase()
-        // "allow only videos longer than 40" is a floor, not a ceiling.
-        if (isAllowOnlyLongerFloor(normalized) && !isBlockLongerCeiling(normalized)) {
-            return null
+        EXACT_LENGTH_REGEX.find(normalized)?.let { match ->
+            val minutes = toMinutes(match.groupValues[1], match.groupValues[2])
+            if (minutes != null) return MediaLengthIntent(minutes, minutes, exact = true)
         }
-        val match = GOAL_MAX_LIMIT_REGEX.find(normalized) ?: return null
-        val amount = match.groupValues[1].toIntOrNull() ?: return null
-        val unit = match.groupValues[2]
-        return if (unit.startsWith("h")) amount * 60 else amount
+        var min: Int? = null
+        var max: Int? = null
+        for (match in LENGTH_COMPARATOR_REGEX.findAll(normalized)) {
+            val minutes = toMinutes(match.groupValues[2], match.groupValues[3]) ?: continue
+            val comparator = match.groupValues[1]
+            val polarity = lengthPolarityBefore(normalized, match.range.first)
+                ?: lengthPolarityAfter(normalized, match.range.last + 1)
+            val blocksShorter = when {
+                AT_LEAST_WORDS.containsMatchIn(comparator) -> true
+                SHORTER_WORDS.containsMatchIn(comparator) -> polarity != LengthPolarity.ALLOW
+                else -> polarity == LengthPolarity.ALLOW
+            }
+            if (blocksShorter) {
+                if (min == null) min = minutes
+            } else {
+                if (max == null) max = minutes
+            }
+        }
+        return MediaLengthIntent(min, max)
     }
 
-    /** Min length: block videos shorter/less than N minutes (must be ≥ N). */
-    fun extractGoalMinVideoLimitMinutes(goal: String): Int? {
-        val normalized = goal.lowercase()
-        val shorter = GOAL_MIN_LIMIT_REGEX.find(normalized)
-        if (shorter != null) {
-            val amount = shorter.groupValues[1].toIntOrNull() ?: return null
-            val unit = shorter.groupValues[2]
-            return if (unit.startsWith("h")) amount * 60 else amount
+    /** Max length: block videos longer than N minutes. */
+    fun extractGoalMaxVideoLimitMinutes(goal: String): Int? =
+        mediaLengthIntent(goal).maxBlockMinutes
+
+    /** Min length: block videos shorter than N minutes (must be ≥ N). */
+    fun extractGoalMinVideoLimitMinutes(goal: String): Int? =
+        mediaLengthIntent(goal).minBlockMinutes
+
+    private enum class LengthPolarity { ALLOW, BLOCK }
+
+    private fun lengthPolarityBefore(text: String, comparatorStart: Int): LengthPolarity? {
+        val windowStart = maxOf(
+            0,
+            comparatorStart - 80,
+            text.lastIndexOf('.', comparatorStart - 1) + 1,
+            text.lastIndexOf(';', comparatorStart - 1) + 1
+        )
+        val window = text.substring(windowStart, comparatorStart)
+        val last = LENGTH_POLARITY_CUE_REGEX.findAll(window).lastOrNull() ?: return null
+        return if (last.groups[1] != null) LengthPolarity.BLOCK else LengthPolarity.ALLOW
+    }
+
+    private fun lengthPolarityAfter(text: String, comparatorEnd: Int): LengthPolarity? {
+        val window = text.substring(comparatorEnd, minOf(text.length, comparatorEnd + 40))
+        return when {
+            LENGTH_POST_BLOCK_REGEX.containsMatchIn(window) -> LengthPolarity.BLOCK
+            LENGTH_POST_ALLOW_REGEX.containsMatchIn(window) -> LengthPolarity.ALLOW
+            else -> null
         }
-        val atLeast = GOAL_AT_LEAST_REGEX.find(normalized)
-        if (atLeast != null) {
-            val amount = atLeast.groupValues[1].toIntOrNull() ?: return null
-            val unit = atLeast.groupValues[2]
-            return if (unit.startsWith("h")) amount * 60 else amount
-        }
-        if (isAllowOnlyLongerFloor(normalized) && !isBlockLongerCeiling(normalized)) {
-            val match = ALLOW_ONLY_LONGER_REGEX.find(normalized) ?: return null
-            val amount = match.groupValues[1].toIntOrNull() ?: return null
-            val unit = match.groupValues[2]
-            return if (unit.startsWith("h")) amount * 60 else amount
-        }
-        return null
+    }
+
+    private fun toMinutes(amountRaw: String, unit: String): Int? {
+        val amount = amountRaw.toIntOrNull() ?: return null
+        if (amount <= 0) return null
+        return if (unit.startsWith("h")) amount * 60 else amount
     }
 
     private fun isAllowOnlyLongerFloor(normalized: String): Boolean =
@@ -398,6 +461,10 @@ object PromiseIntentRules {
             """not use|dont use|don't use|cannot use|can't use""",
         RegexOption.IGNORE_CASE
     )
+
+    /** Alias followed by a short-form surface word names that surface, not the whole app. */
+    internal const val SURFACE_QUALIFIER_GUARD =
+        """(?!\s+(?:shorts?|reels?|short[\s-]*(?:form|videos?))\b)"""
 
     private val PACKAGE_ALIASES = mapOf(
         "com.whatsapp" to listOf("whatsapp", "whats app"),
@@ -555,25 +622,38 @@ object PromiseIntentRules {
                 "(?:shorter|less)\\s+than\\s*\\d+\\s*(?:min|mins|minutes?|hrs?|hours?)\\b"
         )
 
-    private val GOAL_MAX_LIMIT_REGEX =
+    private val LENGTH_COMPARATOR_REGEX =
         Regex(
-            "\\b(?:greater than|more than|over|longer than|above|" +
+            "\\b(at\\s+least|minimum\\s+of|no\\s+shorter\\s+than|" +
+                "shorter than|less than|under|below|" +
+                "length\\s+is\\s+(?:shorter|less)\\s+than|" +
+                "greater than|more than|over|longer than|above|" +
                 "length\\s+is\\s+(?:greater|more|longer)\\s+than)\\s*(\\d+)\\s*" +
                 "(min|mins|minutes?|hrs?|hours?)\\b"
         )
 
-    private val GOAL_MIN_LIMIT_REGEX =
+    private val EXACT_LENGTH_REGEX =
+        Regex("\\bexactly\\s+(\\d+)\\s*(min|mins|minutes?|hrs?|hours?)\\b")
+
+    private val AT_LEAST_WORDS = Regex("^(?:at\\s+least|minimum\\s+of|no\\s+shorter\\s+than)")
+
+    private val SHORTER_WORDS = Regex("(?:shorter|less|under|below)")
+
+    /** Group 1 = block cue, group 2 = allow cue. Block phrases listed first so "do not allow" wins over "allow". */
+    private val LENGTH_POLARITY_CUE_REGEX =
         Regex(
-            "\\b(?:shorter than|less than|under|" +
-                "length\\s+is\\s+(?:shorter|less)\\s+than)\\s*(\\d+)\\s*" +
-                "(min|mins|minutes?|hrs?|hours?)\\b"
+            "\\b(do\\s+not\\s+allow|don'?t\\s+allow|not\\s+allow|never\\s+allow|" +
+                "do\\s+not\\s+let\\s+me|don'?t\\s+let\\s+me|" +
+                "do\\s+not\\s+watch|don'?t\\s+watch|" +
+                "block|blocks|ban|stop|forbid|avoid|except|no)\\b|" +
+                "\\b(allow\\s+only|only\\s+allow|allow|only|just|let\\s+me)\\b"
         )
 
-    private val GOAL_AT_LEAST_REGEX =
-        Regex(
-            "\\b(?:at\\s+least|minimum\\s+of|no\\s+shorter\\s+than)\\s*(\\d+)\\s*" +
-                "(min|mins|minutes?|hrs?|hours?)\\b"
-        )
+    private val LENGTH_POST_BLOCK_REGEX =
+        Regex("^\\s*(?:videos?\\s+)?(?:are|is|will\\s+be)?\\s*(?:not\\s+allowed|blocked|banned|forbidden)\\b")
+
+    private val LENGTH_POST_ALLOW_REGEX =
+        Regex("^\\s*(?:videos?\\s+)?(?:are|is|will\\s+be)?\\s*(?:allowed|ok|fine)\\b")
 
     /**
      * Allow-polarity floor: "allow only videos longer than 40",

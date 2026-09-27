@@ -56,5 +56,18 @@ data class AppDossier(
                 source = if (play != null) SOURCE_PLAY else SOURCE_LOCAL
             )
         }
+
+        /**
+         * Persisted counsel / vision / user fields plus classes read from the current screen.
+         * A record for a different package is ignored rather than applied.
+         */
+        fun withLiveScreen(stored: AppDossier?, packageName: String, screenText: String): AppDossier {
+            val local = localOnly(packageName, screenText)
+            if (stored == null || stored.packageName != packageName) return local
+            return stored.copy(
+                localClass = local.localClass,
+                playClass = local.playClass ?: stored.playClass
+            )
+        }
     }
 }

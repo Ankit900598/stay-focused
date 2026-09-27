@@ -13,13 +13,17 @@ package com.phonecodex.app.domain.scope
  * Phase 2 wires it into the coordinator.
  */
 
-/** One of eleven named user-facing scope shapes. */
+/** One of twelve named user-facing scope shapes. */
 enum class ScopeKind {
     APP_ONLY,
     BROWSER_ONLY,
+    /** Video players in any verified browser. Browser search/home/docs stay out. */
+    BROWSER_VIDEO,
     CONTENT_ANY_HOST,
     VIDEO_CLASS_ANY_HOST,
     SHORT_FORM_ANY_HOST,
+    /** Short-form player inside one named app (e.g. YouTube Shorts). Long-form and other apps stay out. */
+    APP_SHORT_FORM_ONLY,
     SOCIAL_MESSAGING_ONLY,
     SOCIAL_FEED_AND_REELS_ONLY,
     SITE_SCOPED,
@@ -193,4 +197,23 @@ sealed interface ScopeMatch {
 
     /** Scope was UNRESOLVED. Enforce nothing; Home should say "not protecting". */
     data class Unresolved(val reason: UnresolvedReason?) : ScopeMatch
+
+    /**
+     * The confirmed typed scope was persisted but cannot be read back. Enforce nothing
+     * for this promise (safety/emergency and permanent guardrails run before scope) and
+     * surface it as unverified. Never substitute the legacy mirror.
+     */
+    data class PersistenceCorrupt(val detail: String) : ScopeMatch
+
+    /**
+     * A typed clause matched on every axis we can verify, but the deciding evidence is
+     * uncertain: an UNKNOWN surface under a player-only clause, or a package that only
+     * looks like a browser by name. Not a verified OutOfScope — callers WAIT.
+     */
+    data class Indeterminate(val clauseId: String, val reason: IndeterminateReason) : ScopeMatch
+}
+
+enum class IndeterminateReason {
+    SURFACE_UNKNOWN,
+    HOST_UNVERIFIED
 }

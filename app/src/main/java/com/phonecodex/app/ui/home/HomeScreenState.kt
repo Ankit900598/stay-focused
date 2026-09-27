@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalContext
 import com.phonecodex.app.accessibility.AccessibilityHealthChecker
 import com.phonecodex.app.data.AccessibilityHeartbeat
 import com.phonecodex.app.data.AppRulesStore
+import com.phonecodex.app.data.CommitmentTeardown
+import com.phonecodex.app.data.EmergencyExitStore
 import com.phonecodex.app.data.DebugState
 import com.phonecodex.app.data.DebugStateStore
 import com.phonecodex.app.data.EventLogStore
@@ -37,6 +39,8 @@ import com.phonecodex.app.domain.model.FocusSession
 import com.phonecodex.app.domain.model.FocusWorld
 import com.phonecodex.app.domain.model.InstalledApp
 import com.phonecodex.app.domain.model.PermanentGuardrail
+import com.phonecodex.app.domain.model.RecoveryPolicy
+import com.phonecodex.app.domain.recovery.RecoveryPolicyDefaults
 import com.phonecodex.app.domain.model.SafeApp
 import com.phonecodex.app.domain.model.SessionStatus
 import com.phonecodex.app.domain.model.StudyWorldSettings
@@ -44,14 +48,21 @@ import com.phonecodex.app.domain.policy.PolicyEngine
 import com.phonecodex.app.domain.protection.ProtectionReliabilityGate
 import com.phonecodex.app.domain.protection.ProtectionReliabilityInput
 import com.phonecodex.app.domain.protection.ProtectionReliabilityUiModel
+import com.phonecodex.app.domain.promise.ClarificationChoiceCarry
+import com.phonecodex.app.domain.promise.ClarificationChoiceSnapshot
 import com.phonecodex.app.domain.promise.CompiledPromiseMapper
 import com.phonecodex.app.domain.promise.ConfirmedPromiseBinder
 import com.phonecodex.app.domain.promise.FocusPromiseParser
+import com.phonecodex.app.domain.promise.LegacyScopeContractGuard
 import com.phonecodex.app.domain.promise.PromiseCompilerClient
 import com.phonecodex.app.domain.promise.PromiseTextCleanup
 import com.phonecodex.app.domain.promise.PromiseUnderstandingRequestGate
 import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
 import com.phonecodex.app.domain.promise.PromiseUnderstandingResolver
+import com.phonecodex.app.domain.scope.TypedScopeRecord
+import com.phonecodex.app.domain.session.CommitmentExitGate
+import com.phonecodex.app.domain.session.EmergencyExitGate
+import com.phonecodex.app.domain.session.ExitFriction
 import com.phonecodex.app.domain.session.SessionManager
 import com.phonecodex.app.protection.ProtectionHeartbeatController
 import kotlinx.coroutines.CoroutineScope
@@ -83,13 +94,34 @@ internal class HomeScreenState(
     val focusPromiseParser: FocusPromiseParser,
     val promiseCompilerClient: PromiseCompilerClient = PromiseCompilerClient(),
     val studyWorld: FocusWorld,
-    val createdAtElapsedMs: Long = SystemClock.elapsedRealtime()
+    val createdAtElapsedMs: Long = SystemClock.elapsedRealtime(),
+    val emergencyExitStore: EmergencyExitStore = EmergencyExitStore(context),
+    val recoveryPolicy: RecoveryPolicy = RecoveryPolicyDefaults.default()
 ) {
+    private val commitmentTeardown = CommitmentTeardown(sessionStore, appRulesStore, eventLogStore::addEvent)
+
     var promiseText by mutableStateOf("")
     var promiseUnderstanding by mutableStateOf<PromiseUnderstanding?>(null)
     var promiseDraft by mutableStateOf<FocusPromise?>(null)
     var selectedClarificationOptionId by mutableStateOf<String?>(null)
+
+    /**
+     * Clarification options exactly as last shown, bound to the promise text they
+     * were generated for. On a pick we echo the snapshot + tapped option so the
+     * backend resolves the choice from what the user saw, never from a fresh
+     * model response that may reuse the same id for a different scope.
+     */
+    private var lastClarificationSnapshot: ClarificationChoiceSnapshot? = null
     var strongerConfirmAcknowledged by mutableStateOf(false)
+
+    /** Non-null while the Strict/Locked end-commitment confirm step is showing. */
+    var pendingExitFriction by mutableStateOf<ExitFriction?>(null)
+        private set
+    var exitPhraseError by mutableStateOf<String?>(null)
+        private set
+    /** True while the emergency-exit confirm step is showing. Never survives recreation. */
+    var pendingEmergencyExit by mutableStateOf(false)
+        private set
     var startBlockedMessage by mutableStateOf<String?>(null)
     var understandingInProgress by mutableStateOf(false)
     var voiceInputStatus by mutableStateOf<String?>(null)
@@ -163,7 +195,9 @@ internal class HomeScreenState(
             permanentGuardrailOn = enabledGuardrailCount > 0,
             backendKind = backendProbeResult.kind,
             backendLoopback = ProtectionReliabilityGate.backendLoopback(),
-            nowMillis = nowMillis
+            nowMillis = nowMillis,
+            commitmentScopeUnverified =
+                studyWorldSettings.typedScopeRecord == TypedScopeRecord.CORRUPT
         )
 
     val developerDiagnostics: DeveloperDiagnosticsUiModel
@@ -200,8 +234,11 @@ internal class HomeScreenState(
         val started = SystemClock.elapsedRealtime()
         val snapshot = withContext(Dispatchers.IO) {
             val heartbeat = runtimeDiagStore.getHeartbeat()
+            val storedSession = sessionStore.getStoredSession()
+            appRulesStore.restoreStaleCommitmentRules(hasActiveSession = storedSession != null)
+                .eventMessage?.let(eventLogStore::addEvent)
             BootstrapSnapshot(
-                session = sessionStore.getStoredSession(),
+                session = storedSession,
                 accessibilityEnabled =
                     AccessibilityHealthChecker.isPhoneCodexAccessibilityEnabled(context),
                 studyWorldSettings = studyWorldSettingsStore.getSettings(),
@@ -319,6 +356,8 @@ internal class HomeScreenState(
         if (selectedOptionId == null) {
             selectedClarificationOptionId = null
             strongerConfirmAcknowledged = false
+            // A fresh turn-1 compile invalidates any cached option snapshot.
+            lastClarificationSnapshot = null
         }
         Log.i(
             TAG_UNDERSTAND,
@@ -326,13 +365,21 @@ internal class HomeScreenState(
                 "selected=${selectedOptionId ?: "none"}"
         )
 
+        // Read carry state on the main thread before launching.
+        val choicePayload = selectedOptionId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ClarificationChoiceCarry.payloadFor(it, text, lastClarificationSnapshot) }
+
         scope.launch {
             try {
                 val compiledResult = withContext(Dispatchers.IO) {
                     runCatching {
                         promiseCompilerClient.compile(
                             promise = text,
-                            selectedClarificationOptionId = selectedOptionId
+                            selectedClarificationOptionId = selectedOptionId,
+                            selectedClarificationOptionFullTextJson = choicePayload?.selectedOptionJson,
+                            priorClarificationOptionsSnapshotJson = choicePayload?.snapshotJson,
+                            priorClarificationPromiseText = choicePayload?.snapshotPromiseText
                         )
                     }
                 }
@@ -343,10 +390,14 @@ internal class HomeScreenState(
 
                 compiledResult.fold(
                     onSuccess = {
+                        lastClarificationSnapshot =
+                            ClarificationChoiceCarry.snapshotFrom(text, it.clarificationOptionsRawJson)
                         Log.i(
                             TAG_UNDERSTAND,
                             "compile success v=$requestVersion clarificationRequired=${it.clarificationRequired} " +
-                                "canStart=${it.canStartCommitment} options=${it.clarificationOptions.size}"
+                                "canStart=${it.canStartCommitment} options=${it.clarificationOptions.size} " +
+                                "verification=${it.optionVerification ?: "none"} " +
+                                "cachedOptionsBytes=${lastClarificationSnapshot?.optionsJson?.length ?: 0}"
                         )
                     },
                     onFailure = { err ->
@@ -434,6 +485,7 @@ internal class HomeScreenState(
         startBlockedMessage = null
         selectedClarificationOptionId = null
         strongerConfirmAcknowledged = false
+        lastClarificationSnapshot = null
         Log.i(
             TAG_UNDERSTAND,
             "local-only preview canStart=${!resolved.draft.needsClarification} " +
@@ -454,6 +506,7 @@ internal class HomeScreenState(
         selectedClarificationOptionId = null
         strongerConfirmAcknowledged = false
         startBlockedMessage = null
+        lastClarificationSnapshot = null
         understandingInProgress = false
     }
 
@@ -463,12 +516,15 @@ internal class HomeScreenState(
 
         if (understanding != null && !understanding.canStart) {
             startBlockedMessage = when {
+                draft.legacyContractGap != null -> LegacyScopeContractGuard.START_BLOCKED_COPY
                 understanding.clarificationOptions.isNotEmpty() &&
                     understanding.selectedClarificationOptionId.isNullOrBlank() ->
                     "Pick one of the clarification options before starting."
                 understanding.requiresStrongerConfirmation &&
                     !understanding.strongerConfirmAcknowledged ->
                     "Confirm how long this commitment lasts before starting."
+                understanding.statusLabel == "Reconnect to verify this promise" ->
+                    "Reconnect to verify this promise before starting."
                 else ->
                     "I still need a clearer promise before I can protect it. Edit and tap Understand again."
             }
@@ -494,6 +550,7 @@ internal class HomeScreenState(
             studyWorldSettingsStore = studyWorldSettingsStore
         )
         appRulesStore.applyCommitmentSuggestions(draft.suggestedAppRules)
+            .eventMessage?.let(eventLogStore::addEvent)
         appRules = appRulesStore.getRules()
         studyWorldSettings = bound
 
@@ -503,7 +560,7 @@ internal class HomeScreenState(
             goal = goal,
             durationMillis = ConfirmedPromiseBinder.sessionDurationMillis(bound),
             nowMillis = System.currentTimeMillis()
-        )
+        ).copy(promiseStrictness = draft.strictness)
         sessionStore.saveActiveSession(started)
         session = started
         ProtectionHeartbeatController.start(context)
@@ -512,27 +569,89 @@ internal class HomeScreenState(
         promiseDraft = null
     }
 
-    fun endCommitment() {
+    /** Tap on "End Commitment". Soft/expired ends now; Strict/Locked opens a confirm step. */
+    fun requestEndCommitment() {
+        val current = session ?: return
+        val friction = CommitmentExitGate.frictionFor(current, System.currentTimeMillis())
+        if (friction == ExitFriction.NONE) {
+            performEndCommitment(friction)
+            return
+        }
+        pendingExitFriction = friction
+        exitPhraseError = null
+    }
+
+    fun confirmEndCommitment(typedPhrase: String?) {
+        val friction = pendingExitFriction ?: return
+        if (!CommitmentExitGate.mayEnd(friction, confirmed = true, typedPhrase = typedPhrase)) {
+            exitPhraseError = "Type the sentence exactly to end this commitment."
+            return
+        }
+        performEndCommitment(friction)
+    }
+
+    fun cancelEndCommitment() {
+        pendingExitFriction = null
+        exitPhraseError = null
+    }
+
+    private fun performEndCommitment(friction: ExitFriction) {
+        pendingExitFriction = null
+        exitPhraseError = null
+        endCommitment(CommitmentTeardown.Kind.EARLY_END, "friction=${friction.name}")
+    }
+
+    fun emergencyExitAvailability(): EmergencyExitGate.Availability =
+        EmergencyExitGate.availability(
+            session = session,
+            policy = recoveryPolicy,
+            lastUsedAtMillis = emergencyExitStore.lastUsedAtMillis(),
+            nowMillis = System.currentTimeMillis()
+        )
+
+    fun emergencyExitNextAvailableAtMillis(): Long? =
+        EmergencyExitGate.nextAvailableAtMillis(emergencyExitStore.lastUsedAtMillis())
+
+    fun requestEmergencyExit() {
+        pendingEmergencyExit = emergencyExitAvailability() == EmergencyExitGate.Availability.AVAILABLE
+    }
+
+    fun cancelEmergencyExit() {
+        pendingEmergencyExit = false
+    }
+
+    /** Duplicate taps are no-ops: the confirm step closes first and teardown ends a session once. */
+    fun confirmEmergencyExit() {
+        if (!pendingEmergencyExit) return
+        pendingEmergencyExit = false
+        val availability = emergencyExitAvailability()
+        if (availability != EmergencyExitGate.Availability.AVAILABLE) {
+            eventLogStore.addEvent("${CommitmentTeardown.EVENT_PREFIX} kind=EMERGENCY_EXIT outcome=REFUSED reason=${availability.name}")
+            return
+        }
+        val result = endCommitment(CommitmentTeardown.Kind.EMERGENCY_EXIT, "")
+        if (result.outcome == CommitmentTeardown.Outcome.ENDED) {
+            emergencyExitStore.recordUse(System.currentTimeMillis())
+        }
+    }
+
+    private fun endCommitment(kind: CommitmentTeardown.Kind, detail: String): CommitmentTeardown.Result {
+        val result = commitmentTeardown.end(kind, expectedSessionId = session?.id, detail = detail)
         sessionManager.stopSession(System.currentTimeMillis())
-        sessionStore.clearSession()
-        session = null
-        ProtectionHeartbeatController.stop(context)
-        promiseText = ""
-        clearUnderstanding()
-    }
-
-    fun logEmergencyExit() {
-        eventLogStore.addEvent("Emergency exit requested")
+        pendingExitFriction = null
+        exitPhraseError = null
+        pendingEmergencyExit = false
+        appRules = appRulesStore.getRules()
+        session = sessionStore.getStoredSession()
+        if (session == null) {
+            ProtectionHeartbeatController.stop(context)
+            promiseText = ""
+            clearUnderstanding()
+        }
         if (showAdvancedControls) {
             recentEvents = eventLogStore.getRecentEvents()
         }
-    }
-
-    fun logCooldownUnlock() {
-        eventLogStore.addEvent("Cooldown unlock requested")
-        if (showAdvancedControls) {
-            recentEvents = eventLogStore.getRecentEvents()
-        }
+        return result
     }
 
     fun setDurationMinutes(minutes: Int) {

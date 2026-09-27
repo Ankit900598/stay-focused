@@ -1,0 +1,475 @@
+{
+  "promise": "Block Instagram Reels and adult content for 1 hour; keep the feed and messages available.",
+  "response": {
+    "rawText": "Block Instagram Reels and adult content for 1 hour; keep the feed and messages available.",
+    "cleanedPromiseText": "Block Instagram Reels and adult content for 1 hour; keep the feed and messages available.",
+    "detectedLanguage": "en",
+    "transcriptConfidence": null,
+    "userIntentSummary": "Block Instagram Reels and adult content for 1 hour; keep the feed and messages available.",
+    "recommendedInterpretation": "Instagram Reels are blocked; the rest of Instagram stays open.",
+    "alternativeInterpretations": [],
+    "interpretationConfidence": 0.9,
+    "ambiguityLevel": "high",
+    "clarificationRequired": true,
+    "clarificationOptions": [],
+    "userFacingConfirmation": {
+      "understood": "Block Instagram Reels. Your other Instagram rules still apply.",
+      "allowed": [
+        "Instagram messages"
+      ],
+      "blocked": [
+        "Instagram adult content",
+        "short-form videos everywhere",
+        "YouTube Shorts",
+        "Instagram videos longer than 20 minutes",
+        "Instagram Reels"
+      ],
+      "time": "About 60 minutes",
+      "appliesTo": "Instagram Reels",
+      "checkThis": [
+        "I interpreted 'shorts' as all short-form video, including reels-style apps. Change?",
+        "I treated “shorts” as all short-form video surfaces (editable — change if you meant YouTube only)."
+      ],
+      "safetyNotes": [
+        "Blocked always: adult/sexual short videos",
+        "Blocked: Instagram adult content → BLOCK",
+        "Blocked: adult/sexual content → BLOCK always (no quota)",
+        "I interpreted 'shorts' as all short-form video, including reels-style apps. Change?"
+      ],
+      "understoodSummary": "Block Instagram Reels. Your other Instagram rules still apply.",
+      "allowedBullets": [
+        "Instagram messages"
+      ],
+      "blockedBullets": [
+        "Instagram adult content",
+        "short-form videos everywhere",
+        "YouTube Shorts",
+        "Instagram videos longer than 20 minutes",
+        "Instagram Reels"
+      ],
+      "timeWindowText": "About 60 minutes",
+      "appliesToText": "Instagram Reels",
+      "hiddenInternalScope": []
+    },
+    "internalPolicy": {
+      "timeWindow": {
+        "kind": "session_fixed",
+        "minutes": 60,
+        "label": "About 60 minutes"
+      },
+      "surfaceRules": [
+        {
+          "surface": "messages",
+          "action": "ALLOW",
+          "note": "Instagram messages",
+          "packageName": "com.instagram.android"
+        },
+        {
+          "surface": "adult",
+          "action": "BLOCK",
+          "note": "Instagram adult content",
+          "packageName": "com.instagram.android"
+        },
+        {
+          "surface": "shorts",
+          "action": "BLOCK",
+          "note": "short-form videos everywhere",
+          "packageName": null
+        },
+        {
+          "surface": "shorts",
+          "action": "BLOCK",
+          "note": "YouTube Shorts",
+          "packageName": "com.google.android.youtube"
+        },
+        {
+          "surface": "video",
+          "action": "BLOCK",
+          "note": "Instagram videos longer than 20 minutes",
+          "packageName": "com.instagram.android"
+        },
+        {
+          "surface": "feed",
+          "action": "ALLOW",
+          "note": "social budget ≤ 30 min / day",
+          "packageName": null
+        },
+        {
+          "surface": "shorts",
+          "action": "BLOCK",
+          "note": "Instagram Reels",
+          "packageName": "com.instagram.android"
+        }
+      ],
+      "contentRules": [
+        {
+          "appLabel": "Instagram",
+          "packageName": "com.instagram.android",
+          "surface": "messages",
+          "contentType": "social_dm",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "ALLOW",
+          "description": "Instagram messages"
+        },
+        {
+          "appLabel": "Instagram",
+          "packageName": "com.instagram.android",
+          "surface": "adult",
+          "contentType": "adult_sexual",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "BLOCK",
+          "description": "Instagram adult content"
+        },
+        {
+          "appLabel": null,
+          "packageName": null,
+          "surface": "shorts",
+          "contentType": "short_form_video",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "BLOCK",
+          "description": "short-form videos everywhere"
+        },
+        {
+          "appLabel": "YouTube",
+          "packageName": "com.google.android.youtube",
+          "surface": "shorts",
+          "contentType": "short_form_video",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "BLOCK",
+          "description": "YouTube Shorts"
+        },
+        {
+          "appLabel": "Instagram",
+          "packageName": "com.instagram.android",
+          "surface": "video",
+          "contentType": "long_form_video",
+          "operator": "gt",
+          "value": 20,
+          "unit": "minutes",
+          "action": "BLOCK",
+          "description": "Instagram videos longer than 20 minutes"
+        },
+        {
+          "appLabel": null,
+          "packageName": null,
+          "surface": "feed",
+          "contentType": "usage_quota",
+          "operator": "lte",
+          "value": 30,
+          "unit": "minutes",
+          "action": "ALLOW",
+          "description": "social budget ≤ 30 min / day"
+        },
+        {
+          "appLabel": "Instagram",
+          "packageName": "com.instagram.android",
+          "surface": "shorts",
+          "contentType": "short_form_video",
+          "operator": null,
+          "value": null,
+          "unit": null,
+          "action": "BLOCK",
+          "description": "Instagram Reels"
+        }
+      ],
+      "appRules": [
+        {
+          "packageName": "com.google.android.youtube",
+          "label": "YouTube",
+          "behavior": "ALLOW"
+        },
+        {
+          "packageName": "org.schabi.newpipe",
+          "label": "NewPipe",
+          "behavior": "ALLOW"
+        },
+        {
+          "packageName": "com.facebook.katana",
+          "label": "Facebook",
+          "behavior": "ALLOW"
+        },
+        {
+          "packageName": "com.zhiliaoapp.musically",
+          "label": "TikTok",
+          "behavior": "ALLOW"
+        },
+        {
+          "packageName": "com.snapchat.android",
+          "label": "Snapchat",
+          "behavior": "ALLOW"
+        },
+        {
+          "packageName": "com.android.chrome",
+          "label": "Chrome",
+          "behavior": "ALLOW"
+        },
+        {
+          "packageName": "com.instagram.android",
+          "label": "Instagram",
+          "behavior": "ALLOW"
+        }
+      ],
+      "quotaRules": [
+        {
+          "metric": "social_minutes",
+          "limit": 30,
+          "period": "day"
+        }
+      ],
+      "recoveryRules": {
+        "hardness": "normal",
+        "requiresExplicitConfirm": false,
+        "notes": ""
+      },
+      "guardrails": []
+    },
+    "riskReview": {
+      "falseAllowRisk": "low",
+      "falseBlockRisk": "low",
+      "safetyRisk": "medium",
+      "requiresHumanConfirmation": false
+    },
+    "hiddenInternalScope": [
+      "com.google.android.youtube",
+      "org.schabi.newpipe",
+      "com.instagram.android",
+      "com.facebook.katana",
+      "com.zhiliaoapp.musically",
+      "com.snapchat.android",
+      "com.android.chrome"
+    ],
+    "emergencyExceptions": [],
+    "sessionDurationMinutes": 60,
+    "timeWindowKind": "session_fixed",
+    "quotaBoundary": "allow_first_n",
+    "strictness": "STRICT",
+    "allowedSummaries": [
+      "Instagram messages"
+    ],
+    "blockedSummaries": [
+      "short-form videos everywhere → BLOCK",
+      "YouTube Shorts → BLOCK",
+      "adult/sexual content → BLOCK always (no quota)",
+      "Instagram adult content",
+      "Instagram videos longer than 20 minutes",
+      "Instagram Reels"
+    ],
+    "conditionalSummaries": [
+      "Social budget: 30 minutes per day",
+      "Applies to: short-video apps, social reels apps, and browser video pages"
+    ],
+    "confirmationPreview": [
+      "Blocked always: adult/sexual short videos",
+      "Social budget: 30 minutes per day",
+      "Applies to: short-video apps, social reels apps, and browser video pages",
+      "Blocked: short-form videos everywhere → BLOCK",
+      "Blocked: YouTube Shorts → BLOCK",
+      "Blocked: adult/sexual content → BLOCK always (no quota)",
+      "I interpreted 'shorts' as all short-form video, including reels-style apps. Change?"
+    ],
+    "interpretationNotes": [
+      "I interpreted 'shorts' as all short-form video, including reels-style apps. Change?"
+    ],
+    "scopePackages": [
+      "com.instagram.android"
+    ],
+    "scopeKind": "app_surface_short_form_instagram",
+    "contentBrands": [],
+    "surfaceScope": [],
+    "contentScope": [],
+    "contentRules": [
+      {
+        "appLabel": "Instagram",
+        "packageName": "com.instagram.android",
+        "surface": "messages",
+        "contentType": "social_dm",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "ALLOW",
+        "description": "Instagram messages"
+      },
+      {
+        "appLabel": "Instagram",
+        "packageName": "com.instagram.android",
+        "surface": "adult",
+        "contentType": "adult_sexual",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "Instagram adult content"
+      },
+      {
+        "appLabel": null,
+        "packageName": null,
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "short-form videos everywhere"
+      },
+      {
+        "appLabel": "YouTube",
+        "packageName": "com.google.android.youtube",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "YouTube Shorts"
+      },
+      {
+        "appLabel": "Instagram",
+        "packageName": "com.instagram.android",
+        "surface": "video",
+        "contentType": "long_form_video",
+        "operator": "gt",
+        "value": 20,
+        "unit": "minutes",
+        "action": "BLOCK",
+        "description": "Instagram videos longer than 20 minutes"
+      },
+      {
+        "appLabel": null,
+        "packageName": null,
+        "surface": "feed",
+        "contentType": "usage_quota",
+        "operator": "lte",
+        "value": 30,
+        "unit": "minutes",
+        "action": "ALLOW",
+        "description": "social budget ≤ 30 min / day"
+      },
+      {
+        "appLabel": "Instagram",
+        "packageName": "com.instagram.android",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "Instagram Reels"
+      }
+    ],
+    "clarificationQuestion": "One promise can't enforce all of this yet. Edit the promise to split it.",
+    "cautionMessages": [
+      "I interpreted 'shorts' as all short-form video, including reels-style apps. Change?",
+      "Using your choice: Instagram short videos only",
+      "\"Only Instagram Reels\" can't also enforce: Instagram adult content, short-form videos everywhere, YouTube Shorts, Instagram videos longer than 20 minutes, social budget ≤ 30 min / day. Make a separate promise for those, or edit this one."
+    ],
+    "source": "azure_promise_compiler",
+    "confidence": 0.9,
+    "suggestedAppRules": [
+      {
+        "packageName": "com.google.android.youtube",
+        "label": "YouTube",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "org.schabi.newpipe",
+        "label": "NewPipe",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.facebook.katana",
+        "label": "Facebook",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.zhiliaoapp.musically",
+        "label": "TikTok",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.snapchat.android",
+        "label": "Snapchat",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.android.chrome",
+        "label": "Chrome",
+        "behavior": "ALLOW"
+      },
+      {
+        "packageName": "com.instagram.android",
+        "label": "Instagram",
+        "behavior": "ALLOW"
+      }
+    ],
+    "commitmentType": "focus_session",
+    "promptVersion": "promise_compiler_v09",
+    "canStartCommitment": false,
+    "isPermanentCommitment": false,
+    "requiresStrongerConfirmation": false,
+    "isStudyModeLike": false,
+    "selectedClarificationOptionId": "A",
+    "appSurfaceChoice": {
+      "packageName": "com.instagram.android",
+      "choice": "short",
+      "uncoveredRules": [
+        "Instagram adult content",
+        "short-form videos everywhere",
+        "YouTube Shorts",
+        "Instagram videos longer than 20 minutes",
+        "social budget ≤ 30 min / day"
+      ]
+    },
+    "optionRematerialized": true,
+    "optionScopeKind": "app_surface_short_form_instagram",
+    "optionVerification": "snapshot_and_carry_verified",
+    "optionVerificationReason": "snapshot_and_carry_verified",
+    "scopeContract": "v1",
+    "scope": {
+      "version": 1,
+      "kind": "APP_SHORT_FORM_ONLY",
+      "resolution": "EXCLUSIVE",
+      "identity": "INSTAGRAM",
+      "include": [
+        {
+          "id": "i1",
+          "host": "NATIVE_APP",
+          "identity": "INSTAGRAM",
+          "surfaces": [
+            "PLAYER_SHORT"
+          ],
+          "sites": [],
+          "packages": [
+            "com.instagram.android"
+          ],
+          "packageMatch": "PINNED"
+        }
+      ],
+      "exempt": [],
+      "confidence": 1,
+      "appliesToText": null,
+      "unresolvedReason": null,
+      "evidenceSpans": [
+        "Instagram"
+      ],
+      "candidateScopes": []
+    },
+    "policyConflict": "app_surface_choice_misses_rules",
+    "policyConflictReasons": [
+      "app_surface_choice_misses_rules"
+    ],
+    "meta": {
+      "provider": "test",
+      "deployment": "test",
+      "promptVersion": "promise_compiler_v09",
+      "latencyMs": 0
+    }
+  }
+}

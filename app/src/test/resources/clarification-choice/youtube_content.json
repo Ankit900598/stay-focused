@@ -1,0 +1,152 @@
+{
+  "rawText": "no youtube videos or youtube app videos longer than 20 minutes for 1 hour",
+  "cleanedPromiseText": "no youtube videos or youtube app videos longer than 20 minutes for 1 hour",
+  "detectedLanguage": "en",
+  "transcriptConfidence": null,
+  "userIntentSummary": "no youtube videos or youtube app videos longer than 20 minutes for 1 hour",
+  "recommendedInterpretation": "YouTube videos anywhere follow the rule.",
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.9,
+  "ambiguityLevel": "low",
+  "clarificationRequired": false,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "YouTube videos anywhere",
+      "description": "App, browser pages, and other YouTube clients.",
+      "recommended": true,
+      "policyPreview": "YouTube videos anywhere follow the rule.",
+      "resultingPolicyPreview": "YouTube videos anywhere follow the rule.",
+      "internalPolicyPreview": {
+        "scopeKind": "youtube_content",
+        "appliesTo": "YouTube videos anywhere — app, browser pages, and other YouTube clients",
+        "expandShortForm": false,
+        "packages": [],
+        "scopePackages": [],
+        "contentBrands": [
+          "youtube"
+        ],
+        "surfaceScope": [
+          "youtube"
+        ],
+        "contentScope": [
+          "youtube"
+        ]
+      }
+    },
+    {
+      "id": "B",
+      "label": "YouTube app only",
+      "description": "Only the official app.",
+      "recommended": false,
+      "policyPreview": "Only the YouTube app.",
+      "resultingPolicyPreview": "Only the YouTube app.",
+      "internalPolicyPreview": {
+        "scopeKind": "youtube_only",
+        "appliesTo": "YouTube only",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "I understood: block videos shorter than 30 minutes for the next hour.",
+    "allowed": [],
+    "blocked": [
+      "videos longer than 20 min → BLOCK"
+    ],
+    "time": "About 60 minutes",
+    "appliesTo": "YouTube videos anywhere — app, browser pages, and other YouTube clients",
+    "checkThis": [],
+    "safetyNotes": [],
+    "understoodSummary": "I understood: block videos shorter than 30 minutes for the next hour.",
+    "allowedBullets": [],
+    "blockedBullets": [
+      "videos longer than 20 min → BLOCK"
+    ],
+    "timeWindowText": "About 60 minutes",
+    "appliesToText": "YouTube videos anywhere — app, browser pages, and other YouTube clients",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "session_fixed",
+      "minutes": 60,
+      "label": "About 60 minutes"
+    },
+    "surfaceRules": [],
+    "contentRules": [],
+    "appRules": [],
+    "quotaRules": [],
+    "recoveryRules": {
+      "hardness": "normal",
+      "requiresExplicitConfirm": false,
+      "notes": ""
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "low",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": false
+  },
+  "hiddenInternalScope": [],
+  "emergencyExceptions": [],
+  "sessionDurationMinutes": 60,
+  "timeWindowKind": "session_fixed",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "STRICT",
+  "allowedSummaries": [],
+  "blockedSummaries": [
+    "videos longer than 20 min → BLOCK"
+  ],
+  "conditionalSummaries": [
+    "Applies to: YouTube videos anywhere — app, browser pages, and other YouTube clients"
+  ],
+  "confirmationPreview": [
+    "Blocked: videos longer than 20 min → BLOCK"
+  ],
+  "interpretationNotes": [],
+  "scopePackages": [],
+  "scopeKind": "youtube_content",
+  "contentBrands": [
+    "youtube"
+  ],
+  "surfaceScope": [
+    "youtube"
+  ],
+  "contentScope": [
+    "youtube"
+  ],
+  "contentRules": [],
+  "clarificationQuestion": "Which of these matches what you meant?",
+  "cautionMessages": [
+    "Using your choice: YouTube videos anywhere"
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.9,
+  "suggestedAppRules": [],
+  "commitmentType": "focus_session",
+  "promptVersion": "promise_compiler_v07",
+  "canStartCommitment": true,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": false,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "A",
+  "optionRematerialized": true,
+  "optionScopeKind": "youtube_content",
+  "optionVerification": "snapshot_and_carry_verified",
+  "optionVerificationReason": "snapshot_and_carry_verified"
+}

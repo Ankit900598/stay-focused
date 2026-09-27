@@ -8,5 +8,18 @@ data class FocusSession(
     val deadlineMillis: Long,
     val status: SessionStatus,
     val attemptCount: Int,
-    val strictness: StrictnessLevel
-)
+    val strictness: StrictnessLevel,
+    /**
+     * Strictness the user confirmed on the promise. Drives exit friction only;
+     * PolicyEngine keeps using [strictness]. Null for sessions saved before this field.
+     */
+    val promiseStrictness: StrictnessLevel? = null
+) {
+    /**
+     * What the user confirmed. Every user-facing friction reads this: exit friction, the
+     * WARN overlay's Continue, the active card. [strictness] is the world default and only
+     * feeds PolicyEngine / classifier context for apps no promise rule covers.
+     */
+    val confirmedStrictness: StrictnessLevel
+        get() = promiseStrictness ?: strictness
+}

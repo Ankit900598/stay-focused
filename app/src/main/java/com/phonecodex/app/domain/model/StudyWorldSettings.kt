@@ -1,6 +1,7 @@
 package com.phonecodex.app.domain.model
 
 import com.phonecodex.app.domain.scope.EnforcementScope
+import com.phonecodex.app.domain.scope.TypedScopeRecord
 
 data class StudyWorldSettings(
     val durationMinutes: Int,
@@ -52,9 +53,34 @@ data class StudyWorldSettings(
      */
     val enforcementScope: EnforcementScope? = null,
     /**
+     * Non-null when a typed-scope record was persisted but could not be read back
+     * (see [com.phonecodex.app.domain.scope.StoredScopeCodec.readRecord]). Then
+     * [enforcementScope] is null and the legacy fields above must NOT stand in for it.
+     */
+    val typedScopeCorruptDetail: String? = null,
+    /**
+     * Structured surface BLOCKs from the confirmed promise, encoded by
+     * [com.phonecodex.app.domain.promise.BlockedSurfaceCodec] (`"<package>|short_form"`).
+     * Blocks only that surface inside the package; the rest of the app is untouched.
+     */
+    val blockedSurfaces: List<String> = emptyList(),
+    /**
+     * Backend `meta.promptVersion` of the compiler response this commitment was confirmed
+     * from. Null for the on-device parser or a response without version metadata; never
+     * inferred from a local prompt file or deployment name.
+     */
+    val compilerPromptVersion: String? = null,
+    /**
      * Developer opt-in for the 10-day vision counsel experiment.
      * Default OFF. Still requires [VisionExperiment] calendar window.
      * Not a promise clock — [StudyWorldSettingsStore.replaceSettings] must not wipe it.
      */
     val visionExperimentEnabled: Boolean = false
-)
+) {
+    val typedScopeRecord: TypedScopeRecord
+        get() = when {
+            typedScopeCorruptDetail != null -> TypedScopeRecord.CORRUPT
+            enforcementScope != null -> TypedScopeRecord.VALID
+            else -> TypedScopeRecord.ABSENT
+        }
+}

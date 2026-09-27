@@ -80,6 +80,7 @@ internal object ConfirmationUserCopy {
         for ((label, cue) in BYPASS_CLASS_APPS) {
             if (!promiseText.contains(cue, ignoreCase = true)) {
                 out = out.replace(Regex("""\b$label\b""", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("""(^|[\s(])/\s*|\s*/(?=\s*($|[),.]))"""), "$1")
                     .replace(Regex("""\s*,\s*,+"""), ",")
                     .replace(Regex("""\s{2,}"""), " ")
                     .trim(',', ' ', '·')

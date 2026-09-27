@@ -262,7 +262,8 @@ object CommitmentTransparency {
         return when (code) {
             EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT ->
                 "Strlix allowed $app because the video length is inside your promise."
-            EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN ->
+            EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN,
+            EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN ->
                 "Strlix blocked $app because this video is shorter than your promise allows."
             EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX ->
                 "Strlix blocked $app because this video is longer than your promise allows."
@@ -278,6 +279,8 @@ object CommitmentTransparency {
                 "Strlix blocked short-form video because today's short-form quota is used up."
             EnforcementReasonCodes.QUOTA_ALLOW_COUNT ->
                 "Strlix allowed this short because it still counts inside today's quota."
+            EnforcementReasonCodes.QUOTA_BLOCK_STATE_UNREADABLE ->
+                SessionEnforcementCopy.QUOTA_STATE_UNREADABLE_BLOCK
             EnforcementReasonCodes.QUOTA_BLOCK_ADULT,
             EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL ->
                 overlay.ifBlank { SessionEnforcementCopy.ADULT_GUARDRAIL_BLOCK }
@@ -322,7 +325,8 @@ object CommitmentTransparency {
             signals.contains("reel") ||
             code == EnforcementReasonCodes.QUOTA_BLOCK_EXCEEDED ||
             code == EnforcementReasonCodes.QUOTA_ALLOW_COUNT ||
-            code == EnforcementReasonCodes.QUOTA_BLOCK_ADULT
+            code == EnforcementReasonCodes.QUOTA_BLOCK_ADULT ||
+            code == EnforcementReasonCodes.QUOTA_BLOCK_STATE_UNREADABLE
         val chromeLongAllow = decision == "ALLOW" &&
             code == EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT &&
             (VideoPlatformRegistry.isChrome(snapshot.packageName.orEmpty()) ||
@@ -371,7 +375,7 @@ object CommitmentTransparency {
         "ALLOW" -> "Nothing to do if this matches your promise. Keep going."
         "WARN" -> "Leave this screen, or continue if you meant to. Repeated warns can lock the session."
         "BLOCK" -> "Leave this app or open something your promise allows."
-        "LOCK" -> "The session is locked. Use emergency/safe apps, or use emergency exit / cooldown in Strlix."
+        "LOCK" -> "The session is locked. Calls and emergency apps still work. To end it, use End Commitment or emergency exit in Strlix."
         "WAIT" -> "Stay until the player clock is readable, or leave if this should not play."
         else -> "Open Strlix if the decision does not match your promise."
     }

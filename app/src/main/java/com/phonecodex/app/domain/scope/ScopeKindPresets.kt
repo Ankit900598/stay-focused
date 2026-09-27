@@ -41,9 +41,11 @@ object ScopeKindPresets {
         return when (kind) {
             ScopeKind.APP_ONLY -> appOnly(identity, packages)
             ScopeKind.BROWSER_ONLY -> browserOnly(identity, sites)
+            ScopeKind.BROWSER_VIDEO -> browserVideo()
             ScopeKind.CONTENT_ANY_HOST -> contentAnyHost(identity)
             ScopeKind.VIDEO_CLASS_ANY_HOST -> videoClassAnyHost()
             ScopeKind.SHORT_FORM_ANY_HOST -> shortFormAnyHost()
+            ScopeKind.APP_SHORT_FORM_ONLY -> appShortFormOnly(identity)
             ScopeKind.SOCIAL_MESSAGING_ONLY -> socialMessagingOnly(identity)
             ScopeKind.SOCIAL_FEED_AND_REELS_ONLY -> socialFeedAndReelsOnly(identity, companionPackage)
             ScopeKind.SITE_SCOPED -> siteScoped(sites)
@@ -105,12 +107,29 @@ object ScopeKindPresets {
         return Expansion(listOf(include), emptyList())
     }
 
+    /**
+     * "Browser video": players in any listed browser. Not Chrome-pinned, and never
+     * search / browse / docs — those stay usable while the promise runs.
+     */
+    private fun browserVideo(): Expansion {
+        val include = ScopeClause(
+            id = "i1",
+            host = ScopeHost.BROWSER,
+            identity = ScopeIdentity.VIDEO_ANY,
+            surfaces = setOf(ScopeSurfaceClass.PLAYER_ANY),
+            packages = emptyList(),
+            packageMatch = PackageMatchMode.CLASS_RESOLVED
+        )
+        return Expansion(listOf(include), emptyList())
+    }
+
+    /** "All video apps and browsers": a playing video anywhere. Player-only, not surfaces=ANY. */
     private fun videoClassAnyHost(): Expansion {
         val include = ScopeClause(
             id = "i1",
             host = ScopeHost.ANY_HOST,
             identity = ScopeIdentity.VIDEO_ANY,
-            surfaces = setOf(ScopeSurfaceClass.ANY),
+            surfaces = setOf(ScopeSurfaceClass.PLAYER_ANY),
             packages = emptyList(),
             packageMatch = PackageMatchMode.CLASS_RESOLVED
         )
@@ -125,6 +144,20 @@ object ScopeKindPresets {
             surfaces = setOf(ScopeSurfaceClass.PLAYER_SHORT),
             packages = emptyList(),
             packageMatch = PackageMatchMode.CLASS_RESOLVED
+        )
+        return Expansion(listOf(include), emptyList())
+    }
+
+    /** "YouTube Shorts only": the short player in that app. Long-form, browser, other apps out. */
+    private fun appShortFormOnly(identity: ScopeIdentity?): Expansion {
+        val id = identity ?: ScopeIdentity.ANY
+        val include = ScopeClause(
+            id = "i1",
+            host = ScopeHost.NATIVE_APP,
+            identity = id,
+            surfaces = setOf(ScopeSurfaceClass.PLAYER_SHORT),
+            packages = defaultPackagesForIdentity(id),
+            packageMatch = PackageMatchMode.PINNED
         )
         return Expansion(listOf(include), emptyList())
     }

@@ -345,6 +345,15 @@ object SurfaceDetector {
             evidence += "player_controls_with_context"
             hit = true
         }
+        // Mobile-web watch page while playing with controls hidden: muted-autoplay chip
+        // plus the watch header's like/view counts. Comments alone must not win here.
+        if (normalized.contains("tap to unmute") &&
+            WATCH_PAGE_LIKES_REGEX.containsMatchIn(normalized) &&
+            normalized.contains(" views")
+        ) {
+            evidence += "watch_page_inline_player"
+            hit = true
+        }
         return hit
     }
 
@@ -416,9 +425,19 @@ object SurfaceDetector {
     }
 
     /**
-     * Real YouTube Shorts trees rarely say "shorts player" or carry `/shorts/`.
-     * Engagement column (like/dislike/comment/share + remix/subscribe) is the player.
-     * Home/shelf still has the word Shorts — [recommended for you] / player-controls exclude it.
+     * Player-copy evidence only. YouTube Shorts trees say `shorts player`,
+     * `swipe up for next`, `remix this short`, or `use this sound`; those are
+     * safe positive signals. The remix/sound tokens co-occur with 2+ engagement
+     * icons on real Shorts, never on a normal watch page, so they stay.
+     *
+     * DELETED 2026-09-25 (docs/reliability-design-2026-09-25.md §Fix 2):
+     * the generic `engagement >= 3 && (subscribe || contains("shorts"))` branch.
+     * Every normal YouTube watch page shows Like / Dislike / Comment / Share /
+     * Subscribe under a pre-roll ad, and the bottom-nav word "Shorts" is
+     * literally on screen — that used to force SHORT_FORM_PLAYER on a watch
+     * page and let recommendation clocks masquerade as CURRENT_PLAYER, firing
+     * a bogus MEDIA_BLOCK_UNDER_MIN. Real Shorts still get caught upstream by
+     * a `/shorts/` URL (`hasShortFormCopyOrUrl`) or short-form player copy.
      */
     internal fun looksLikeYoutubeShortsPlayer(normalized: String): Boolean {
         if (normalized.contains("recommended for you")) return false
@@ -437,10 +456,9 @@ object SurfaceDetector {
         val remix = normalized.contains("remix") ||
             normalized.contains("use this sound") ||
             normalized.contains("add sound")
-        val subscribe = normalized.contains("subscribe")
         val engagement = listOf(like, dislike, comment, share).count { it }
-        if (remix && engagement >= 2) return true
-        return engagement >= 3 && (subscribe || normalized.contains("shorts"))
+        // Remix/sound tokens are Shorts-specific player chrome, not watch-page chrome.
+        return remix && engagement >= 2
     }
 
     private fun hasNewPipePlayerEvidence(
@@ -751,4 +769,7 @@ object SurfaceDetector {
 
     private val CLOCK_TOKEN_REGEX =
         Regex("""\b\d{1,2}:\d{2}(?::\d{2})?\b""")
+
+    private val WATCH_PAGE_LIKES_REGEX =
+        Regex("""\b\d[\d.,]*\s*(?:k|m|b|thousand|million|billion)?\s+likes\b""")
 }

@@ -118,8 +118,10 @@ object IdentityResolver {
                 pkg in SNAPCHAT_PACKAGES || hasAnyUrlToken(text, SNAPCHAT_URL_TOKENS)
             ScopeIdentity.WHATSAPP ->
                 pkg in WHATSAPP_PACKAGES || hasAnyUrlToken(text, WHATSAPP_URL_TOKENS)
+            // A verified browser can host any video; player-only surfaces decide the rest.
             ScopeIdentity.VIDEO_ANY ->
                 isVideoOrStreaming(pkg) ||
+                    HostResolver.isVerifiedBrowser(pkg) ||
                     hasAnyUrlToken(
                         text,
                         YT_URL_TOKENS + TIKTOK_URL_TOKENS + IG_URL_TOKENS + FB_URL_TOKENS + MOVIE_URL_TOKENS

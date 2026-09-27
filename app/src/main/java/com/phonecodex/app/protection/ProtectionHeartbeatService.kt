@@ -13,6 +13,8 @@ import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.phonecodex.app.R
 import com.phonecodex.app.accessibility.AccessibilityHealthChecker
+import com.phonecodex.app.data.AppRulesStore
+import com.phonecodex.app.data.CommitmentTeardown
 import com.phonecodex.app.data.EventLogStore
 import com.phonecodex.app.data.ProtectionViolationStore
 import com.phonecodex.app.data.SessionStore
@@ -51,7 +53,7 @@ class ProtectionHeartbeatService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val session = sessionStore.getStoredSession()
         if (isSessionExpired(session)) {
-            clearExpiredSession()
+            clearExpiredSession(session)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -92,7 +94,7 @@ class ProtectionHeartbeatService : Service() {
     private fun runHeartbeatTick(): Boolean {
         val session = sessionStore.getStoredSession()
         if (isSessionExpired(session)) {
-            clearExpiredSession()
+            clearExpiredSession(session)
             return false
         }
         if (!ProtectionHeartbeatLogic.shouldKeepRunning(session)) {
@@ -127,9 +129,9 @@ class ProtectionHeartbeatService : Service() {
             )
     }
 
-    private fun clearExpiredSession() {
-        sessionStore.clearSession()
-        eventLogStore.addEvent(SessionExpiryPolicy.EXPIRED_EVENT_MESSAGE)
+    private fun clearExpiredSession(session: FocusSession?) {
+        CommitmentTeardown(sessionStore, AppRulesStore(this), eventLogStore::addEvent)
+            .end(CommitmentTeardown.Kind.EXPIRED, expectedSessionId = session?.id)
     }
 
     private fun createNotificationChannel() {

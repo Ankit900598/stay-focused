@@ -3,7 +3,6 @@ package com.phonecodex.app.domain.protection
 import com.phonecodex.app.domain.diagnostics.BackendProbeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,7 +65,7 @@ class ProtectionReliabilityGateTest {
     }
 
     @Test
-    fun enabledDeadButFreshHeartbeat_countsAsAlive() {
+    fun recentScreenEventWithoutFreshServiceLease_doesNotProveAlive() {
         val model = ProtectionReliabilityGate.evaluate(
             input(
                 accessibilityEnabled = true,
@@ -75,11 +74,41 @@ class ProtectionReliabilityGateTest {
                 hasActiveCommitment = true
             )
         )
+        assertEquals(ProtectionReliabilityLevel.NOT_PROTECTING, model.level)
+        assertEquals("Enabled but not alive", model.accessibilityLine)
+        assertEquals(ProtectionPrimaryAction.OPEN_ACCESSIBILITY, model.primaryAction)
+        assertEquals(ProtectionReliabilityGate.ACTION_RECONNECT, model.primaryActionLabel)
+        assertEquals("last phone event 5s ago", model.lastEventLine)
+    }
+
+    @Test
+    fun freshServiceLease_protectsEvenWhenNoRecentScreenEvent() {
+        val model = ProtectionReliabilityGate.evaluate(
+            input(
+                accessibilityEnabled = true,
+                accessibilityAlive = true,
+                lastEventMillis = now - 60_000L,
+                hasActiveCommitment = true
+            )
+        )
         assertEquals(ProtectionReliabilityLevel.PROTECTED, model.level)
         assertEquals("Alive", model.accessibilityLine)
-        assertEquals(ProtectionPrimaryAction.NONE, model.primaryAction)
-        assertNull(model.primaryActionLabel)
-        assertEquals("last phone event 5s ago", model.lastEventLine)
+    }
+
+    @Test
+    fun persistedAliveFlagWithoutFreshLease_isNotProtecting() {
+        val model = ProtectionReliabilityGate.evaluate(
+            input(
+                accessibilityEnabled = true,
+                accessibilityAlive = false,
+                lastEventMillis = now - 3_000_000L,
+                permanentGuardrailOn = true
+            )
+        )
+        assertEquals(ProtectionReliabilityLevel.NOT_PROTECTING, model.level)
+        assertEquals("Enabled but not alive", model.accessibilityLine)
+        assertEquals(ProtectionReliabilityGate.ACTION_RECONNECT, model.primaryActionLabel)
+        assertTrue(model.summary.contains("not connected"))
     }
 
     @Test
@@ -131,7 +160,25 @@ class ProtectionReliabilityGateTest {
         )
         assertEquals(ProtectionReliabilityLevel.PROTECTED, model.level)
         assertEquals("On", model.guardrailLine)
+        assertEquals(ProtectionReliabilityGate.SUMMARY_GUARDRAIL_ONLY_ACTIVE, model.summary)
         assertFalse(model.nothingEnforced)
+    }
+
+    @Test
+    fun commitmentAndGuardrail_summaryNamesBothProtectionLayers() {
+        val model = ProtectionReliabilityGate.evaluate(
+            input(
+                accessibilityEnabled = true,
+                accessibilityAlive = true,
+                lastEventMillis = now - 60_000L,
+                hasActiveCommitment = true,
+                permanentGuardrailOn = true
+            )
+        )
+        assertEquals(
+            ProtectionReliabilityGate.SUMMARY_COMMITMENT_AND_GUARDRAIL_ACTIVE,
+            model.summary
+        )
     }
 
     @Test

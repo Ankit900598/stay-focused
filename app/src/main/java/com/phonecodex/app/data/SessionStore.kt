@@ -1,15 +1,15 @@
 package com.phonecodex.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.phonecodex.app.domain.model.FocusSession
 import com.phonecodex.app.domain.model.SessionStatus
 import com.phonecodex.app.domain.model.StrictnessLevel
 
-class SessionStore(context: Context) {
+class SessionStore(private val prefs: SharedPreferences) {
 
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
 
     fun saveActiveSession(session: FocusSession) {
@@ -22,11 +22,13 @@ class SessionStore(context: Context) {
             .putString(KEY_STATUS, session.status.name)
             .putInt(KEY_ATTEMPT_COUNT, session.attemptCount)
             .putString(KEY_STRICTNESS, session.strictness.name)
+            .putString(KEY_PROMISE_STRICTNESS, session.promiseStrictness?.name)
             .apply()
     }
 
+    /** Synchronous so a process death right after an exit cannot bring the session back. */
     fun clearSession() {
-        prefs.edit().clear().apply()
+        prefs.edit().clear().commit()
     }
 
     fun getStoredSession(): FocusSession? {
@@ -57,7 +59,9 @@ class SessionStore(context: Context) {
             deadlineMillis = prefs.getLong(KEY_DEADLINE_MILLIS, 0L),
             status = status,
             attemptCount = prefs.getInt(KEY_ATTEMPT_COUNT, 0),
-            strictness = strictness
+            strictness = strictness,
+            promiseStrictness = prefs.getString(KEY_PROMISE_STRICTNESS, null)
+                ?.let { name -> runCatching { StrictnessLevel.valueOf(name) }.getOrNull() }
         )
     }
 
@@ -90,5 +94,6 @@ class SessionStore(context: Context) {
         private const val KEY_STATUS = "status"
         private const val KEY_ATTEMPT_COUNT = "attemptCount"
         private const val KEY_STRICTNESS = "strictness"
+        private const val KEY_PROMISE_STRICTNESS = "promiseStrictness"
     }
 }

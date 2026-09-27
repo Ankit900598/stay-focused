@@ -96,6 +96,8 @@ object BlankVideoTreeGate {
             )
         }
 
+        if (!PromiseIntentRules.hasMediaLengthLimit(goal)) return NONE
+
         return BlankVideoTreeResult(
             action = BlankVideoTreeAction.WAIT,
             reasonCode = EnforcementReasonCodes.VIDEO_APP_DURATION_UNAVAILABLE,

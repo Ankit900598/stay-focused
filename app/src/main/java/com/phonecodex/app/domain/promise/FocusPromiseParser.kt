@@ -1,6 +1,7 @@
 package com.phonecodex.app.domain.promise
 
 import com.phonecodex.app.domain.enforcement.EnforcementScopeLaw
+import com.phonecodex.app.domain.enforcement.ShortFormLanguage
 import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
 import com.phonecodex.app.domain.model.AppRule
 import com.phonecodex.app.domain.model.AppRuleBehavior
@@ -8,6 +9,11 @@ import com.phonecodex.app.domain.model.ContentRule
 import com.phonecodex.app.domain.model.ContentRuleAction
 import com.phonecodex.app.domain.model.FocusPromise
 import com.phonecodex.app.domain.model.StrictnessLevel
+import com.phonecodex.app.domain.scope.EnforcementScope
+import com.phonecodex.app.domain.scope.ScopeCanonicalizer
+import com.phonecodex.app.domain.scope.ScopeIdentity
+import com.phonecodex.app.domain.scope.ScopeKind
+import com.phonecodex.app.domain.scope.ScopeKindPresets
 
 /**
  * On-device Promise Compiler preview.
@@ -37,6 +43,7 @@ class FocusPromiseParser {
         val strictness = parseStrictness(normalized)
         val clarification = detectClarification(normalized, contentRules, contentLengthHits)
         val warnings = buildWarnings(normalized, sessionDurationMinutes, contentLengthHits)
+        val typedScope = youtubeShortsOnlyScope(normalized, contentRules, suggestedAppRules, contentLengthHits)
 
         val summaries = buildHumanSummaries(
             normalized = normalized,
@@ -62,7 +69,10 @@ class FocusPromiseParser {
                 warnings = warnings,
                 allowedSummaries = summaries.allowed,
                 blockedSummaries = summaries.blocked,
-                conditionalSummaries = summaries.conditional
+                conditionalSummaries = summaries.conditional,
+                scopeContractV1 = typedScope != null,
+                enforcementScope = typedScope,
+                legacyContractGap = LegacyScopeContractGuard.gap(trimmed, scopeContractV1 = typedScope != null)
             )
         )
     }
@@ -191,6 +201,9 @@ class FocusPromiseParser {
                     unit = null,
                     action = ContentRuleAction.BLOCK
                 )
+            }
+            // "Only messages" also means no feed; "no reels" alone never widens to the feed.
+            if (messagesOnly) {
                 rules += ContentRule(
                     appLabel = "Instagram",
                     packageName = PKG_INSTAGRAM,
@@ -220,6 +233,10 @@ class FocusPromiseParser {
                 unit = null,
                 action = ContentRuleAction.AI_DECIDE
             )
+        }
+
+        if (blocksYouTubeShortsOnly(normalized)) {
+            rules += EffectivePromisePolicy.shortFormSurfaceRule(PKG_YOUTUBE, "YouTube")
         }
 
         if (normalized.contains("porn") || normalized.contains("adult content") ||
@@ -668,6 +685,8 @@ class FocusPromiseParser {
                 "$app videos $op ${rule.value} min → $action"
             }
             rule.surface == "messages" -> "$app messages"
+            EffectivePromisePolicy.isShortFormSurfaceBlock(rule) ->
+                EffectivePromisePolicy.shortFormSurfaceLabel(rule.packageName!!, rule.appLabel)
             rule.surface == "reels" -> "$app Reels"
             rule.surface == "feed" -> "$app feed"
             rule.surface == "playlist" -> "$app playlist / channel"
@@ -754,8 +773,10 @@ class FocusPromiseParser {
             normalized.contains("neso") || youtubeRules.isNotEmpty()
         ) {
             // Length-threshold YouTube stays AI_DECIDE (content rules decide), not whole-app BLOCK.
+            // A Shorts surface BLOCK is also content-level, never a whole-app BLOCK.
             val wholeAppBlock = youtubeRules.any {
-                it.action == ContentRuleAction.BLOCK && it.operator == null
+                it.action == ContentRuleAction.BLOCK && it.operator == null &&
+                    !EffectivePromisePolicy.isShortFormSurfaceBlock(it)
             }
             val behavior = when {
                 wholeAppBlock -> AppRuleBehavior.BLOCK
@@ -780,8 +801,12 @@ class FocusPromiseParser {
 
         if (mentionsInstagram(normalized)) {
             val igRules = contentRules.filter { it.packageName == PKG_INSTAGRAM }
+            val igBlocks = igRules.filter { it.action == ContentRuleAction.BLOCK }
             val behavior = when {
                 igRules.any { it.surface == "messages" && it.action == ContentRuleAction.ALLOW } ->
+                    AppRuleBehavior.AI_DECIDE
+                // A Reels surface BLOCK is content-level, never a whole-app BLOCK (same as YouTube Shorts).
+                igBlocks.isNotEmpty() && igBlocks.all(EffectivePromisePolicy::isShortFormSurfaceBlock) ->
                     AppRuleBehavior.AI_DECIDE
                 igRules.any { it.action == ContentRuleAction.BLOCK } &&
                     igRules.none { it.action == ContentRuleAction.ALLOW } ->
@@ -821,6 +846,44 @@ class FocusPromiseParser {
         return suggestions.distinctBy { it.packageName }
     }
 
+    /** "block youtube shorts", "no yt shorts", "youtube shorts are blocked" — not a quota. */
+    private fun blocksYouTubeShortsOnly(normalized: String): Boolean =
+        YOUTUBE_SHORTS_BLOCK.containsMatchIn(normalized) &&
+            ShortFormLanguage.parseLimit(normalized) == null &&
+            !PromiseIntentRules.allowsShortForm(normalized)
+
+    /**
+     * Typed WHERE for a promise whose only restriction is YouTube Shorts; anything broader
+     * keeps the legacy scope path.
+     */
+    private fun youtubeShortsOnlyScope(
+        normalized: String,
+        contentRules: List<ContentRule>,
+        suggestedAppRules: List<AppRule>,
+        lengthHits: List<ContentLengthHit>
+    ): EnforcementScope? {
+        val onlyYouTubeShorts = contentRules.isNotEmpty() && contentRules.all {
+            EffectivePromisePolicy.isShortFormSurfaceBlock(it) && it.packageName == PKG_YOUTUBE
+        }
+        if (!onlyYouTubeShorts || lengthHits.isNotEmpty()) return null
+        if (suggestedAppRules.any { it.behavior == AppRuleBehavior.BLOCK }) return null
+        val evidence = YOUTUBE_SHORTS_SPAN.find(normalized)?.value ?: return null
+        return ScopeCanonicalizer.canonicalize(
+            EnforcementScope(
+                version = EnforcementScope.CURRENT_VERSION,
+                kind = ScopeKind.APP_SHORT_FORM_ONLY,
+                identity = ScopeIdentity.YOUTUBE,
+                include = ScopeKindPresets.expand(
+                    ScopeKind.APP_SHORT_FORM_ONLY,
+                    ScopeIdentity.YOUTUBE,
+                    packages = listOf(PKG_YOUTUBE)
+                ).include,
+                confidence = 0.9,
+                evidenceSpans = listOf(evidence)
+            )
+        ).takeIf { it.isEnforceable }
+    }
+
     private fun mentionsInstagram(normalized: String): Boolean =
         normalized.contains("instagram") || normalized.contains("insta") ||
             normalized.contains("reels")
@@ -831,7 +894,7 @@ class FocusPromiseParser {
      * lockstep with that implementation; do not diverge without updating both.
      */
     private fun explicitlyBlocksNamedApp(normalized: String, appName: String): Boolean {
-        val a = Regex.escape(appName)
+        val a = Regex.escape(appName) + PromiseIntentRules.SURFACE_QUALIFIER_GUARD
 
         val preCue = Regex(
             """(?<![a-z])(?:""" +
@@ -999,6 +1062,16 @@ class FocusPromiseParser {
         )
         private val MINUTE_PATTERN =
             Regex("""\b(\d+)\s*(?:minutes?|mins?)\b""", RegexOption.IGNORE_CASE)
+
+        private val YOUTUBE_SHORTS_SPAN = Regex("""\b(?:youtube|yt)\s+shorts?\b""", RegexOption.IGNORE_CASE)
+
+        private val YOUTUBE_SHORTS_BLOCK = Regex(
+            """\b(?:no|block|blocks|blocking|ban|stop|avoid|skip|without|""" +
+                """(?:don'?t|do\s+not|never)\s+(?:watch|open|use|allow))\s+""" +
+                """(?:any\s+|the\s+)?(?:youtube|yt)\s+shorts?\b""" +
+                """|\b(?:youtube|yt)\s+shorts?\s+(?:is\s+|are\s+)?(?:blocked|banned|off|not\s+allowed)\b""",
+            RegexOption.IGNORE_CASE
+        )
 
         private val INSTAGRAM_MESSAGES_ONLY = Regex(
             """(?:instagram|insta).{0,40}(?:only|just).{0,20}(?:message|messages|dm|dms|chat|chats|repl)""",

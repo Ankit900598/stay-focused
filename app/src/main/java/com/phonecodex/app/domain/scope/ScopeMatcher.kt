@@ -35,13 +35,20 @@ object ScopeMatcher {
         val ctx = MatchContext(
             packageName = packageName.trim(),
             screenText = screenText,
-            surfaceClass = detection.surface.scopeClass
+            surfaceClass = detection.surface.scopeClass,
+            typed = !LegacyScopeAdapter.isLegacyAdapted(scope)
         )
         for (clause in scope.exempt) {
             if (clauseMatches(clause, ctx)) return ScopeMatch.Exempt(clause.id)
         }
         for (clause in scope.include) {
             if (clauseMatches(clause, ctx)) return ScopeMatch.InScope(clause.id)
+        }
+        if (ctx.typed) {
+            for (clause in scope.include) {
+                val reason = indeterminateReason(clause, ctx) ?: continue
+                return ScopeMatch.Indeterminate(clause.id, reason)
+            }
         }
         return ScopeMatch.OutOfScope
     }
@@ -55,10 +62,38 @@ object ScopeMatcher {
         return true
     }
 
+    /**
+     * Typed scopes only. A clause that failed to match is uncertain — not OutOfScope —
+     * when the only failing evidence is (a) an UNKNOWN surface under a player-only
+     * clause, or (b) a browser-looking package that is not a listed browser.
+     */
+    private fun indeterminateReason(clause: ScopeClause, ctx: MatchContext): IndeterminateReason? {
+        val nameOnlyBrowser = HostResolver.looksLikeBrowserByNameOnly(ctx.packageName)
+        val browserAxisInPlay = clause.host == ScopeHost.BROWSER ||
+            (clause.host == ScopeHost.ANY_HOST && clause.identity == ScopeIdentity.VIDEO_ANY)
+        val surfaceUnknown = ctx.surfaceClass == ScopeSurfaceClass.ANY &&
+            clause.surfaces.isNotEmpty() &&
+            ScopeSurfaceClass.ANY !in clause.surfaces
+        val surfaceOk = surfaceUnknown || surfaceAxisMatches(clause, ctx)
+        if (!surfaceOk || !siteAxisMatches(clause, ctx) || !packageAxisMatches(clause, ctx)) return null
+
+        if (nameOnlyBrowser && browserAxisInPlay) {
+            val identityOk = clause.identity == ScopeIdentity.VIDEO_ANY || identityAxisMatches(clause, ctx)
+            if (identityOk) return IndeterminateReason.HOST_UNVERIFIED
+        }
+        if (surfaceUnknown && hostAxisMatches(clause, ctx) && identityAxisMatches(clause, ctx)) {
+            return IndeterminateReason.SURFACE_UNKNOWN
+        }
+        return null
+    }
+
     // --- axes ---------------------------------------------------------------
 
     private fun hostAxisMatches(clause: ScopeClause, ctx: MatchContext): Boolean {
         if (clause.host == ScopeHost.ANY_HOST) return true
+        if (ctx.typed && clause.host == ScopeHost.BROWSER) {
+            return HostResolver.isVerifiedBrowser(ctx.packageName)
+        }
         return HostResolver.host(ctx.packageName, ctx.screenText) == clause.host
     }
 
@@ -123,6 +158,8 @@ object ScopeMatcher {
     data class MatchContext(
         val packageName: String,
         val screenText: String,
-        val surfaceClass: ScopeSurfaceClass
+        val surfaceClass: ScopeSurfaceClass,
+        /** Compiler-emitted scope (not [LegacyScopeAdapter] output): strict host evidence. */
+        val typed: Boolean = false
     )
 }

@@ -196,7 +196,9 @@ class FocusPromiseParserTest {
         )
 
         assertEquals(7 * 24 * 60, draft.sessionDurationMinutes)
-        assertFalse(draft.needsClarification)
+        // "Only messages" also means no feed, which only typed scope can enforce.
+        assertEquals(LegacyScopeContractGuard.SOCIAL_MESSAGING_SURFACE, draft.legacyContractGap)
+        assertTrue(draft.needsClarification)
         assertTrue(
             draft.contentRules.any {
                 it.packageName == "com.instagram.android" &&

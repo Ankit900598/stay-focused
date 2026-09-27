@@ -73,7 +73,10 @@ class PromiseUnderstandingTest {
             )
         )
 
-        val ui = buildPromiseUnderstanding(draft)
+        val ui = buildPromiseUnderstanding(
+            draft,
+            source = UnderstandingSource.PROMISE_COMPILER
+        )
 
         assertTrue(ui.canStart)
         assertEquals("1 hour", ui.sessionTimeLabel)
@@ -90,7 +93,11 @@ class PromiseUnderstandingTest {
     }
 
     @Test
-    fun alwaysBlockedLabels_appearInBlocked() {
+    fun alwaysBlockedLabels_appearInSeparateAlwaysOnField_notMergedIntoBlocked() {
+        // Reliability design 2026-09-25 §Fix 3: Life Rules must render as their own
+        // section and never be folded into "I will block". Otherwise a promise like
+        // "study for 30 minutes" with an adult guardrail enabled would falsely claim
+        // the *promise itself* blocks adult content.
         val draft = FocusPromise(
             rawText = "study for 30 minutes",
             sessionDurationMinutes = 30,
@@ -102,8 +109,44 @@ class PromiseUnderstandingTest {
 
         val ui = buildPromiseUnderstanding(draft, alwaysBlockedLabels = listOf("adult content"))
 
-        assertTrue(ui.blockedLabel.contains("adult content"))
+        assertFalse(
+            "Life Rule 'adult content' must NOT appear inside blockedLabel",
+            ui.blockedLabel.contains("adult content")
+        )
+        assertEquals(listOf("adult content"), ui.alwaysOnLifeRules)
         assertNotNull(ui.allowedLabel)
+    }
+
+    @Test
+    fun whatsappPromise_withAdultGuardrail_keepsBlockedAndLifeRulesSeparate() {
+        // Repro of the reported bug: "do not allow WhatsApp for 10 minutes" was
+        // showing "adult content" as if it were part of the WhatsApp promise.
+        val draft = FocusPromise(
+            rawText = "do not allow whatsapp for 10 minutes",
+            sessionDurationMinutes = 10,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = listOf(
+                AppRule("com.whatsapp", "WhatsApp", AppRuleBehavior.BLOCK)
+            ),
+            blockedSummaries = listOf("WhatsApp")
+        )
+
+        val ui = buildPromiseUnderstanding(
+            draft,
+            alwaysBlockedLabels = listOf("adult content")
+        )
+
+        assertTrue(
+            "blockedLabel must name WhatsApp (${ui.blockedLabel})",
+            ui.blockedLabel.contains("WhatsApp", ignoreCase = true)
+        )
+        assertFalse(
+            "blockedLabel must NOT smuggle Life Rules in (${ui.blockedLabel})",
+            ui.blockedLabel.contains("adult", ignoreCase = true)
+        )
+        assertEquals(listOf("adult content"), ui.alwaysOnLifeRules)
     }
 
     @Test
@@ -219,12 +262,14 @@ class PromiseUnderstandingTest {
             resolved.draft.warnings.contains(CompiledPromiseMapper.LOCAL_FALLBACK_CAUTION)
         )
         assertTrue(ui.cautions.any { it.contains("Basic offline preview", ignoreCase = true) })
-        assertEquals("Basic offline preview", ui.statusLabel)
+        assertEquals("Reconnect to verify this promise", ui.statusLabel)
+        assertFalse(ui.canStart)
+        assertTrue(ui.statusDetail.contains("Start is disabled while offline"))
         assertTrue(ui.statusDetail.contains(BackendHealthProbe.reachabilityHint(), ignoreCase = true))
     }
 
     @Test
-    fun exactLengthPromise_localParser_doesNotRequireClarification() {
+    fun exactLengthPromise_localParserRequiresOnlineVerificationBeforeStart() {
         val text =
             "for 1 hour do not allow to watch any video whose length is greater than 40 min"
         val draft = parser.parse(text)
@@ -232,8 +277,9 @@ class PromiseUnderstandingTest {
 
         assertNull(draft.clarificationQuestion)
         assertFalse(draft.needsClarification)
-        assertTrue(ui.canStart)
-        assertEquals("Basic offline preview", ui.statusLabel)
+        assertFalse(ui.canStart)
+        assertEquals("Reconnect to verify this promise", ui.statusLabel)
+        assertTrue(ui.statusDetail.contains("Start is disabled while offline"))
     }
 
     @Test
@@ -281,6 +327,10 @@ class PromiseUnderstandingTest {
         )
         assertTrue(ready.canStart)
         assertEquals("A", ready.selectedClarificationOptionId)
+        // Applied pick: no leftover "Need clarification" question or A/B list.
+        assertNull(ready.clarificationQuestion)
+        assertTrue(ready.clarificationOptions.isEmpty())
+        assertFalse(ready.statusDetail.contains("clarif", ignoreCase = true))
     }
 
     @Test
@@ -614,7 +664,7 @@ class PromiseUnderstandingTest {
     }
 
     @Test
-    fun messyAllowLongerThan50ForOneHours_canStartWithoutClarification() {
+    fun messyAllowLongerThan50ForOneHours_requiresOnlineVerificationBeforeStart() {
         val text = "allow video longer than 50 min for one hours shorter video block"
         val draft = parser.parse(text)
         val ui = buildPromiseUnderstanding(draft, source = UnderstandingSource.LOCAL_PREVIEW)
@@ -628,14 +678,14 @@ class PromiseUnderstandingTest {
         assertEquals(50, PromiseContentRuleSupport.minVideoLengthBlockMinutes(draft))
         assertEquals(60, stored.durationMinutes)
         assertEquals(50, stored.minVideoLengthBlockMinutes)
-        assertTrue(ui.canStart)
+        assertFalse(ui.canStart)
         assertTrue(ui.clarificationOptions.isEmpty())
         assertTrue(ui.clarificationQuestion.isNullOrBlank())
         assertFalse(ui.statusLabel.contains("clarification", ignoreCase = true))
+        assertEquals("Reconnect to verify this promise", ui.statusLabel)
+        assertTrue(ui.statusDetail.contains("Start is disabled while offline"))
         val disabled = startDisabledMessage(ui)
-        assertEquals("", disabled)
-        assertFalse(disabled.contains("preview", ignoreCase = true))
-        assertFalse(disabled.contains("option", ignoreCase = true))
+        assertTrue(disabled.contains("Reconnect", ignoreCase = true))
         assertFalse(
             ui.cautions.any { PromiseClarificationLaw.isUnrecognizedClarificationChoice(it) }
         )

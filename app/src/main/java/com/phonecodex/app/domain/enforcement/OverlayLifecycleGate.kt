@@ -89,4 +89,48 @@ object OverlayLifecycleGate {
         if (lastAppliedAtMillis <= 0L) return false
         return nowMillis - lastAppliedAtMillis < holdMs
     }
+
+    private val MEDIA_ID_REGEX = Regex(
+        "(?:watch\\?(?:[^\\s]*&)?v=|shorts/|youtu\\.be/)([A-Za-z0-9_-]{6,})"
+    )
+
+    /** Stable id of the media on screen (e.g. `shorts:abc123`), or null when no URL is visible. */
+    fun mediaIdentity(screenText: String): String? {
+        val match = MEDIA_ID_REGEX.find(screenText) ?: return null
+        val kind = if (match.value.startsWith("shorts/")) "shorts" else "video"
+        return "$kind:${match.groupValues[1]}"
+    }
+
+    /**
+     * Target-package events are retained under a BLOCK overlay, so a same-app navigation
+     * to different media is not re-evaluated. This reports when that happened.
+     */
+    fun targetMediaChanged(blockedScreenText: String?, currentScreenText: String): Boolean {
+        val before = blockedScreenText?.let(::mediaIdentity) ?: return false
+        val now = mediaIdentity(currentScreenText) ?: return false
+        return before != now
+    }
+
+    /**
+     * What page is on screen: media id first, else the browser URL bar (`url:example.com`).
+     * Null means unknown (fullscreen player, app without URL bar) — callers must retain.
+     * Screen text alone is never parsed for hosts: page bodies mention other domains.
+     */
+    fun pageIdentity(urlBarText: String?, screenText: String): String? {
+        val url = urlBarText?.trim()?.takeIf { it.isNotEmpty() }
+        if (url != null) return mediaIdentity(url) ?: normalizeUrl(url)?.let { "url:$it" }
+        return mediaIdentity(screenText)
+    }
+
+    private fun normalizeUrl(raw: String): String? {
+        val cleaned = raw.lowercase()
+            .substringBefore(' ')
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .removePrefix("www.")
+            .substringBefore('#')
+            .substringBefore('?')
+            .trimEnd('/')
+        return cleaned.takeIf { it.contains('.') }
+    }
 }

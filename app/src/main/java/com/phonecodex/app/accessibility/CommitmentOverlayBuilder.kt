@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.phonecodex.app.domain.ProductBrand
+import com.phonecodex.app.domain.enforcement.EnforcementReasonCodes
 import com.phonecodex.app.domain.enforcement.SessionEnforcementCopy
 import com.phonecodex.app.domain.model.DecisionType
 import com.phonecodex.app.domain.model.StrictnessLevel
@@ -61,7 +62,7 @@ object CommitmentOverlayCopy {
         }
         return when (kind) {
             OverlayKind.WARN -> "Drift from your promise"
-            OverlayKind.BLOCK -> "Outside your promise"
+            OverlayKind.BLOCK -> "Blocked by your promise"
             OverlayKind.LOCK -> "Your commitment is locked"
         }
     }
@@ -169,6 +170,9 @@ object CommitmentOverlayCopy {
     fun primaryActionLabel(kind: OverlayKind, reasonCode: String? = null): String {
         if (SessionEnforcementCopy.isQuotaReminder(reasonCode)) {
             return SessionEnforcementCopy.QUOTA_KEEP_WATCHING
+        }
+        if (reasonCode == EnforcementReasonCodes.STRUCTURED_SURFACE_BLOCK) {
+            return "Back to the previous screen"
         }
         return when (kind) {
             OverlayKind.WARN -> "Return to safe path"

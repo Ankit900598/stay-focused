@@ -41,7 +41,8 @@ object PhoneSurfaceTraceCatalog {
             blankAndAmbiguous() +
             socialReels() +
             hinglishAndMessy() +
-            extraCoverage()
+            extraCoverage() +
+            scopePersistenceCorrupt()
 
     private fun min40Yt(min: Int = 40) = StudyWorldSettings(
         durationMinutes = 60,
@@ -285,7 +286,9 @@ object PhoneSurfaceTraceCatalog {
             goal = MIN40_GOAL,
             settings = min40Yt(),
             expected = setOf(TraceDecision.BLOCK),
-            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN)
+            reasons = setOf(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN),
+            forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN),
+            duration = "NONE"
         ),
         t(
             id = "chrome_m_shorts_no_duration_blocks",
@@ -295,7 +298,9 @@ object PhoneSurfaceTraceCatalog {
             goal = MIN40_GOAL,
             settings = min40Yt(),
             expected = setOf(TraceDecision.BLOCK),
-            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN)
+            reasons = setOf(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN),
+            forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN),
+            duration = "NONE"
         ),
         t(
             id = "chrome_shorts_locked_never_unrelated",
@@ -316,7 +321,49 @@ object PhoneSurfaceTraceCatalog {
             goal = MIN40_GOAL,
             settings = min40Yt(),
             expected = setOf(TraceDecision.BLOCK),
-            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN)
+            reasons = setOf(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN),
+            forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN),
+            duration = "NONE"
+        ),
+        // ---- P0 pre-work (2026-09-25): watch page + engagement + NO clock  -----
+        // Reported bug: Chrome playing a normal YouTube watch page under a pre-roll
+        // ad shows the full engagement row (Like/Dislike/Comment/Share/Subscribe)
+        // AND the word "Shorts" in the bottom nav. The old
+        // `engagement >= 3 && (subscribe || contains("shorts"))` heuristic mis-classified
+        // this as SHORT_FORM_PLAYER and used a recommendation duration as CURRENT_PLAYER,
+        // firing MEDIA_BLOCK_UNDER_MIN with `durationSource=RECOMMENDATION`.
+        // Correct verdict: no CURRENT_PLAYER clock => WAIT, surface != SHORT_FORM_PLAYER.
+        // See docs/reliability-design-2026-09-25.md §Fix 2.
+        t(
+            id = "chrome_yt_watch_preroll_ad_engagement_no_clock_waits",
+            pkg = CHROME,
+            screen = "https://www.youtube.com/watch?v=abc123 " +
+                "Like Dislike Comment Share Subscribe " +
+                "Home Shorts Subscriptions You " +
+                "Up next 8 minutes 12 seconds Chip design 15 minutes 4 seconds",
+            goal = MIN40_GOAL,
+            settings = min40Yt(),
+            expected = setOf(TraceDecision.WAIT, TraceDecision.ALLOW),
+            forbidden = setOf(
+                EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN,
+                EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX
+            ),
+            notes = "REGRESSION: engagement>=3 + 'shorts' nav word must not mean SHORT_FORM_PLAYER"
+        ),
+        t(
+            id = "yt_app_watch_preroll_ad_engagement_no_clock_waits",
+            pkg = YT,
+            screen = "Like Dislike Comment Share Subscribe " +
+                "Home Shorts Subscriptions You " +
+                "Up next 8:12 15:04",
+            goal = MIN40_GOAL,
+            settings = min40Yt(),
+            expected = setOf(TraceDecision.WAIT, TraceDecision.ALLOW),
+            forbidden = setOf(
+                EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN,
+                EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX
+            ),
+            notes = "REGRESSION: bottom-nav 'Shorts' word must not force SHORT_FORM_PLAYER on watch page"
         )
     )
 
@@ -737,6 +784,75 @@ object PhoneSurfaceTraceCatalog {
         )
     )
 
+    /**
+     * v1 "browser video" promise whose typed scope record is unreadable and whose legacy
+     * mirror is Chrome-only. Must never enforce as Chrome-only: unverified, not enforced,
+     * safety paths intact, nothing broadly blocked.
+     */
+    private fun corruptBrowserVideoChromeMirror() = StudyWorldSettings(
+        durationMinutes = 60,
+        lockAttemptThreshold = 3,
+        blockAttemptCooldownMinutes = 2,
+        minVideoLengthBlockMinutes = 30,
+        enforcementScopePackages = listOf(CHROME),
+        enforcementScopeKind = "chrome_browser",
+        typedScopeCorruptDetail = "not_enforceable:MALFORMED_CLAUSE"
+    )
+
+    private fun scopePersistenceCorrupt(): List<EnforcementTrace> {
+        val goal = "Do not allow videos shorter than 30 minutes in browsers for the next 1 hour."
+        val corrupt = setOf(EnforcementReasonCodes.SCOPE_PERSISTENCE_CORRUPT)
+        return listOf(
+            t(
+                id = "scope_corrupt_firefox_player_not_silently_out_of_scope",
+                pkg = "org.mozilla.firefox",
+                screen = "m.youtube.com/watch?v=abc123xyz Hide player controls 1:02 / 12:40",
+                goal = goal,
+                settings = corruptBrowserVideoChromeMirror(),
+                expected = setOf(TraceDecision.ALLOW),
+                reasons = corrupt,
+                forbidden = setOf(EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW)
+            ),
+            t(
+                id = "scope_corrupt_chrome_player_not_chrome_only_enforcement",
+                pkg = CHROME,
+                screen = "m.youtube.com/watch?v=abc123xyz Hide player controls 1:02 / 12:40",
+                goal = goal,
+                settings = corruptBrowserVideoChromeMirror(),
+                expected = setOf(TraceDecision.ALLOW),
+                reasons = corrupt,
+                forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN)
+            ),
+            t(
+                id = "scope_corrupt_locked_chrome_player_no_legacy_lock",
+                pkg = CHROME,
+                screen = "m.youtube.com/watch?v=abc123xyz Hide player controls 1:02 / 12:40",
+                goal = goal,
+                settings = corruptBrowserVideoChromeMirror(),
+                expected = setOf(TraceDecision.ALLOW),
+                reasons = corrupt,
+                session = SessionStatus.LOCKED
+            ),
+            t(
+                id = "scope_corrupt_emergency_dialer_still_allowed",
+                pkg = "com.android.phone",
+                screen = "Emergency call Phone keypad",
+                goal = goal,
+                settings = corruptBrowserVideoChromeMirror(),
+                expected = setOf(TraceDecision.ALLOW),
+                reasons = setOf(EnforcementReasonCodes.EMERGENCY_ALLOW)
+            ),
+            t(
+                id = "scope_corrupt_unrelated_app_not_broadly_blocked",
+                pkg = "com.whatsapp",
+                screen = "Voice message Pause 0:12 / 1:30 Type a message",
+                goal = goal,
+                settings = corruptBrowserVideoChromeMirror(),
+                expected = setOf(TraceDecision.ALLOW)
+            )
+        )
+    }
+
     private fun extraCoverage(): List<EnforcementTrace> {
         val noSession = t(
             id = "no_session_always_allows_watch",
@@ -809,7 +925,9 @@ object PhoneSurfaceTraceCatalog {
                 goal = MIN40_GOAL,
                 settings = min40Yt(),
                 expected = setOf(TraceDecision.BLOCK),
-                reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN)
+                reasons = setOf(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN),
+                forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN),
+                duration = "NONE"
             )
         }
         val moreWatch = listOf(
@@ -895,7 +1013,9 @@ object PhoneSurfaceTraceCatalog {
             goal = MIN40_GOAL,
             settings = min40Yt(),
             expected = setOf(TraceDecision.BLOCK),
-            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN)
+            reasons = setOf(EnforcementReasonCodes.SHORT_FORM_BLOCK_UNDER_MIN),
+            forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN),
+            duration = "NONE"
         )
         return listOf(
             noSession,
@@ -908,6 +1028,64 @@ object PhoneSurfaceTraceCatalog {
             ytMusic,
             lockIg,
             incognitoShorts
-        ) + moreArticles + moreHomes + moreShorts + moreWatch
+        ) + moreArticles + moreHomes + moreShorts + moreWatch + playingBeforeControls()
+    }
+
+    /**
+     * Chrome m.youtube.com watch page while the video plays and the controls are hidden.
+     * No clock, and the watch URL was cut off by the 3000-char text cap, so only the
+     * header + comments teaser is readable. Must WAIT, never SURFACE_PASS_PASSIVE.
+     */
+    private fun playingBeforeControls(): List<EnforcementTrace> {
+        val rickNoUrl = "TAP TO UNMUTE YouTube Home Search YouTube More options " +
+            "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) " +
+            "@RickAstleyYT 19 million likes 1.8B views 16 years ago Subscribe Share " +
+            "Download Clip Save Comments 2.4M Add a comment... " +
+            "Up next Rick Astley - Together Forever 10:18"
+        val pythonNoUrl = "TAP TO UNMUTE YouTube Home Search YouTube More options " +
+            "Learn Python - Full Course for Beginners [Tutorial] @freecodecamp " +
+            "1.1 million likes 49M views 8 years ago Subscribe Share Comments 30K " +
+            "Top comments View replies"
+        val forbidden = setOf(
+            EnforcementReasonCodes.SURFACE_PASS_PASSIVE,
+            EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN,
+            EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX
+        )
+        return listOf(
+            t(
+                id = "chrome_watch_playing_no_controls_max_waits",
+                pkg = CHROME,
+                screen = rickNoUrl,
+                goal = MAX40_GOAL,
+                settings = max40Any(),
+                expected = setOf(TraceDecision.WAIT),
+                reasons = setOf(EnforcementReasonCodes.MEDIA_WAIT_NO_PLAYER_CLOCK),
+                forbidden = forbidden,
+                surface = "ACTIVE_VIDEO_PLAYER",
+                notes = "REGRESSION: playing watch page read as COMMENTS and ALLOWed"
+            ),
+            t(
+                id = "chrome_watch_playing_no_controls_min_waits",
+                pkg = CHROME,
+                screen = pythonNoUrl,
+                goal = MIN40_GOAL,
+                settings = min40Yt(),
+                expected = setOf(TraceDecision.WAIT),
+                reasons = setOf(EnforcementReasonCodes.MEDIA_WAIT_NO_PLAYER_CLOCK),
+                forbidden = forbidden,
+                surface = "ACTIVE_VIDEO_PLAYER"
+            ),
+            t(
+                id = "chrome_watch_playing_url_bar_prepended_waits",
+                pkg = CHROME,
+                screen = "m.youtube.com/watch?v=dQw4w9WgXcQ $rickNoUrl",
+                goal = MAX40_GOAL,
+                settings = max40Any(),
+                expected = setOf(TraceDecision.WAIT),
+                reasons = setOf(EnforcementReasonCodes.MEDIA_WAIT_NO_PLAYER_CLOCK),
+                forbidden = forbidden,
+                surface = "ACTIVE_VIDEO_PLAYER"
+            )
+        )
     }
 }

@@ -1,0 +1,122 @@
+{
+  "rawText": "allow only calculus, allow only monk 4 hrs",
+  "cleanedPromiseText": "allow only calculus, allow only monk 4 hrs",
+  "detectedLanguage": "en",
+  "transcriptConfidence": null,
+  "userIntentSummary": "allow only calculus, allow only monk 4 hrs",
+  "recommendedInterpretation": null,
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.9,
+  "ambiguityLevel": "high",
+  "clarificationRequired": true,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "Both together",
+      "description": "One commitment with both parts. The stricter rule wins if they clash.",
+      "recommended": false,
+      "policyPreview": "Run both rules in one session.",
+      "resultingPolicyPreview": "Run both rules in one session.",
+      "internalPolicyPreview": {
+        "scopeKind": "compound_combine",
+        "appliesTo": "Both parts of your promise",
+        "expandShortForm": false,
+        "packages": [],
+        "scopePackages": [],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      }
+    },
+    {
+      "id": "B",
+      "label": "Only the first",
+      "description": "allow only calculus",
+      "recommended": true,
+      "policyPreview": "Enforce only: allow only calculus",
+      "resultingPolicyPreview": "Enforce only: allow only calculus",
+      "internalPolicyPreview": null
+    },
+    {
+      "id": "C",
+      "label": "Only the second",
+      "description": "allow only monk 4 hrs",
+      "recommended": false,
+      "policyPreview": "Enforce only: allow only monk 4 hrs",
+      "resultingPolicyPreview": "Enforce only: allow only monk 4 hrs",
+      "internalPolicyPreview": null
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "Review the allow and block lists below.",
+    "allowed": [],
+    "blocked": [],
+    "time": "About 240 minutes",
+    "appliesTo": "Apps and content named in your promise",
+    "checkThis": [],
+    "safetyNotes": [],
+    "understoodSummary": "Review the allow and block lists below.",
+    "allowedBullets": [],
+    "blockedBullets": [],
+    "timeWindowText": "About 240 minutes",
+    "appliesToText": "Apps and content named in your promise",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "session_fixed",
+      "minutes": 240,
+      "label": "About 240 minutes"
+    },
+    "surfaceRules": [],
+    "contentRules": [],
+    "appRules": [],
+    "quotaRules": [],
+    "recoveryRules": {
+      "hardness": "normal",
+      "requiresExplicitConfirm": false,
+      "notes": ""
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "medium",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": true
+  },
+  "hiddenInternalScope": [],
+  "emergencyExceptions": [],
+  "sessionDurationMinutes": 240,
+  "timeWindowKind": "session_fixed",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "STRICT",
+  "allowedSummaries": [],
+  "blockedSummaries": [],
+  "conditionalSummaries": [],
+  "confirmationPreview": [],
+  "interpretationNotes": [],
+  "scopePackages": [],
+  "scopeKind": null,
+  "contentBrands": [],
+  "surfaceScope": [],
+  "contentScope": [],
+  "contentRules": [],
+  "clarificationQuestion": "You wrote two different phone rules. Which should Strlix enforce?",
+  "cautionMessages": [
+    "That clarification choice was not recognized. Pick an option again."
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.9,
+  "suggestedAppRules": [],
+  "commitmentType": "focus_session",
+  "promptVersion": "promise_compiler_v07",
+  "canStartCommitment": false,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": false,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "A",
+  "optionRematerialized": false,
+  "optionVerification": "unrecognized_fail_closed",
+  "optionVerificationReason": "no_verifiable_choice"
+}
