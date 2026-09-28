@@ -39,6 +39,8 @@ Update 2026-09-28: hosted phone flow and quota re-test done on staging (see `CUR
 3. **Strict copy vs lock.** The card says "Strict means blocking further Shorts, not locking the phone"; three blocked attempts lock the session. Align the copy or the lock rule.
 4. Ask Ankit before promoting to production (set `PROMISE_COMPILER_PROMPT_VERSION=promise_compiler_v09` + `STRLIX_BUILD_ID=8ed37e46d2f52f8d863473499944b37b7e3c2887`, deploy the same SHA, check `/health`). Then delete `phonecodex-backend-staging`. The Android fixes ship separately in the next tester APK.
 
+Update 2026-09-28 afternoon: items 1 and 2 fixed (`0bdde0c` PiP guard, `33dd29e` midnight deadline); 906 tests pass. Phone: midnight label/deadline and media pause on block verified by the agent; the PiP escape itself was checked by Ankit by hand, not by the harness. Next: item 3 (Strict copy vs lock), then item 4 promotion together with a new tester APK built from `33dd29e` or later with the production URL.
+
 Still open from 09-27: complaint-style promise dead end; "Block YouTube Shorts for 1 hour" always asks YouTube-only vs everywhere; ".," and duplicated "After limit" lines in the card; legacy `enforcement_scope_kind=youtube_app_only` saved beside the typed scope; regular player labeled COMMENTS (lecture allowed at SCOPE, not `ALLOW_LONG_EDUCATIONAL`); "1 shorts left" grammar; Home status refreshes only on "Run protection check".
 
 ### Launch bar (closed APK, not Play Store)

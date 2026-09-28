@@ -18,7 +18,17 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
-## Latest Verified Checkpoint — 2026-09-28 (hosted-v09 phone flow on staging)
+## Latest Verified Checkpoint — 2026-09-28 afternoon (PiP escape + today deadline)
+
+- Branch `checkpoint/2026-09-27` gained `0bdde0c` (picture-in-picture escape guard) and `33dd29e` ("today" promises end at local midnight, as the card says).
+  - `PictureInPictureEscapeLaw` (pure, unit-tested): pause a PiP window when the session is LOCKED and the app is not usable while locked, or when the same package was blocked in the last 10 minutes and has not been allowed since. Safe packages and no-session are never touched. The service listens to `TYPE_WINDOWS_CHANGED` (`flagRetrieveInteractiveWindows`), pauses via a media-pause key, rechecks every 2 s while the guard holds, and also pauses video apps whenever the block overlay is shown.
+  - Deadline: a "today / rest of the day / for the day" promise with no explicit duration runs until the next local midnight; `SessionExpiryPolicy` computes end-of-day from the session start (before, quota sessions never expired). The checkbox now reads "I understand this commitment lasts until midnight tonight".
+- Proof: **906 Android unit tests pass**; 12/12 backend smokes pass; `backend/` unchanged since `8ed37e4`.
+- Phone (staging APK `5708DD16`, built from `33dd29e`), "Strict: only 2 YouTube Shorts today": checkbox shows the midnight label; session deadline 29-09-2026 00:00 IST; shorts 1–2 counted, short 3 `QUOTA_BLOCK_EXCEEDED` with "Media paused reason=block_overlay" logged before the overlay.
+- PiP escape (block, then Home): the agent's run was interrupted — the commitment was ended by hand on the phone 13 s after the block, so the harness recorded nothing either way. **Ankit then checked the escape by hand and reports it is fixed.** No agent screenshot/logcat proves the `pip_guard` path; re-check it in the next tester APK run.
+- Phone restored again: production APK `E0917876`; 9 prefs files MD5-match the backup; test-only recovery/quota prefs deleted; Accessibility list equals the saved value and decisions are logged; `stay_on_while_plugged_in=0`; Home says Protected, no timed commitment. `local.properties` points at production.
+
+## Earlier checkpoint — 2026-09-28 morning (hosted-v09 phone flow on staging)
 
 - Branch `checkpoint/2026-09-27` (local, not pushed; `master` unchanged) gained `59e0a18` (Start gate agrees with the card after a pick plus stronger confirm), `8ed37e4` (backend: legacy option preview follows the typed scope; fixed 1-in-3 `snapshot_invalid_scope` pick failures), `66007ee` (short-form count rules stay inside a Shorts-only scope, so quota promises can start).
 - Proof: **894 Android unit tests pass** (forced rerun, fresh result XMLs); **12/12 backend smokes pass**. Staging `/health`: `build=8ed37e46…`, `promise_compiler_v09`; `backend/` is unchanged since that SHA. Production `/health`: still `promise_compiler_v07`, no `build`.
