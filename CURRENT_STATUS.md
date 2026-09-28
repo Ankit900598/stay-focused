@@ -18,7 +18,21 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
-## Latest Verified Checkpoint — 2026-09-27 night (hosted-v09 staging)
+## Latest Verified Checkpoint — 2026-09-28 (hosted-v09 phone flow on staging)
+
+- Branch `checkpoint/2026-09-27` (local, not pushed; `master` unchanged) gained `59e0a18` (Start gate agrees with the card after a pick plus stronger confirm), `8ed37e4` (backend: legacy option preview follows the typed scope; fixed 1-in-3 `snapshot_invalid_scope` pick failures), `66007ee` (short-form count rules stay inside a Shorts-only scope, so quota promises can start).
+- Proof: **894 Android unit tests pass** (forced rerun, fresh result XMLs); **12/12 backend smokes pass**. Staging `/health`: `build=8ed37e46…`, `promise_compiler_v09`; `backend/` is unchanged since that SHA. Production `/health`: still `promise_compiler_v07`, no `build`.
+- Phone (staging backend, APK built from `59e0a18`, then `66007ee` for the quota test). Promise "Block YouTube Shorts for 1 hour", pick YouTube-only, tick confirm, Start:
+  - Saved typed scope `APP_SHORT_FORM_ONLY`; YouTube app rule stays `AI_DECIDE`.
+  - YouTube Home ALLOW (`ENFORCEMENT_SCOPE_ALLOW`); Shorts BLOCK with overlay, "Leave this screen" returns to YouTube Home.
+  - 50-min MIT 6.006 lecture ALLOW (stage SCOPE; surface mislabeled COMMENTS). Chrome `m.youtube.com/shorts` ALLOW as out of scope (matches the promise); Chrome article ALLOW.
+  - Messages, Accessibility settings, dialer, emergency dialer: `EMERGENCY_ALLOW`, no overlay.
+  - End Commitment (Balanced = no friction, by design) ended in one tap; `app_rules` content identical to backup; Shorts then `NO_ACTIVE_SESSION_ALLOW`.
+- Phone quota test, "Strict: only 2 YouTube Shorts today", pick YouTube-only: **found and fixed** — the card invented "Should I block all of YouTube, or only part of it?" and Start never opened (`app_surface_choice_misses_rules` treated the ≤2/>2 count rules as outside the Shorts scope). After `66007ee`: Start opens; short 1 counted 1/2, pause/resume = same play, short 2 counted 2/2 and kept playing through pause/resume, short 3 BLOCK `QUOTA_BLOCK_EXCEEDED`; "N shorts left" warning overlay shows. Three blocked attempts -> session LOCKED. Emergency exit (Recovery options) ended it: session cleared, `app_rules` MD5 = backup, guardrails kept, use recorded. "Only once per 24h" is unit-tested (`CommitmentTeardownTest`), not phone-tested.
+- Harness lesson: `uiautomator dump` unbinds every Accessibility service while it runs, which causes "Not protecting" flicker. Check enforcement with `screencap` + logcat only.
+- Phone restored: production APK `E0917876` reinstalled; all 9 prefs files match the pre-test backup byte-for-byte (a Strlix process restarted after reinstall and rewrote two diag files; it was killed via `run-as kill` — not force-stop — and the files restored again); test-only `phonecodex_recovery.xml` and `phonecodex_short_form_quota.xml` deleted; `stay_on_while_plugged_in=0`; Accessibility bound; protection check "Protected; a11y=Alive; commitment=None; guardrail=On; backend=Reachable". `local.properties` points at production. Evidence: `.tmp-phone-verify-20260928-hosted/` (local, ignored).
+
+## Earlier checkpoint — 2026-09-27 night (hosted-v09 staging)
 
 - Branch `checkpoint/2026-09-27` (local, not pushed; `master` unchanged): `b6f799f` gitignore, `bb7611a` backend v09, `993a274` WIP Android runtime v1, `19dfea6` docs, `68c7532` quota fingerprint fix plus `/health` `build`, `37ac85c` bare-shorts options fix.
 - Quota fix (code + tests only, **not yet phone-verified**): a short is keyed by channel handle plus title with player chrome stripped, so play/pause/resume is one play; a short already counted today stays `ALLOW_DUPLICATE` at the limit, and only a new short past N blocks. Regression tests use the real 2026-09-27 YouTube dumps. **887 Android tests pass** (forced rerun), `assembleDebug` OK, 12/12 backend smokes pass.

@@ -32,6 +32,15 @@ Open findings (not fixed):
 - From the quota phone test: the long lecture was allowed via passive/`COMMENTS`, not `ALLOW_LONG_EDUCATIONAL`; the "shorts remaining" overlay never showed; the card says "rest of today" but the deadline is +24h; card copy has ".," typos.
 - The Android tree is one WIP commit (`993a274`); review it before any tester build.
 
+Update 2026-09-28: hosted phone flow and quota re-test done on staging (see `CURRENT_STATUS.md`). Fixed on the way: `59e0a18`, `8ed37e4`, `66007ee`. Next, in order:
+
+1. **P0 — Shorts escape via picture-in-picture.** After a quota-exceeded Short was blocked and the session LOCKED, pressing Home turned YouTube into a PiP window; the Short stayed on screen over Chrome and Chrome logged no decision. Reproduce with screenshots/logcat, then block or pause PiP playback of an in-scope surface. Unit-test the decision; phone-verify.
+2. **Deadline vs card.** "Only 2 Shorts today" card says "ending at local midnight"; the session deadline is start + 24h (`SessionExpiryPolicy` takes the later of the two), so the promise runs into tomorrow. The checkbox says "lasts 1 day". Make one of them true.
+3. **Strict copy vs lock.** The card says "Strict means blocking further Shorts, not locking the phone"; three blocked attempts lock the session. Align the copy or the lock rule.
+4. Ask Ankit before promoting to production (set `PROMISE_COMPILER_PROMPT_VERSION=promise_compiler_v09` + `STRLIX_BUILD_ID=8ed37e46d2f52f8d863473499944b37b7e3c2887`, deploy the same SHA, check `/health`). Then delete `phonecodex-backend-staging`. The Android fixes ship separately in the next tester APK.
+
+Still open from 09-27: complaint-style promise dead end; "Block YouTube Shorts for 1 hour" always asks YouTube-only vs everywhere; ".," and duplicated "After limit" lines in the card; legacy `enforcement_scope_kind=youtube_app_only` saved beside the typed scope; regular player labeled COMMENTS (lecture allowed at SCOPE, not `ALLOW_LONG_EDUCATIONAL`); "1 shorts left" grammar; Home status refreshes only on "Run protection check".
+
 ### Launch bar (closed APK, not Play Store)
 
 **Hard no:** Play Store on Mon 21 Sep. Review takes days. Do not market 100% blocks.
