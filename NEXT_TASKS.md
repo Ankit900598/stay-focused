@@ -54,6 +54,13 @@ Update 2026-09-28 15:35: production phone run done (see `CURRENT_STATUS.md`). Qu
 3. Then kill experiments #1 (OneKeyClean) and #3 (SwipeUpClean) from `docs/accessibility-kill-recovery-2026-09-28.md`, with captures.
 4. Only then sideload testers.
 
+Update 2026-09-28 17:05: item 1 done in code (`7db302a`): media keys removed; the guard requests audio focus (max 3 per PiP episode), verifies with `isMusicActive`, and logs truthful events. 916 Android unit tests pass. **Phone proof blocked**: MIUI Security Center disabled YouTube at 16:31:14 (`enabled=3`, not ADB), so the Shorts/PiP run could not start. APK `24AEBE22…` is installed; the test commitment was ended normally; Accessibility is bound. Next, in order:
+
+1. Ankit re-enables YouTube on the phone (his decision), then run the matrix in `docs/closed-alpha-handoff-2026-09-28.md` §Phone gate: the Short quota block, Home into PiP including the ad case (`MEDIA_STOP_CONFIRMED` + PiP frames stop changing + no volume panel), an allowed long lecture in PiP keeps playing, Chrome/dialer/meeting untouched, End restores rules.
+2. If the ad keeps playing after 3 requests (`CONTROL_UNAVAILABLE reason=STILL_PLAYING_AFTER_BOUND`), the remaining options need new access (notification listener for a `MediaController`, or an Accessibility gesture). Ask Ankit; do not add them silently.
+3. Kill experiments: OneKeyClean (13:33:57) and SwipeUpClean (16:31:06) were both observed today, leaving Accessibility crashed until the Settings toggle; captures `before_rebind`/`after_rebind` and `pip2_before_install`/`pip2_after_rebind`. A clean, deliberate rerun with captures on each side is still owed.
+4. Sideload to 5 testers only after step 1, with the known-limitations list.
+
 Still open from 09-27: complaint-style promise dead end; "Block YouTube Shorts for 1 hour" always asks YouTube-only vs everywhere; ".," and duplicated "After limit" lines in the card; legacy `enforcement_scope_kind=youtube_app_only` saved beside the typed scope; regular player labeled COMMENTS (lecture allowed at SCOPE, not `ALLOW_LONG_EDUCATIONAL`); "1 shorts left" grammar; Home status refreshes only on "Run protection check".
 
 ### Launch bar (closed APK, not Play Store)

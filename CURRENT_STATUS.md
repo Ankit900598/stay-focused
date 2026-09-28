@@ -18,7 +18,15 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
-## Latest Verified Checkpoint — 2026-09-28 15:35 (production phone test; PiP gap found)
+## Latest Checkpoint — 2026-09-28 17:05 (PiP containment in code; phone proof blocked)
+
+- `7db302a`: `PictureInPictureContainmentLaw` + guard. No media keys (the old pause key did not stop ads and popped the MIUI volume panel). When the existing escape law says the PiP is forbidden: request `AUDIOFOCUS_GAIN` (max 3 per PiP episode), verify 1.5 s later via device-wide `isMusicActive()`, and log `PIP_GUARD_ENTERED` / `MEDIA_CONTROL_REQUESTED` / `MEDIA_STOP_CONFIRMED` (only with `device_media_active=false`) / `CONTROL_UNAVAILABLE` / `GUARD_EXITED`. Call/meeting audio modes are skipped. No new permission. **916 Android unit tests pass** (fresh XMLs); 8 new law tests.
+- Feasibility: no public API stops or dismisses another app's PiP with current grants. A targeted `MediaController` needs notification-listener access; a dismiss gesture needs a new Accessibility capability. Audio focus is best-effort, and the check is device-wide, not per-package.
+- Tester APK `24AEBE221B85BE99D731BE6C8352D0655CC10462C6238C5402C5FD953C8EBFC9` (from `7db302a`, production URL) installed on Ankit's phone 16:52.
+- Phone: rebound through Settings (capture `pip2_after_rebind`: bound, PID 7376). The production promise went through (pick YouTube-only, midnight checkbox, Start; heartbeat FGS running). **YouTube could not launch**: MIUI Security Center set it to disabled-by-user at 16:31:14, 6 s after a SwipeUpClean. The agent did not re-enable it (Ankit's choice). The commitment was ended normally (Strict confirm). Capture `pip2_after_end`: bound, same PID. Rules/session/quota/guardrails prefs MD5 = backup. `study_world_settings` holds the last bound promise by design. `stay_on=0`.
+- Release gate: **not passed** — the PiP ad case is unproven on the phone. Handoff prepared, not distributed: `docs/closed-alpha-handoff-2026-09-28.md`.
+
+## Verified Checkpoint — 2026-09-28 15:35 (production phone test; PiP gap found)
 
 - New tool `tools/phone/Capture-StrlixDiag.ps1` (read-only, sanitized; `61cb81f`, `820afec`). Captures in `.tmp-phone-verify-diag/` (ignored).
 - Before: capture `before_rebind` = Accessibility **crashed**, no PID; the only system kill was `OneKeyClean` at 13:33:57 (the others were package updates plus one `run-as kill` by the agent). Rebound through Settings > Accessibility > Downloaded apps > PhoneCodex Focus Detection, off (confirm) then on. Capture `after_rebind` = **bound**, PID 9995, event types include `TYPE_WINDOWS_CHANGED`.

@@ -313,11 +313,15 @@ When starting work:
 
 **Why it matters:** Foreground package detection alone can say “home screen is safe” while the user is still watching distracting media. This is exactly the kind of small escape path that makes a blocker feel untrustworthy at scale.
 
-**Not a P0 today:** Full-screen enforcement is the current priority. Do not derail the main loop for PiP yet.
+**Status (2026-09-28): P0, code shipped, phone proof pending.** A production phone run on 2026-09-28 showed a YouTube ad continuing in PiP after the Shorts quota block; the old media-pause key did not stop it and raised the volume panel.
 
-**Later solution direction:** Add a media/PiP detection layer using a combination of Accessibility window changes, media session signals, notification/media controls, and possibly screenshot/vision classification. Policy should treat active distracting media overlay as context, not just foreground app.
+**What is in code now (`7db302a`):** `PictureInPictureContainmentLaw` + the service guard. When the existing escape law says the PiP package/surface is forbidden, Strlix requests `AUDIOFOCUS_GAIN` (USAGE_MEDIA) at most 3 times per PiP episode, verifies 1.5 s later with device-wide `AudioManager.isMusicActive()`, and logs `PIP_GUARD_ENTERED`, `MEDIA_CONTROL_REQUESTED`, `MEDIA_STOP_CONFIRMED` (only when `device_media_active=false`), `CONTROL_UNAVAILABLE`, `GUARD_EXITED`. No media keys, no force-stop, no new permission. Call/meeting audio modes are skipped.
 
-**Future test case:** Start commitment → open YouTube distracting video → enter PiP/floating window → return home → PhoneCodex should detect active media distraction and warn/block/close/guide back according to policy.
+**Feasibility limits (why this is best-effort, not a guarantee):** there is no public API to stop or dismiss another app's PiP with current grants. A package-targeted `MediaController` needs notification-listener access (`MediaSessionManager.getActiveSessions`); a dismiss gesture needs a new Accessibility capability; `isMusicActive()` is device-wide and cannot name the package. Audio focus only works if the other player honours focus loss (Android 12+ fades out the focus holder). Any stronger control is a privacy decision for Ankit.
+
+**Phone proof status:** not yet run on `7db302a` — on 2026-09-28 MIUI Security Center had disabled YouTube (`enabled=3`, 16:31:14, not by ADB), so the Shorts/PiP matrix could not execute. Until the ad case is reproducibly stopped on the phone, treat "YouTube ads may continue playing in PiP" as a known limitation.
+
+**Test case:** Start commitment → open YouTube distracting video → enter PiP/floating window → return home → PhoneCodex should detect active media distraction and warn/block/close/guide back according to policy.
 
 ---
 
