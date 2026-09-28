@@ -531,7 +531,7 @@ internal class HomeScreenState(
             return
         }
 
-        if (draft.needsClarification) {
+        if (draft.needsClarification(strongerConfirmAcknowledged)) {
             startBlockedMessage =
                 "I still need a clearer promise before I can protect it. Edit and tap Understand again."
             return

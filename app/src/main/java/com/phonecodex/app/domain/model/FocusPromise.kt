@@ -82,16 +82,23 @@ data class FocusPromise(
         get() = sessionDurationMinutes
 
     val needsClarification: Boolean
-        get() = when {
-            clarificationRequired -> true
-            choiceVerificationFailed -> true
-            typedScopeBlocksStart -> true
-            legacyContractGap != null -> true
-            appRuleScopeConflict -> true
-            clarificationOptions.isNotEmpty() && canStartCommitment != true -> true
-            !clarificationQuestion.isNullOrBlank() && clarificationOptions.isEmpty() -> true
-            else -> false
-        }
+        get() = needsClarification(strongerConfirmAcknowledged = false)
+
+    /**
+     * The server keeps canStart=false while a stronger confirm is required, even after the
+     * pick; once the user ticks that confirm, only the echoed options stop blocking Start.
+     */
+    fun needsClarification(strongerConfirmAcknowledged: Boolean): Boolean = when {
+        clarificationRequired -> true
+        choiceVerificationFailed -> true
+        typedScopeBlocksStart -> true
+        legacyContractGap != null -> true
+        appRuleScopeConflict -> true
+        clarificationOptions.isNotEmpty() && canStartCommitment != true &&
+            !(requiresStrongerConfirmation && strongerConfirmAcknowledged) -> true
+        !clarificationQuestion.isNullOrBlank() && clarificationOptions.isEmpty() -> true
+        else -> false
+    }
 
     /** Product alias for warnings shown on the confirmation card. */
     val cautionMessages: List<String>

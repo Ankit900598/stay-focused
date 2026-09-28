@@ -1,0 +1,339 @@
+{
+  "rawText": "Block YouTube Shorts for 1 hour",
+  "cleanedPromiseText": "Block Shorts in the YouTube app for 1 hour, leaving long videos and other apps unchanged.",
+  "detectedLanguage": "en",
+  "transcriptConfidence": 0,
+  "userIntentSummary": "You want to block only the YouTube app’s Shorts for one hour.",
+  "recommendedInterpretation": "YouTube app Shorts will be blocked for one hour.",
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.99,
+  "ambiguityLevel": "low",
+  "clarificationRequired": false,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "YouTube short videos only",
+      "description": "Block Shorts in the YouTube app while leaving its long videos and other apps unchanged.",
+      "recommended": true,
+      "policyPreview": "YouTube app Shorts will be blocked for one hour.",
+      "resultingPolicyPreview": "YouTube app Shorts will be blocked for one hour.",
+      "internalPolicyPreview": {
+        "scopeKind": "youtube_only",
+        "appliesTo": "YouTube only",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      },
+      "scope": {
+        "version": 1,
+        "kind": "APP_SHORT_FORM_ONLY",
+        "resolution": "EXCLUSIVE",
+        "identity": "YOUTUBE",
+        "include": [
+          {
+            "id": "i1",
+            "host": "NATIVE_APP",
+            "identity": "YOUTUBE",
+            "surfaces": [
+              "PLAYER_SHORT"
+            ],
+            "sites": [],
+            "packages": [
+              "com.google.android.youtube"
+            ],
+            "packageMatch": "PINNED"
+          }
+        ],
+        "exempt": [],
+        "confidence": 0.95,
+        "appliesToText": null,
+        "unresolvedReason": null,
+        "evidenceSpans": [
+          "YouTube Shorts"
+        ],
+        "candidateScopes": []
+      }
+    },
+    {
+      "id": "B",
+      "label": "Short videos everywhere",
+      "description": "Block Shorts, Reels, and other short-form video players across apps and browsers.",
+      "recommended": false,
+      "policyPreview": "All short-form video players will be blocked for one hour; long videos remain unchanged.",
+      "resultingPolicyPreview": "All short-form video players will be blocked for one hour; long videos remain unchanged.",
+      "internalPolicyPreview": {
+        "scopeKind": "short_form_all_surfaces",
+        "appliesTo": "Short-form video apps and browser short videos",
+        "expandShortForm": true,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          },
+          {
+            "packageName": "org.schabi.newpipe",
+            "appLabel": "NewPipe"
+          },
+          {
+            "packageName": "com.instagram.android",
+            "appLabel": "Instagram"
+          },
+          {
+            "packageName": "com.facebook.katana",
+            "appLabel": "Facebook"
+          },
+          {
+            "packageName": "com.zhiliaoapp.musically",
+            "appLabel": "TikTok"
+          },
+          {
+            "packageName": "com.snapchat.android",
+            "appLabel": "Snapchat"
+          },
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube",
+          "org.schabi.newpipe",
+          "com.instagram.android",
+          "com.facebook.katana",
+          "com.zhiliaoapp.musically",
+          "com.snapchat.android",
+          "com.android.chrome"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      },
+      "scope": {
+        "version": 1,
+        "kind": "SHORT_FORM_ANY_HOST",
+        "resolution": "EXCLUSIVE",
+        "identity": "SHORT_FORM_ANY",
+        "include": [
+          {
+            "id": "i1",
+            "host": "ANY_HOST",
+            "identity": "SHORT_FORM_ANY",
+            "surfaces": [
+              "PLAYER_SHORT"
+            ],
+            "sites": [],
+            "packages": [],
+            "packageMatch": "CLASS_RESOLVED"
+          }
+        ],
+        "exempt": [],
+        "confidence": 0.95,
+        "appliesToText": null,
+        "unresolvedReason": null,
+        "evidenceSpans": [
+          "Shorts"
+        ],
+        "candidateScopes": []
+      }
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "I understood: block YouTube app Shorts for one hour.",
+    "allowed": [
+      "Long videos and other features in YouTube remain unchanged.",
+      "Other apps and browser video remain unchanged."
+    ],
+    "blocked": [
+      "Shorts playback in the YouTube app."
+    ],
+    "time": "For one hour, starting immediately.",
+    "appliesTo": "YouTube short videos only",
+    "checkThis": [
+      "Your selected option A limits this block to the YouTube app, not short videos everywhere."
+    ],
+    "safetyNotes": [],
+    "understoodSummary": "I understood: block YouTube app Shorts for one hour.",
+    "allowedBullets": [
+      "Long videos and other features in YouTube remain unchanged.",
+      "Other apps and browser video remain unchanged."
+    ],
+    "blockedBullets": [
+      "Shorts playback in the YouTube app."
+    ],
+    "timeWindowText": "For one hour, starting immediately.",
+    "appliesToText": "YouTube short videos only",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "session_fixed",
+      "minutes": 60,
+      "label": "One hour"
+    },
+    "surfaceRules": [
+      {
+        "surface": "shorts",
+        "action": "BLOCK",
+        "note": "Shorts playback in the YouTube app only",
+        "packageName": "com.google.android.youtube"
+      }
+    ],
+    "contentRules": [
+      {
+        "appLabel": "YouTube",
+        "packageName": "com.google.android.youtube",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "BLOCK",
+        "description": "Shorts playback in the YouTube app only"
+      }
+    ],
+    "appRules": [
+      {
+        "packageName": "com.google.android.youtube",
+        "label": "YouTube",
+        "behavior": "AI_DECIDE"
+      }
+    ],
+    "quotaRules": [],
+    "recoveryRules": {
+      "hardness": "normal",
+      "requiresExplicitConfirm": false,
+      "notes": ""
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "low",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": true
+  },
+  "hiddenInternalScope": [
+    "com.google.android.youtube"
+  ],
+  "emergencyExceptions": [
+    {
+      "type": "emergency_calls",
+      "detail": "Emergency calls remain available."
+    },
+    {
+      "type": "family_calls",
+      "detail": "Family calls remain available."
+    }
+  ],
+  "sessionDurationMinutes": 60,
+  "timeWindowKind": "session_fixed",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "SMART",
+  "allowedSummaries": [],
+  "blockedSummaries": [
+    "Shorts playback in the YouTube app only → BLOCK"
+  ],
+  "conditionalSummaries": [
+    "Applies to: YouTube short videos only"
+  ],
+  "confirmationPreview": [
+    "Blocked: Shorts playback in the YouTube app only → BLOCK",
+    "Applies to: YouTube short videos only"
+  ],
+  "interpretationNotes": [
+    "Selected option A resolves the scope to Shorts in the YouTube app only.",
+    "One hour is the block duration, not a video-length limit or viewing quota."
+  ],
+  "scopePackages": [
+    "com.google.android.youtube"
+  ],
+  "scopeKind": "youtube_shorts_only",
+  "contentBrands": [],
+  "surfaceScope": [],
+  "contentScope": [],
+  "contentRules": [
+    {
+      "appLabel": "YouTube",
+      "packageName": "com.google.android.youtube",
+      "surface": "shorts",
+      "contentType": "short_form_video",
+      "operator": null,
+      "value": null,
+      "unit": null,
+      "action": "BLOCK",
+      "description": "Shorts playback in the YouTube app only"
+    }
+  ],
+  "clarificationQuestion": null,
+  "cautionMessages": [
+    "Selected option A resolves the scope to Shorts in the YouTube app only.",
+    "One hour is the block duration, not a video-length limit or viewing quota.",
+    "Using your choice: YouTube short videos only"
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.99,
+  "suggestedAppRules": [
+    {
+      "packageName": "com.google.android.youtube",
+      "label": "YouTube",
+      "behavior": "AI_DECIDE"
+    }
+  ],
+  "commitmentType": "focus_session",
+  "promptVersion": "promise_compiler_v09",
+  "canStartCommitment": false,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": true,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "A",
+  "optionRematerialized": true,
+  "optionScopeKind": "youtube_only",
+  "optionVerification": "snapshot_and_carry_verified",
+  "optionVerificationReason": "snapshot_and_carry_verified",
+  "scopeContract": "v1",
+  "scope": {
+    "version": 1,
+    "kind": "APP_SHORT_FORM_ONLY",
+    "resolution": "EXCLUSIVE",
+    "identity": "YOUTUBE",
+    "include": [
+      {
+        "id": "i1",
+        "host": "NATIVE_APP",
+        "identity": "YOUTUBE",
+        "surfaces": [
+          "PLAYER_SHORT"
+        ],
+        "sites": [],
+        "packages": [
+          "com.google.android.youtube"
+        ],
+        "packageMatch": "PINNED"
+      }
+    ],
+    "exempt": [],
+    "confidence": 0.95,
+    "appliesToText": null,
+    "unresolvedReason": null,
+    "evidenceSpans": [
+      "YouTube Shorts"
+    ],
+    "candidateScopes": []
+  },
+  "meta": {
+    "provider": "azure",
+    "deployment": "pc-lab-astra",
+    "promptVersion": "promise_compiler_v09",
+    "latencyMs": 13788
+  }
+}
