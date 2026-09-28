@@ -221,7 +221,7 @@ internal fun buildPromiseUnderstanding(
         addAll(checkThisAndSafety)
         timeframeCaution(draft)?.let { add(clean(it)) }
     }.map(::clean)
-        .filter { it.isNotBlank() }
+        .filter { it.isNotBlank() && !DENIES_SESSION_LOCK.containsMatchIn(it) }
         .distinct()
 
     // A recognized pick that the compiler/law accepted: the question is answered, so the
@@ -443,6 +443,16 @@ private fun timeframeCaution(draft: FocusPromise): String? {
     return "I could not fully read your timeframe, so session time is " +
         "${formatDuration(draft.sessionDurationMinutes)}. Edit the promise if that is wrong."
 }
+
+/**
+ * Every strictness locks the session after [lockAttemptThresholdFor] blocked attempts, and a
+ * locked session blocks every non-safe app. Model notes that deny this contradict [driftLabel].
+ */
+private val DENIES_SESSION_LOCK = Regex(
+    """\b(?:not|never|without|won't|will\s+not|doesn't|does\s+not)\s+lock(?:ing|s)?\s+(?:the\s+|your\s+)?(?:phone|device|session)\b""" +
+        """|\bno\s+(?:phone|device|session)\s+lock""",
+    RegexOption.IGNORE_CASE
+)
 
 private val UNREADABLE_TIMEFRAME = Regex(
     "\\b(tonight|tomorrow|until|am|pm)\\b",

@@ -82,6 +82,30 @@ class HostedQuotaPickStartGateTest {
     }
 
     @Test
+    fun strictCard_neverDeniesTheLockThatThreeBlockedAttemptsTrigger() {
+        val card = buildPromiseUnderstanding(draft(), source = UnderstandingSource.PROMISE_COMPILER, selectedClarificationOptionId = "A")
+        assertEquals(3, card.lockAttemptThreshold)
+        assertEquals("I block it and lock the session after 3 tries.", card.driftLabel)
+        val text = card.userFacingTextBlob()
+        assertFalse(text, Regex("not locking", RegexOption.IGNORE_CASE).containsMatchIn(text))
+        assertTrue(card.cautions.any { it.startsWith("Two is a daily Shorts count") })
+    }
+
+    @Test
+    fun lockDenialFilter_keepsSafetyNotesThatSayCallsAreNeverLocked() {
+        val d = draft().copy(
+            warnings = listOf(
+                "This won't lock your phone.",
+                "No session lock — only Shorts are blocked.",
+                "Emergency calls are never locked."
+            )
+        )
+        val card = buildPromiseUnderstanding(d, source = UnderstandingSource.PROMISE_COMPILER, selectedClarificationOptionId = "A")
+        assertTrue(card.cautions.contains("Emergency calls are never locked."))
+        assertFalse(card.cautions.toString(), card.cautions.any { it.contains("won't lock") || it.startsWith("No session lock") })
+    }
+
+    @Test
     fun oneDayOrDailyOrExplicitDuration_keepTheirLength() {
         val d = draft()
         val startedAt = Instant.parse("2026-09-28T06:29:00Z").toEpochMilli()
