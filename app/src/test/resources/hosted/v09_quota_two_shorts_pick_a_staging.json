@@ -1,0 +1,415 @@
+{
+  "rawText": "Strict: only 2 YouTube Shorts today",
+  "cleanedPromiseText": "Strictly limit YouTube app Shorts to two today.",
+  "detectedLanguage": "en",
+  "transcriptConfidence": 0,
+  "userIntentSummary": "You want to allow two Shorts in the YouTube app today, then block further Shorts there.",
+  "recommendedInterpretation": "Allow two Shorts today, then block further Shorts in the YouTube app; other video surfaces stay unchanged.",
+  "alternativeInterpretations": [],
+  "interpretationConfidence": 0.98,
+  "ambiguityLevel": "low",
+  "clarificationRequired": false,
+  "clarificationOptions": [
+    {
+      "id": "A",
+      "label": "YouTube short videos only",
+      "description": "Limit only the YouTube app's Shorts to two today.",
+      "recommended": true,
+      "policyPreview": "Allow two Shorts today, then block further Shorts in the YouTube app; other video surfaces stay unchanged.",
+      "resultingPolicyPreview": "Allow two Shorts today, then block further Shorts in the YouTube app; other video surfaces stay unchanged.",
+      "internalPolicyPreview": {
+        "scopeKind": "youtube_shorts_only",
+        "appliesTo": "YouTube Shorts only",
+        "expandShortForm": false,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      },
+      "scope": {
+        "version": 1,
+        "kind": "APP_SHORT_FORM_ONLY",
+        "resolution": "EXCLUSIVE",
+        "identity": "YOUTUBE",
+        "include": [
+          {
+            "id": "i1",
+            "host": "NATIVE_APP",
+            "identity": "YOUTUBE",
+            "surfaces": [
+              "PLAYER_SHORT"
+            ],
+            "sites": [],
+            "packages": [
+              "com.google.android.youtube"
+            ],
+            "packageMatch": "PINNED"
+          }
+        ],
+        "exempt": [],
+        "confidence": 0.95,
+        "appliesToText": null,
+        "unresolvedReason": null,
+        "evidenceSpans": [
+          "only 2 YouTube Shorts today"
+        ],
+        "candidateScopes": []
+      }
+    },
+    {
+      "id": "B",
+      "label": "Short videos everywhere",
+      "description": "Share a total limit of two across Shorts, Reels, and other short-form video today.",
+      "recommended": false,
+      "policyPreview": "Allow two short-form videos in total today, then block further short-form videos across apps and browsers.",
+      "resultingPolicyPreview": "Allow two short-form videos in total today, then block further short-form videos across apps and browsers.",
+      "internalPolicyPreview": {
+        "scopeKind": "short_form_all_surfaces",
+        "appliesTo": "Short-form video apps and browser short videos",
+        "expandShortForm": true,
+        "packages": [
+          {
+            "packageName": "com.google.android.youtube",
+            "appLabel": "YouTube"
+          },
+          {
+            "packageName": "org.schabi.newpipe",
+            "appLabel": "NewPipe"
+          },
+          {
+            "packageName": "com.instagram.android",
+            "appLabel": "Instagram"
+          },
+          {
+            "packageName": "com.facebook.katana",
+            "appLabel": "Facebook"
+          },
+          {
+            "packageName": "com.zhiliaoapp.musically",
+            "appLabel": "TikTok"
+          },
+          {
+            "packageName": "com.snapchat.android",
+            "appLabel": "Snapchat"
+          },
+          {
+            "packageName": "com.android.chrome",
+            "appLabel": "Chrome"
+          }
+        ],
+        "scopePackages": [
+          "com.google.android.youtube",
+          "org.schabi.newpipe",
+          "com.instagram.android",
+          "com.facebook.katana",
+          "com.zhiliaoapp.musically",
+          "com.snapchat.android",
+          "com.android.chrome"
+        ],
+        "contentBrands": [],
+        "surfaceScope": [],
+        "contentScope": []
+      },
+      "scope": {
+        "version": 1,
+        "kind": "SHORT_FORM_ANY_HOST",
+        "resolution": "EXCLUSIVE",
+        "identity": "SHORT_FORM_ANY",
+        "include": [
+          {
+            "id": "i1",
+            "host": "ANY_HOST",
+            "identity": "SHORT_FORM_ANY",
+            "surfaces": [
+              "PLAYER_SHORT"
+            ],
+            "sites": [],
+            "packages": [],
+            "packageMatch": "CLASS_RESOLVED"
+          }
+        ],
+        "exempt": [],
+        "confidence": 0.95,
+        "appliesToText": null,
+        "unresolvedReason": null,
+        "evidenceSpans": [
+          "only 2 YouTube Shorts today"
+        ],
+        "candidateScopes": []
+      }
+    }
+  ],
+  "userFacingConfirmation": {
+    "understood": "I understood: allow two YouTube app Shorts today, then block further Shorts.",
+    "allowed": [
+      "The first two Shorts in the YouTube app today.",
+      "Long YouTube videos and other video surfaces remain unchanged."
+    ],
+    "blocked": [
+      "Further Shorts in the YouTube app after today's two-Shorts limit is reached."
+    ],
+    "time": "Today only; this is a daily count, not a session timer.",
+    "appliesTo": "YouTube short videos only",
+    "checkThis": [
+      "Your selected option limits only the YouTube app's Shorts. Browser Shorts and short videos in other apps are not included."
+    ],
+    "safetyNotes": [],
+    "understoodSummary": "I understood: allow two YouTube app Shorts today, then block further Shorts.",
+    "allowedBullets": [
+      "The first two Shorts in the YouTube app today.",
+      "Long YouTube videos and other video surfaces remain unchanged."
+    ],
+    "blockedBullets": [
+      "Further Shorts in the YouTube app after today's two-Shorts limit is reached."
+    ],
+    "timeWindowText": "Today only; this is a daily count, not a session timer.",
+    "appliesToText": "YouTube short videos only",
+    "hiddenInternalScope": []
+  },
+  "internalPolicy": {
+    "timeWindow": {
+      "kind": "calendar_day",
+      "minutes": null,
+      "label": "Today only"
+    },
+    "surfaceRules": [
+      {
+        "surface": "shorts",
+        "action": "ALLOW",
+        "note": "First two YouTube app Shorts today",
+        "packageName": "com.google.android.youtube"
+      },
+      {
+        "surface": "shorts",
+        "action": "ALLOW",
+        "note": "short-form ≤ 2 / day (allow_first_n)",
+        "packageName": "com.google.android.youtube"
+      },
+      {
+        "surface": "shorts",
+        "action": "BLOCK",
+        "note": "short-form after 2 / day",
+        "packageName": "com.google.android.youtube"
+      }
+    ],
+    "contentRules": [
+      {
+        "appLabel": "YouTube",
+        "packageName": "com.google.android.youtube",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "action": "ALLOW",
+        "description": "First two YouTube app Shorts today"
+      },
+      {
+        "appLabel": "YouTube",
+        "packageName": "com.google.android.youtube",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": "lte",
+        "value": 2,
+        "unit": "count",
+        "action": "ALLOW",
+        "description": "short-form ≤ 2 / day (allow_first_n)"
+      },
+      {
+        "appLabel": "YouTube",
+        "packageName": "com.google.android.youtube",
+        "surface": "shorts",
+        "contentType": "short_form_video",
+        "operator": "gt",
+        "value": 2,
+        "unit": "count",
+        "action": "BLOCK",
+        "description": "short-form after 2 / day"
+      }
+    ],
+    "appRules": [
+      {
+        "packageName": "com.google.android.youtube",
+        "label": "YouTube",
+        "behavior": "ALLOW"
+      }
+    ],
+    "quotaRules": [
+      {
+        "metric": "shorts",
+        "limit": 2,
+        "period": "day"
+      }
+    ],
+    "recoveryRules": {
+      "hardness": "strong",
+      "requiresExplicitConfirm": false,
+      "notes": "Strict quota enforcement on the scoped surface only; no device lock or added cooldown."
+    },
+    "guardrails": []
+  },
+  "riskReview": {
+    "falseAllowRisk": "low",
+    "falseBlockRisk": "low",
+    "safetyRisk": "none",
+    "requiresHumanConfirmation": true
+  },
+  "hiddenInternalScope": [
+    "com.google.android.youtube"
+  ],
+  "emergencyExceptions": [
+    {
+      "type": "emergency_calls",
+      "detail": "Emergency calls remain available."
+    },
+    {
+      "type": "family_calls",
+      "detail": "Family calls remain available."
+    }
+  ],
+  "sessionDurationMinutes": 1440,
+  "timeWindowKind": "calendar_day",
+  "quotaBoundary": "allow_first_n",
+  "strictness": "STRICT",
+  "allowedSummaries": [
+    "First two YouTube app Shorts today → ALLOW"
+  ],
+  "blockedSummaries": [
+    "YouTube app Shorts after today's two-play quota → BLOCK"
+  ],
+  "conditionalSummaries": [
+    "Allowed: first 2 short-form videos today (then block)",
+    "After limit: block short-form until tomorrow",
+    "Applies to: YouTube short videos only"
+  ],
+  "confirmationPreview": [
+    "Allowed: first 2 short-form videos today",
+    "After limit: block short-form videos until tomorrow",
+    "Time window: today / rest of day (not a 1-hour session)",
+    "Allowed: first 2 short-form videos today (then block)",
+    "After limit: block short-form until tomorrow",
+    "Allowed: First two YouTube app Shorts today → ALLOW",
+    "Blocked: YouTube app Shorts after today's two-play quota → BLOCK",
+    "Applies to: YouTube short videos only"
+  ],
+  "interpretationNotes": [
+    "Time window: calendar day / rest of today — not an invented 1-hour session.",
+    "Selected option A resolves the scope to the YouTube app's Shorts only.",
+    "Two is a daily Shorts count, not minutes or a limit on long videos.",
+    "Strict means blocking additional scoped Shorts after the quota, not locking the phone."
+  ],
+  "scopePackages": [
+    "com.google.android.youtube"
+  ],
+  "scopeKind": "youtube_shorts_only",
+  "contentBrands": [],
+  "surfaceScope": [],
+  "contentScope": [],
+  "contentRules": [
+    {
+      "appLabel": "YouTube",
+      "packageName": "com.google.android.youtube",
+      "surface": "shorts",
+      "contentType": "short_form_video",
+      "operator": null,
+      "value": null,
+      "unit": null,
+      "action": "ALLOW",
+      "description": "First two YouTube app Shorts today"
+    },
+    {
+      "appLabel": "YouTube",
+      "packageName": "com.google.android.youtube",
+      "surface": "shorts",
+      "contentType": "short_form_video",
+      "operator": "lte",
+      "value": 2,
+      "unit": "count",
+      "action": "ALLOW",
+      "description": "short-form ≤ 2 / day (allow_first_n)"
+    },
+    {
+      "appLabel": "YouTube",
+      "packageName": "com.google.android.youtube",
+      "surface": "shorts",
+      "contentType": "short_form_video",
+      "operator": "gt",
+      "value": 2,
+      "unit": "count",
+      "action": "BLOCK",
+      "description": "short-form after 2 / day"
+    }
+  ],
+  "clarificationQuestion": null,
+  "cautionMessages": [
+    "Time window: calendar day / rest of today — not an invented 1-hour session.",
+    "Selected option A resolves the scope to the YouTube app's Shorts only.",
+    "Two is a daily Shorts count, not minutes or a limit on long videos.",
+    "Strict means blocking additional scoped Shorts after the quota, not locking the phone.",
+    "Using your choice: YouTube short videos only"
+  ],
+  "source": "azure_promise_compiler",
+  "confidence": 0.98,
+  "suggestedAppRules": [
+    {
+      "packageName": "com.google.android.youtube",
+      "label": "YouTube",
+      "behavior": "ALLOW"
+    }
+  ],
+  "commitmentType": "quota_entertainment",
+  "promptVersion": "promise_compiler_v09",
+  "canStartCommitment": false,
+  "isPermanentCommitment": false,
+  "requiresStrongerConfirmation": true,
+  "isStudyModeLike": false,
+  "selectedClarificationOptionId": "A",
+  "optionRematerialized": true,
+  "optionScopeKind": "youtube_shorts_only",
+  "optionVerification": "snapshot_and_carry_verified",
+  "optionVerificationReason": "snapshot_and_carry_verified",
+  "scopeContract": "v1",
+  "scope": {
+    "version": 1,
+    "kind": "APP_SHORT_FORM_ONLY",
+    "resolution": "EXCLUSIVE",
+    "identity": "YOUTUBE",
+    "include": [
+      {
+        "id": "i1",
+        "host": "NATIVE_APP",
+        "identity": "YOUTUBE",
+        "surfaces": [
+          "PLAYER_SHORT"
+        ],
+        "sites": [],
+        "packages": [
+          "com.google.android.youtube"
+        ],
+        "packageMatch": "PINNED"
+      }
+    ],
+    "exempt": [],
+    "confidence": 0.95,
+    "appliesToText": null,
+    "unresolvedReason": null,
+    "evidenceSpans": [
+      "only 2 YouTube Shorts today"
+    ],
+    "candidateScopes": []
+  },
+  "meta": {
+    "provider": "azure",
+    "deployment": "pc-lab-astra",
+    "promptVersion": "promise_compiler_v09",
+    "latencyMs": 20330
+  }
+}

@@ -152,7 +152,8 @@ object EffectivePromisePolicy {
     /**
      * Anything outside the typed scope is OutOfScope and never reaches the content gates, so
      * a single-app scope cannot carry a restriction for another app, a global rule, or (for
-     * the short-form player only) a non-short-form rule in the same app.
+     * the short-form player only) a non-short-form rule in the same app. Short-form count
+     * rules stay in scope: the daily quota gate runs on the short-form player.
      */
     private fun scopeMissesRestrictions(draft: FocusPromise, scope: EnforcementScope): Boolean {
         if (scope.kind != ScopeKind.APP_SHORT_FORM_ONLY && scope.kind != ScopeKind.APP_ONLY) return false
@@ -162,10 +163,14 @@ object EffectivePromisePolicy {
             when {
                 rule.packageName !in packages -> true
                 scope.kind == ScopeKind.APP_ONLY -> false
-                else -> !isShortFormSurfaceBlock(rule)
+                else -> !isShortFormPlayerRule(rule)
             }
         }
     }
+
+    private fun isShortFormPlayerRule(rule: ContentRule): Boolean =
+        rule.contentType.equals("short_form_video", ignoreCase = true) &&
+            (rule.operator == null || rule.unit.equals("count", ignoreCase = true))
 
     fun conflictQuestion(draft: FocusPromise): String {
         val label = draft.unrepresentableAppScopes.firstOrNull()
