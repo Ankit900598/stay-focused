@@ -320,6 +320,28 @@ const FIXTURES = {};
     eq(scopeOf(r.dto).kind, "APP_SHORT_FORM_ONLY", "model-options turn 1 -> pick B still YouTube shorts only");
     eq(r.dto.canStartCommitment, true, "model-options turn 1 -> pick B: Start opens");
   }
+  // Hosted v09 2026-09-28: "Block YouTube Shorts for 1 hour" option A carried a valid typed
+  // scope but no (or a whole-app `youtube_only`) legacy preview; the pick failed closed with
+  // snapshot_invalid_scope in 1/3 runs. The legacy preview must follow the typed scope.
+  {
+    const BLOCK = "Block YouTube Shorts for 1 hour";
+    const ytShort = { version: 1, kind: "APP_SHORT_FORM_ONLY", resolution: "EXCLUSIVE", identity: "YOUTUBE", include: [{ id: "i1", host: "NATIVE_APP", identity: "YOUTUBE", surfaces: ["PLAYER_SHORT"], packages: ["com.google.android.youtube"], packageMatch: "PINNED" }], exempt: [], evidenceSpans: ["YouTube Shorts"] };
+    const anyShort = { version: 1, kind: "SHORT_FORM_ANY_HOST", resolution: "EXCLUSIVE", identity: "SHORT_FORM_ANY", include: [{ id: "i1", host: "ANY_HOST", identity: "SHORT_FORM_ANY", surfaces: ["PLAYER_SHORT"] }], exempt: [], evidenceSpans: ["Shorts"] };
+    const wholeYoutubePreview = { scopeKind: "youtube_only", appliesTo: "YouTube only", expandShortForm: false, packages: [{ packageName: "com.google.android.youtube", appLabel: "YouTube" }], scopePackages: ["com.google.android.youtube"], contentBrands: [], surfaceScope: [], contentScope: [] };
+    for (const [name, preview] of [["no legacy preview", undefined], ["whole-app legacy preview", wholeYoutubePreview]]) {
+      const modelOpts = [
+        { id: "A", label: "YouTube short videos only", description: "Block only the Shorts player in the YouTube app.", recommended: true, scope: ytShort, ...(preview ? { internalPolicyPreview: preview } : {}) },
+        { id: "B", label: "Short videos everywhere", description: "Block short videos in every app and browser.", recommended: false, scope: anyShort },
+      ];
+      const t1 = await compile(BLOCK, {}, basePolicy({ scope: UNRESOLVED, followUpQuestionRequired: true, clarificationOptions: modelOpts }));
+      const snap = t1.dto.clarificationOptions;
+      eq(snap[0].internalPolicyPreview && snap[0].internalPolicyPreview.scopeKind, "youtube_shorts_only", `${name}: legacy preview follows typed scope`);
+      const r = await compile(BLOCK, pickOptions(BLOCK, snap, "A"), basePolicy({ scope: UNRESOLVED }));
+      eq(r.dto.optionVerification, "snapshot_and_carry_verified", `${name}: pick verifies`);
+      eq(scopeOf(r.dto).kind, "APP_SHORT_FORM_ONLY", `${name}: pick saves YouTube short-form scope`);
+      check(!(r.dto.internalPolicy.appRules || []).some((a) => a.packageName === "com.google.android.youtube" && a.behavior === "BLOCK"), `${name}: no whole-app YouTube block`);
+    }
+  }
   // Two options resolving to the same enforceable typed scope are one choice.
   {
     const chrome = { version: 1, kind: "BROWSER_VIDEO", resolution: "EXCLUSIVE", identity: "VIDEO_ANY", include: [{ id: "i1", host: "ANY_BROWSER", identity: "VIDEO_ANY", surfaces: ["ANY"] }], exempt: [], evidenceSpans: ["videos"] };

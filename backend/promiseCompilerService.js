@@ -784,7 +784,7 @@ function applyScopeContract(dto, parsed, ctx) {
     .map((opt) => {
       const { scope } = optionTypedScope(opt, promiseText, true);
       const label = scopeOptionLabel(scope);
-      return { ...opt, scope, label: label || opt.label };
+      return alignLegacyPreviewWithTypedScope({ ...opt, scope, label: label || opt.label });
     })
     .filter((opt) => {
       const key = typedScopeFingerprint(opt.scope);
@@ -1958,6 +1958,47 @@ for (const entry of APP_SURFACE_FAMILY) {
   const k = appSurfaceScopeKinds(entry);
   DETERMINISTIC_SCOPE_BRIDGE[k.short] = { kind: "APP_SHORT_FORM_ONLY", identity: entry.identity };
   DETERMINISTIC_SCOPE_BRIDGE[k.whole] = { kind: "APP_ONLY", identity: entry.identity };
+}
+
+const LEGACY_PREVIEW_FOR_SCOPE = {
+  "APP_SHORT_FORM_ONLY|YOUTUBE": () => buildScopeInternalPreview({
+    scopeKind: "youtube_shorts_only",
+    appliesTo: "YouTube Shorts only",
+    packages: [{ packageName: PKG_YOUTUBE, appLabel: "YouTube" }],
+    expandShortForm: false,
+  }),
+  "APP_ONLY|YOUTUBE": () => buildScopeInternalPreview({
+    scopeKind: "youtube_only",
+    appliesTo: "YouTube only",
+    packages: [{ packageName: PKG_YOUTUBE, appLabel: "YouTube" }],
+  }),
+  "SHORT_FORM_ANY_HOST|SHORT_FORM_ANY": () => buildScopeInternalPreview({
+    scopeKind: "short_form_all_surfaces",
+    appliesTo: "Short-form video apps and browser short videos",
+    packages: SHORT_FORM_PLATFORM_PACKAGES,
+    expandShortForm: true,
+  }),
+  "VIDEO_CLASS_ANY_HOST|VIDEO_ANY": () => buildScopeInternalPreview({
+    scopeKind: "all_video_apps",
+    appliesTo: "Major video apps and browser video",
+    packages: ALL_VIDEO_PLATFORM_PACKAGES,
+  }),
+};
+
+/**
+ * v1: the typed scope is authoritative, but pick verification and rematerialization
+ * still read the legacy preview. When the model's preview is missing or names a
+ * different scope, replace it with the one the typed scope stands for.
+ */
+function alignLegacyPreviewWithTypedScope(option) {
+  const scope = option && option.scope;
+  if (!isEnforceableScope(scope)) return option;
+  const build = LEGACY_PREVIEW_FOR_SCOPE[`${scope.kind}|${scope.identity}`];
+  if (!build) return option;
+  const current = resolveOptionRematerialize(option);
+  const target = current && DETERMINISTIC_SCOPE_BRIDGE[String(current.scopeKind || "")];
+  if (target && target.kind === scope.kind && target.identity === scope.identity) return option;
+  return { ...option, internalPolicyPreview: build() };
 }
 
 function bridgedTypedScope(scopeKind, evidence) {
