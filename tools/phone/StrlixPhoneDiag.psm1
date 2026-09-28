@@ -126,7 +126,7 @@ function Get-StrlixAccessibilityState {
         if ($boundEntry) { break }
     }
     $bound = [bool]$boundEntry
-    $parsed = ($enabledBodies.Count + $boundBodies.Count + $crashedBodies.Count) -gt 0
+    $parsed = ($enabledBodies.Count + $bindingBodies.Count + $boundBodies.Count + $crashedBodies.Count) -gt 0
 
     $verdict = if (-not $parsed) { 'unparsed' }
         elseif ($crashed) { 'crashed' }
@@ -172,7 +172,7 @@ function Get-StrlixSettingState {
 function Protect-ForeignPackageNames {
     <# Replaces package-like names that are not Strlix's with <other-package>. #>
     param([string]$Text)
-    [regex]::Replace($Text, '\b[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+){2,}(?::[a-zA-Z0-9_.]+)?', {
+    [regex]::Replace($Text, '\b[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+(?:\:[a-zA-Z0-9_.]+)?', {
             param($m)
             if ($m.Value -eq $script:StrlixPackage -or $m.Value.StartsWith("$($script:StrlixPackage):") -or
                 $m.Value.StartsWith("$($script:StrlixPackage).")) { $m.Value } else { '<other-package>' }
@@ -204,7 +204,7 @@ function Get-ExitInfoRecords {
             reason      = & $get '\breason=(\d+ \([^)]*\))'
             subreason   = & $get '\bsubreason=(\d+ \([^)]*\))'
             importance  = & $get '\bimportance=(\d+)'
-            description = Protect-ForeignPackageNames (& $get '\bdescription=([^\r\n]*)')
+            description = Protect-ForeignPackageNames (& $get '\bdescription=(.*?)(?=\s+state=|\s+trace=|\r?\n|$)')
         }
     }
 }

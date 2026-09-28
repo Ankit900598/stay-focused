@@ -15,3 +15,5 @@ Last Timestamp of Persistence Into Persistent Storage: 2026-09-28 13:35:00.000
           state=empty
           trace=null
           connected client=com.example.privatebank
+        ApplicationExitInfo #2:
+          timestamp=2026-09-28 11:00:00.000 pid=4587 realUid=10345 packageUid=10345 definingUid=10345 user=0 process=com.phonecodex.app reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0 importance=100 pss=0.00 rss=0.00 description=stop com.phonecodex.app due to installPackageLI state=empty trace=null

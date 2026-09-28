@@ -42,6 +42,14 @@ Check 'disabled: not enabled' { -not $disabled.Enabled -and -not $disabled.Bound
 
 Check 'garbage input: unparsed, never "bound"' { (Get-StrlixAccessibilityState -DumpsysText 'Can''t find service: accessibility').Verdict -eq 'unparsed' }
 Check 'empty input: unparsed' { (Get-StrlixAccessibilityState -DumpsysText '').Verdict -eq 'unparsed' }
+$bindingOnly = @'
+ACCESSIBILITY MANAGER
+User state[
+ Binding services:{{com.phonecodex.app/com.phonecodex.app.accessibility.PhoneCodexAccessibilityService}}
+]
+'@
+$bindingOnlyState = Get-StrlixAccessibilityState -DumpsysText $bindingOnly
+Check 'binding-only dump: parsed and binding' { $bindingOnlyState.Parsed -and $bindingOnlyState.Binding -and $bindingOnlyState.Verdict -eq 'binding' }
 
 # --- sanitized output keeps only Strlix -----------------------------------------------
 foreach ($s in @($bound, $crashed, $binding, $disabled)) {
@@ -58,11 +66,13 @@ Check 'setting: null' { -not (Get-StrlixSettingState 'null').StrlixListed }
 # --- exit-info ----------------------------------------------------------------------------
 $exitText = Get-Content (Join-Path $fixtures 'device-crashed\exit_info.txt') -Raw
 $records = @(Get-ExitInfoRecords $exitText)
-Check 'exit-info: two records' { $records.Count -eq 2 }
+Check 'exit-info: three records' { $records.Count -eq 3 }
+Check 'exit-info: one-line record (real Xiaomi layout) stops description before state=' { $records[2].description -eq 'stop com.phonecodex.app due to installPackageLI' -and $records[2].reason -eq '16 (PACKAGE UPDATED)' }
 Check 'exit-info: OneKeyClean record parsed' { $records[0].description -eq 'OneKeyClean' -and $records[0].reason -eq '13 (OTHER)' -and $records[0].pid -eq '27078' -and $records[0].timestamp -eq '2026-09-28 13:33:57.412' }
 Check 'exit-info: SwipeUpClean record parsed' { $records[1].description -eq 'SwipeUpClean' -and $records[1].importance -eq '400' }
 $exitClean = Get-SanitizedExitInfo $exitText
 Check 'exit-info: foreign package redacted, Strlix kept' { $exitClean -notmatch 'privatebank' -and $exitClean -match '<other-package>' -and $exitClean -match 'process=com\.phonecodex\.app' }
+Check 'exit-info: two-component package redacted' { (Protect-ForeignPackageNames 'connected client=com.example') -eq 'connected client=<other-package>' }
 
 # --- package version --------------------------------------------------------------------
 $ver = Get-PackageVersionLines (Get-Content (Join-Path $fixtures 'device-crashed\package_info.txt') -Raw)
