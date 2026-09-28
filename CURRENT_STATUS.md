@@ -18,7 +18,16 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
-## Latest Verified Checkpoint — 2026-09-28 afternoon (PiP escape + today deadline)
+## Latest Verified Checkpoint — 2026-09-28 13:30 (production promoted to v09)
+
+- `39f130c`: the confirmation card drops model notes that deny the session lock ("…not locking the phone"); the drift line "I block it and lock the session after 3 tries." stays. Every strictness locks (Strict/Locked after 3, Gentle/Balanced after 10). **908 Android unit tests pass** (fresh result XMLs).
+- **Production `phonecodex-backend` promoted** (Ankit approved): App Settings `PROMISE_COMPILER_PROMPT_VERSION=promise_compiler_v09`, `STRLIX_BUILD_ID=8ed37e46d2f52f8d863473499944b37b7e3c2887`; zip built by `git archive 8ed37e4`, deployed `--async` (Azure deployment status 4 = success). Gate: `/health` `build=8ed37e4…`, `promise_compiler_v09`, compiler `pc-lab-astra`, classifier `pc-lab-terra`/`v04`, vision off, secret required, POST without secret -> 401. Live parity: "Strict: only 2 YouTube Shorts today" -> options "YouTube short videos only | Short videos everywhere"; pick -> `snapshot_and_carry_verified`, no clarification, stronger confirm required, rules identical to the staging fixture (≤2 count ALLOW, >2 count BLOCK).
+- Rollback: `.tmp-azure-prod-rollback/prod_wwwroot_before_v09.zip` (pre-promotion wwwroot, v07 default, no `build`). Redeploy it and delete both App Settings.
+- `phonecodex-backend-staging` deleted; the F1 plan is kept for production.
+- Tester APK built from `39f130c` with the production URL (dex has the production URL, not staging): SHA-256 `BF0A101A…2EF23187`, kept at `.tmp-phone-verify-20260928-hosted/strlix-tester-39f130c.apk` (ignored). Installed on Ankit's phone with `install -r` (data kept, no active commitment), Accessibility rebound, Home says Protected, decisions logged, `stay_on=0`.
+- Not yet done on this APK: an end-to-end promise on the phone against production, and an agent-recorded PiP escape check.
+
+## Earlier checkpoint — 2026-09-28 afternoon (PiP escape + today deadline)
 
 - Branch `checkpoint/2026-09-27` gained `0bdde0c` (picture-in-picture escape guard) and `33dd29e` ("today" promises end at local midnight, as the card says).
   - `PictureInPictureEscapeLaw` (pure, unit-tested): pause a PiP window when the session is LOCKED and the app is not usable while locked, or when the same package was blocked in the last 10 minutes and has not been allowed since. Safe packages and no-session are never touched. The service listens to `TYPE_WINDOWS_CHANGED` (`flagRetrieveInteractiveWindows`), pauses via a media-pause key, rechecks every 2 s while the guard holds, and also pauses video apps whenever the block overlay is shown.

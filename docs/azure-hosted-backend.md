@@ -125,4 +125,6 @@ The plan is F1 Free (no deployment slots). Staging is a second web app on the sa
 az webapp delete -g phonecodex-dev -n phonecodex-backend-staging
 ```
 
+Before promoting, download production `wwwroot` for rollback (Kudu `GET https://<app>.scm.azurewebsites.net/api/zip/site/wwwroot/` with an `az account get-access-token` bearer). 2026-09-28: production promoted to `8ed37e4` / v09 and staging deleted; recreate staging from these steps for the next backend change.
+
 Gate: staging `/health` `build` equals the SHA, v09, vision off, secret required; POST without the secret returns 401; production `/health` is unchanged.

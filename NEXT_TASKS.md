@@ -41,6 +41,12 @@ Update 2026-09-28: hosted phone flow and quota re-test done on staging (see `CUR
 
 Update 2026-09-28 afternoon: items 1 and 2 fixed (`0bdde0c` PiP guard, `33dd29e` midnight deadline); 906 tests pass. Phone: midnight label/deadline and media pause on block verified by the agent; the PiP escape itself was checked by Ankit by hand, not by the harness. Next: item 3 (Strict copy vs lock), then item 4 promotion together with a new tester APK built from `33dd29e` or later with the production URL.
 
+Update 2026-09-28 13:30: item 3 fixed (`39f130c`); item 4 done — production runs `8ed37e4` with v09, staging deleted, tester APK `BF0A101A` (from `39f130c`) installed on Ankit's phone. Next, in order:
+
+1. On the tester APK against production: "Strict: only 2 YouTube Shorts today" end-to-end (card has no "not locking" line, midnight label, 2 counted, 3rd blocked), then Home on the blocked Short and record the PiP guard with screenshot + logcat (`Media paused reason=pip_guard`). Do not run `uiautomator dump` while testing.
+2. Sideload the same APK to testers only after step 1 passes.
+3. Merge `checkpoint/2026-09-27` into `master` after review (still local, not pushed).
+
 Still open from 09-27: complaint-style promise dead end; "Block YouTube Shorts for 1 hour" always asks YouTube-only vs everywhere; ".," and duplicated "After limit" lines in the card; legacy `enforcement_scope_kind=youtube_app_only` saved beside the typed scope; regular player labeled COMMENTS (lecture allowed at SCOPE, not `ALLOW_LONG_EDUCATIONAL`); "1 shorts left" grammar; Home status refreshes only on "Run protection check".
 
 ### Launch bar (closed APK, not Play Store)
