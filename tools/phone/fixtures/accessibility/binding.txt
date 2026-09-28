@@ -1,0 +1,10 @@
+ACCESSIBILITY MANAGER (dumpsys accessibility)
+
+currentUserId=0
+User state[
+     attributes:{id=0, installedServiceCount=3}
+     Bound services:{Service[label=Private Bank Reader, feedbackType[FEEDBACK_SPOKEN], capabilities=1, eventTypes=TYPES_ALL_MASK, notificationTimeout=0, requestA11yBtn=false]}
+     Enabled services:{{com.example.privatebank/com.example.privatebank.a11y.BankReaderService}, {com.phonecodex.app/.accessibility.PhoneCodexAccessibilityService}}
+     Binding services:{{com.phonecodex.app/.accessibility.PhoneCodexAccessibilityService}}
+     Crashed services:{}
+]

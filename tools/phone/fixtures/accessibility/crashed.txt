@@ -1,0 +1,11 @@
+ACCESSIBILITY MANAGER (dumpsys accessibility)
+
+currentUserId=0
+User state[
+     attributes:{id=0, touchExplorationEnabled=false, installedServiceCount=4}
+     Bound services:{Service[label=Accessibility menu, feedbackType[FEEDBACK_GENERIC], capabilities=8, eventTypes=, notificationTimeout=0, requestA11yBtn=true], 
+                     Service[label=Private Bank Reader, feedbackType[FEEDBACK_SPOKEN], capabilities=1, eventTypes=TYPES_ALL_MASK, notificationTimeout=0, requestA11yBtn=false]}
+     Enabled services:{{com.android.settings/com.android.settings.accessibility.accessibilitymenu.AccessibilityMenuService}, {com.example.privatebank/com.example.privatebank.a11y.BankReaderService}, {com.phonecodex.app/com.phonecodex.app.accessibility.PhoneCodexAccessibilityService}}
+     Binding services:{}
+     Crashed services:{{com.phonecodex.app/com.phonecodex.app.accessibility.PhoneCodexAccessibilityService}, {com.secret.vpnhelper/.VpnA11yService}}
+]

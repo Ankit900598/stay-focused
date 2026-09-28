@@ -1,0 +1,12 @@
+Packages:
+  Package [com.phonecodex.app] (fixture):
+    userId=10345
+    pkg=Package{fixture com.phonecodex.app}
+    versionCode=1 minSdk=26 targetSdk=34
+    versionName=0.1-fixture
+    firstInstallTime=2026-09-01 10:00:00
+    lastUpdateTime=2026-09-28 13:29:00
+    requested permissions:
+      android.permission.INTERNET
+    User 0: ceDataInode=1 installed=true
+      lastDisabledCaller: com.example.privatebank

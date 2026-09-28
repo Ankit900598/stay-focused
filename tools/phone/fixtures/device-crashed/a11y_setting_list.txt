@@ -1,0 +1,1 @@
+com.android.settings/com.android.settings.accessibility.accessibilitymenu.AccessibilityMenuService:com.example.privatebank/com.example.privatebank.a11y.BankReaderService:com.phonecodex.app/com.phonecodex.app.accessibility.PhoneCodexAccessibilityService

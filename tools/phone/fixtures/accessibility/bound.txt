@@ -1,0 +1,16 @@
+ACCESSIBILITY MANAGER (dumpsys accessibility)
+
+currentUserId=0
+User state[
+     attributes:{id=0, touchExplorationEnabled=false, serviceHandlesDoubleTap=false, requestMultiFingerGestures=false, requestTwoFingerPassthrough=false, sendMotionEventsEnabled=false, displayMagnificationEnabled=false, autoclickEnabled=false, nonInteractiveUiTimeout=0, interactiveUiTimeout=0, installedServiceCount=4, magnificationModes=1, magnificationCapabilities=1, audioDescriptionByDefaultEnabled=false, magnificationFollowTypingEnabled=true}
+     shortcut key:{}
+     button:{com.android.settings/com.android.settings.accessibility.accessibilitymenu.AccessibilityMenuService}
+     button target:{null}
+     Bound services:{Service[label=Accessibility menu, feedbackType[FEEDBACK_GENERIC], capabilities=8, eventTypes=, notificationTimeout=0, requestA11yBtn=true], 
+                     Service[label=Private Bank Reader, feedbackType[FEEDBACK_SPOKEN], capabilities=1, eventTypes=TYPES_ALL_MASK, notificationTimeout=0, requestA11yBtn=false], 
+                     Service[label=PhoneCodex Focus Detection, feedbackType[FEEDBACK_GENERIC], capabilities=1, eventTypes=[TYPE_WINDOW_STATE_CHANGED, TYPE_WINDOW_CONTENT_CHANGED, TYPE_WINDOWS_CHANGED], notificationTimeout=100, requestA11yBtn=false]}
+     Enabled services:{{com.android.settings/com.android.settings.accessibility.accessibilitymenu.AccessibilityMenuService}, {com.example.privatebank/com.example.privatebank.a11y.BankReaderService}, {com.phonecodex.app/com.phonecodex.app.accessibility.PhoneCodexAccessibilityService}}
+     Binding services:{}
+     Crashed services:{}
+     Client list info:{Client[uid=10111, package=com.secret.vpnhelper]}
+]
