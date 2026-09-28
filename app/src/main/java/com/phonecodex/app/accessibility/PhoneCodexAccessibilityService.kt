@@ -4,13 +4,14 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.PixelFormat
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Display
-import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -64,6 +65,7 @@ import com.phonecodex.app.domain.enforcement.BlockOverlayWatch
 import com.phonecodex.app.domain.enforcement.OverlayLifecycleGate
 import com.phonecodex.app.domain.enforcement.OverlayWatchAction
 import com.phonecodex.app.domain.enforcement.OverlayWatchVerdict
+import com.phonecodex.app.domain.enforcement.PictureInPictureContainmentLaw
 import com.phonecodex.app.domain.enforcement.PictureInPictureEscapeLaw
 import com.phonecodex.app.domain.enforcement.PromiseEnforcementCoordinator
 import com.phonecodex.app.domain.enforcement.PromiseEvalInput
@@ -163,6 +165,9 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage: String? = null
     private var pipRecentBlock: PictureInPictureEscapeLaw.RecentBlock? = null
     private val pipGuardRunnable = Runnable { enforcePictureInPictureGuard() }
+    private var pipEpisode: PictureInPictureContainmentLaw.Episode? = null
+    private val pipVerifyRunnable = Runnable { verifyPictureInPictureStop() }
+    private var mediaStopFocusRequest: AudioFocusRequest? = null
     private var latestPackageName: String? = null
     private var latestScreenTextSignature: String? = null
     private var visibleWarningPackageName: String? = null
@@ -307,6 +312,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(contentChangeDebounceRunnable)
         mainHandler.removeCallbacks(serviceLeaseHeartbeatRunnable)
         mainHandler.removeCallbacks(pipGuardRunnable)
+        mainHandler.removeCallbacks(pipVerifyRunnable)
+        abandonMediaStopFocus()
         hideWarningOverlay()
         hideBlockOverlay()
         runtimeDiagStore.setAccessibilityServiceAlive(false)
@@ -2674,11 +2681,17 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             emptySet()
         }
 
-    /** Keeps a PiP window paused while it continues a block; rechecks so play inside PiP is paused again. */
+    /**
+     * While a PiP window continues a block, asks the system to stop media and checks whether it did.
+     * Rechecks so playback resumed inside PiP is caught; control requests are bounded per episode.
+     */
     private fun enforcePictureInPictureGuard() {
         mainHandler.removeCallbacks(pipGuardRunnable)
         val pipPackages = pictureInPicturePackages()
-        if (pipPackages.isEmpty()) return
+        if (pipPackages.isEmpty()) {
+            endPictureInPictureEpisode()
+            return
+        }
         val session = sessionStore.getStoredSession()
         val settings = studyWorldSettingsStore.getSettings()
         val now = System.currentTimeMillis()
@@ -2693,18 +2706,131 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 recentBlock = pipRecentBlock,
                 nowMillis = now
             )
-        } ?: return
+        }
+        if (guarded == null) {
+            endPictureInPictureEpisode()
+            return
+        }
         if (pipRecentBlock?.packageName == guarded) pipRecentBlock = pipRecentBlock?.copy(atMillis = now)
-        pauseMediaPlayback("pip_guard pkg=$guarded")
+        var episode = pipEpisode?.takeIf { it.packageName == guarded }
+        if (episode == null) {
+            endPictureInPictureEpisode()
+            episode = PictureInPictureContainmentLaw.start(guarded)
+            logPip(PictureInPictureContainmentLaw.Event.PIP_GUARD_ENTERED, "pkg=$guarded")
+        }
+        val audio = getSystemService(AUDIO_SERVICE) as? AudioManager
+        val step = PictureInPictureContainmentLaw.next(
+            episode = episode,
+            mediaActive = audio?.isMusicActive == true,
+            callOrMeetingAudio = audio == null || isCallOrMeetingAudio(audio)
+        )
+        episode = when (step) {
+            PictureInPictureContainmentLaw.Step.None -> episode
+            is PictureInPictureContainmentLaw.Step.Report -> {
+                logPip(PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE, "pkg=$guarded reason=${step.reason}")
+                PictureInPictureContainmentLaw.afterReport(episode, step.reason)
+            }
+            PictureInPictureContainmentLaw.Step.RequestControl -> {
+                val granted = audio != null && requestMediaStopFocus(audio)
+                val next = PictureInPictureContainmentLaw.afterRequest(episode, granted)
+                logPip(
+                    PictureInPictureContainmentLaw.Event.MEDIA_CONTROL_REQUESTED,
+                    "pkg=$guarded control=audio_focus_gain attempt=${next.requests} granted=$granted"
+                )
+                if (granted) {
+                    mainHandler.postDelayed(pipVerifyRunnable, PictureInPictureContainmentLaw.VERIFY_DELAY_MILLIS)
+                } else {
+                    logPip(PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE, "pkg=$guarded reason=${next.unavailable}")
+                }
+                next
+            }
+        }
+        pipEpisode = episode
         mainHandler.postDelayed(pipGuardRunnable, PIP_GUARD_RECHECK_MS)
     }
 
-    private fun pauseMediaPlayback(reason: String) {
+    private fun verifyPictureInPictureStop() {
+        val episode = pipEpisode ?: return abandonMediaStopFocus()
+        val audio = getSystemService(AUDIO_SERVICE) as? AudioManager
+        val mediaActive = audio?.isMusicActive != false
+        abandonMediaStopFocus()
+        val verified = PictureInPictureContainmentLaw.afterVerify(episode, mediaActive)
+        pipEpisode = verified
+        if (verified.stopConfirmed) {
+            logPip(PictureInPictureContainmentLaw.Event.MEDIA_STOP_CONFIRMED, "pkg=${episode.packageName} device_media_active=false attempt=${episode.requests}")
+        } else {
+            Log.d("PhoneCodexDecision", "PIP media still active after request pkg=${episode.packageName} attempt=${episode.requests}")
+        }
+    }
+
+    private fun endPictureInPictureEpisode() {
+        val episode = pipEpisode ?: return
+        mainHandler.removeCallbacks(pipVerifyRunnable)
+        abandonMediaStopFocus()
+        pipEpisode = null
+        logPip(
+            PictureInPictureContainmentLaw.Event.GUARD_EXITED,
+            "pkg=${episode.packageName} requests=${episode.requests} stopConfirmed=${episode.stopConfirmed} unavailable=${episode.unavailable}"
+        )
+    }
+
+    private fun logPip(event: PictureInPictureContainmentLaw.Event, detail: String) {
+        Log.d("PhoneCodexDecision", "${event.name} $detail")
+    }
+
+    private fun isCallOrMeetingAudio(audio: AudioManager): Boolean =
+        audio.mode == AudioManager.MODE_IN_CALL ||
+            audio.mode == AudioManager.MODE_IN_COMMUNICATION ||
+            audio.mode == AudioManager.MODE_RINGTONE ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && audio.mode == AudioManager.MODE_CALL_SCREENING)
+
+    /** AUDIOFOCUS_GAIN: on Android 12+ the system fades out the media app holding focus. */
+    private fun requestMediaStopFocus(audio: AudioManager): Boolean {
+        abandonMediaStopFocus()
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { }
+            .build()
+        val granted = try {
+            audio.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } catch (_: RuntimeException) {
+            false
+        }
+        if (granted) mediaStopFocusRequest = request
+        return granted
+    }
+
+    private fun abandonMediaStopFocus() {
+        val request = mediaStopFocusRequest ?: return
+        mediaStopFocusRequest = null
+        (getSystemService(AUDIO_SERVICE) as? AudioManager)?.abandonAudioFocusRequest(request)
+    }
+
+    /** One bounded request when a video app is blocked, so Home does not carry playing media into PiP. */
+    private fun stopMediaOnBlock(packageName: String) {
+        if (mediaStopFocusRequest != null) return
         val audio = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
-        if (!audio.isMusicActive) return
-        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
-        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
-        Log.d("PhoneCodexDecision", "Media paused reason=$reason")
+        if (!audio.isMusicActive || isCallOrMeetingAudio(audio)) return
+        val granted = requestMediaStopFocus(audio)
+        logPip(
+            PictureInPictureContainmentLaw.Event.MEDIA_CONTROL_REQUESTED,
+            "pkg=$packageName source=block_overlay control=audio_focus_gain granted=$granted"
+        )
+        if (!granted) return
+        mainHandler.postDelayed({
+            val stopped = (getSystemService(AUDIO_SERVICE) as? AudioManager)?.isMusicActive == false
+            if (pipEpisode == null) abandonMediaStopFocus()
+            if (stopped) {
+                logPip(PictureInPictureContainmentLaw.Event.MEDIA_STOP_CONFIRMED, "pkg=$packageName source=block_overlay device_media_active=false")
+            } else {
+                Log.d("PhoneCodexDecision", "Block media still active after request pkg=$packageName")
+            }
+        }, PictureInPictureContainmentLaw.VERIFY_DELAY_MILLIS)
     }
 
     private fun isSystemOverlayNoise(packageName: String): Boolean {
@@ -2764,7 +2890,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             pipRecentBlock = PictureInPictureEscapeLaw.RecentBlock(packageName, System.currentTimeMillis())
             // Home would otherwise shrink a still-playing video into a PiP window.
             if (VideoPlatformRegistry.isVideoOrStreamingPackage(packageName)) {
-                pauseMediaPlayback("block_overlay target=$packageName")
+                stopMediaOnBlock(packageName)
             }
             val root = safeRootInActiveWindow()
             val rootPackage = root?.packageName?.toString()
