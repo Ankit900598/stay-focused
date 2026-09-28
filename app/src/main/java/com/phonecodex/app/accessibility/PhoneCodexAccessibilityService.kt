@@ -4,11 +4,13 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.PixelFormat
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Display
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -62,6 +64,7 @@ import com.phonecodex.app.domain.enforcement.BlockOverlayWatch
 import com.phonecodex.app.domain.enforcement.OverlayLifecycleGate
 import com.phonecodex.app.domain.enforcement.OverlayWatchAction
 import com.phonecodex.app.domain.enforcement.OverlayWatchVerdict
+import com.phonecodex.app.domain.enforcement.PictureInPictureEscapeLaw
 import com.phonecodex.app.domain.enforcement.PromiseEnforcementCoordinator
 import com.phonecodex.app.domain.enforcement.PromiseEvalInput
 import com.phonecodex.app.domain.enforcement.SessionEnforcementCopy
@@ -158,6 +161,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     }
     /** Last external package we blocked (survives hide, for diagnostics). */
     private var lastBlockedPackage: String? = null
+    private var pipRecentBlock: PictureInPictureEscapeLaw.RecentBlock? = null
+    private val pipGuardRunnable = Runnable { enforcePictureInPictureGuard() }
     private var latestPackageName: String? = null
     private var latestScreenTextSignature: String? = null
     private var visibleWarningPackageName: String? = null
@@ -273,6 +278,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 )
             }
 
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> enforcePictureInPictureGuard()
+
             else -> return
         }
     }
@@ -299,6 +306,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(contentChangeDebounceRunnable)
         mainHandler.removeCallbacks(serviceLeaseHeartbeatRunnable)
+        mainHandler.removeCallbacks(pipGuardRunnable)
         hideWarningOverlay()
         hideBlockOverlay()
         runtimeDiagStore.setAccessibilityServiceAlive(false)
@@ -465,6 +473,9 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             ),
             shortFormQuotaGate
         )
+        if (safeRootInActiveWindow()?.packageName?.toString() == packageName) {
+            pipRecentBlock = PictureInPictureEscapeLaw.afterForegroundVerdict(pipRecentBlock, packageName, law.verdict)
+        }
         if (applyLawDecision(law, packageName, screenText, storedSession)) return
         if (storedSession == null) return
         runCounselTail(packageName, screenText, storedSession)
@@ -2654,6 +2665,48 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         return OverlayLifecycleGate.isSystemUi(packageName)
     }
 
+    private fun pictureInPicturePackages(): Set<String> =
+        try {
+            windows.filter { it.isInPictureInPictureMode }
+                .mapNotNull { it.root?.packageName?.toString() }
+                .toSet()
+        } catch (_: RuntimeException) {
+            emptySet()
+        }
+
+    /** Keeps a PiP window paused while it continues a block; rechecks so play inside PiP is paused again. */
+    private fun enforcePictureInPictureGuard() {
+        mainHandler.removeCallbacks(pipGuardRunnable)
+        val pipPackages = pictureInPicturePackages()
+        if (pipPackages.isEmpty()) return
+        val session = sessionStore.getStoredSession()
+        val settings = studyWorldSettingsStore.getSettings()
+        val now = System.currentTimeMillis()
+        val guarded = pipPackages.firstOrNull { pkg ->
+            PictureInPictureEscapeLaw.mustPause(
+                pipPackage = pkg,
+                sessionStatus = session?.status,
+                isSafePackage = safeAppsStore.isSafePackage(pkg),
+                goal = session?.goal.orEmpty(),
+                enforcementScopePackages = settings.enforcementScopePackages,
+                contentBrands = settings.enforcementContentBrands,
+                recentBlock = pipRecentBlock,
+                nowMillis = now
+            )
+        } ?: return
+        if (pipRecentBlock?.packageName == guarded) pipRecentBlock = pipRecentBlock?.copy(atMillis = now)
+        pauseMediaPlayback("pip_guard pkg=$guarded")
+        mainHandler.postDelayed(pipGuardRunnable, PIP_GUARD_RECHECK_MS)
+    }
+
+    private fun pauseMediaPlayback(reason: String) {
+        val audio = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
+        if (!audio.isMusicActive) return
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+        Log.d("PhoneCodexDecision", "Media paused reason=$reason")
+    }
+
     private fun isSystemOverlayNoise(packageName: String): Boolean {
         return isSystemUiPackage(packageName) ||
             ((currentOverlay != null || currentWarningOverlay != null) &&
@@ -2708,6 +2761,11 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             currentOverlay = layout
             activeOverlayTargetPackage = packageName
             lastBlockedPackage = packageName
+            pipRecentBlock = PictureInPictureEscapeLaw.RecentBlock(packageName, System.currentTimeMillis())
+            // Home would otherwise shrink a still-playing video into a PiP window.
+            if (VideoPlatformRegistry.isVideoOrStreamingPackage(packageName)) {
+                pauseMediaPlayback("block_overlay target=$packageName")
+            }
             val root = safeRootInActiveWindow()
             val rootPackage = root?.packageName?.toString()
             val blockedPage = currentPageIdentity(
@@ -2939,6 +2997,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         private const val SCOPE_CORRUPT_LOG_THROTTLE_MS = 60_000L
         private const val FOREGROUND_LOG_THROTTLE_MS = 3_000L
         private const val BLOCK_OVERLAY_WATCH_INTERVAL_MS = 750L
+        private const val PIP_GUARD_RECHECK_MS = 2_000L
         private const val OVERLAY_RETAIN_LOG_THROTTLE_MS = 5_000L
         private const val REEVALUATION_ATTEMPT_SUPPRESS_MS = 3_000L
         private val BROWSER_URL_BAR_IDS = mapOf(
