@@ -5,6 +5,9 @@ import com.phonecodex.app.domain.enforcement.ShortFormQuotaGate
 import com.phonecodex.app.domain.model.FocusPromise
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.StudyWorldSettings
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Confirmed promise → stored Study World clocks.
@@ -100,6 +103,22 @@ object ConfirmedPromiseBinder {
 
     fun sessionDurationMillis(draft: FocusPromise): Long =
         sessionDurationMillis(bind(draft))
+
+    /** Start clock: a "today" promise ends at the next local midnight, not 24 hours later. */
+    fun sessionDurationMillis(
+        draft: FocusPromise,
+        bound: StudyWorldSettings,
+        nowMillis: Long,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Long {
+        if (!PromiseContentRuleSupport.isTodayWindow(draft)) return sessionDurationMillis(bound)
+        val midnight = LocalDate.ofInstant(Instant.ofEpochMilli(nowMillis), zoneId)
+            .plusDays(1)
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        return (midnight - nowMillis).coerceAtLeast(60_000L)
+    }
 
     private fun lockAttemptThresholdFor(level: StrictnessLevel): Int = when (level) {
         StrictnessLevel.LOCKED, StrictnessLevel.STRICT -> 3

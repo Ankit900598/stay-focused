@@ -140,6 +140,14 @@ object PromiseContentRuleSupport {
             )
     }
 
+    /** "Today" / "rest of the day" ends at local midnight, as the confirmation card says; "daily" or "1 day" does not. */
+    fun isTodayWindow(draft: FocusPromise): Boolean {
+        val text = draft.rawText.lowercase()
+        return TODAY_WINDOW.containsMatchIn(text) && !PromiseIntentRules.hasExplicitSessionDuration(text)
+    }
+
+    private val TODAY_WINDOW = Regex("""\b(today|rest of (?:the )?day|for the day)\b""")
+
     fun isCalendarDayWindow(draft: FocusPromise): Boolean {
         val text = draft.rawText.lowercase()
         if (text.contains("today") ||

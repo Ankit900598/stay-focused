@@ -24,7 +24,8 @@ object SessionExpiryPolicy {
 
     /**
      * A shorts-count quota without "today" was being stored as a 30-minute
-     * session. Quota law lasts until local midnight.
+     * session. Quota law lasts until the local midnight that ends the start day; measured
+     * from now instead, that midnight moves forward every day and the session never ends.
      */
     fun effectiveDeadlineMillis(
         session: FocusSession,
@@ -35,7 +36,7 @@ object SessionExpiryPolicy {
         if (shortFormDailyQuotaLimit == null || shortFormDailyQuotaLimit <= 0) {
             return session.deadlineMillis
         }
-        val endOfDay = LocalDate.ofInstant(Instant.ofEpochMilli(nowMillis), zoneId)
+        val endOfDay = LocalDate.ofInstant(Instant.ofEpochMilli(session.startTimeMillis), zoneId)
             .plusDays(1)
             .atStartOfDay(zoneId)
             .toInstant()

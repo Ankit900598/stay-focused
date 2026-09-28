@@ -179,7 +179,7 @@ class CommitmentGeneralizationTableTest {
             val zone = ZoneId.of("Asia/Kolkata")
             val now = LocalDateTime.of(2026, 9, 27, 23, 30).atZone(zone).toInstant().toEpochMilli()
             val midnight = LocalDateTime.of(2026, 9, 28, 0, 0).atZone(zone).toInstant().toEpochMilli()
-            val s = session(deadline = now + 30 * 60_000L - 1)
+            val s = session(deadline = now + 30 * 60_000L - 1).copy(startTimeMillis = now)
             clock(true, SessionExpiryPolicy.effectiveDeadlineMillis(s, now, 10, zone) == midnight, "endsAtMidnight")
         },
         Row("time", "quota_counter_resets_at_midnight", Outcome.ALLOW) {

@@ -55,5 +55,19 @@ class SessionExpiryPolicyTest {
         assertFalse(
             SessionExpiryPolicy.isExpired(quotaSession, thirtyOneMinLater, 10, zone)
         )
+        val nextMidnight = java.time.Instant.parse("2026-09-20T00:00:00Z").toEpochMilli()
+        assertFalse(SessionExpiryPolicy.isExpired(quotaSession, nextMidnight - 1, 10, zone))
+        assertTrue(SessionExpiryPolicy.isExpired(quotaSession, nextMidnight, 10, zone))
+    }
+
+    @Test
+    fun shortsQuota_endsAtItsDeadline_theMidnightDoesNotMoveWithTheClock() {
+        val zone = java.time.ZoneId.of("UTC")
+        val start = java.time.Instant.parse("2026-09-19T10:00:00Z").toEpochMilli()
+        val dayDeadline = start + 24L * 60L * 60L * 1000L
+        val quotaSession = session.copy(startTimeMillis = start, deadlineMillis = dayDeadline)
+        assertFalse(SessionExpiryPolicy.isExpired(quotaSession, dayDeadline - 1, 2, zone))
+        assertTrue(SessionExpiryPolicy.isExpired(quotaSession, dayDeadline, 2, zone))
+        assertTrue(SessionExpiryPolicy.isExpired(quotaSession, dayDeadline + 3L * 24 * 60 * 60 * 1000, 2, zone))
     }
 }

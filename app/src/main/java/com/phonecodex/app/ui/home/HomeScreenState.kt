@@ -555,11 +555,12 @@ internal class HomeScreenState(
         studyWorldSettings = bound
 
         goal = draft.rawText.ifEmpty { "Focus" }
+        val startedAt = System.currentTimeMillis()
         val started = sessionManager.startSession(
             world = studyWorld,
             goal = goal,
-            durationMillis = ConfirmedPromiseBinder.sessionDurationMillis(bound),
-            nowMillis = System.currentTimeMillis()
+            durationMillis = ConfirmedPromiseBinder.sessionDurationMillis(draft, bound, startedAt),
+            nowMillis = startedAt
         ).copy(promiseStrictness = draft.strictness)
         sessionStore.saveActiveSession(started)
         session = started

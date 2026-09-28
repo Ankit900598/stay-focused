@@ -14,6 +14,7 @@ import com.phonecodex.app.domain.promise.ConfirmedPromiseBinder
 import com.phonecodex.app.domain.promise.EffectivePromisePolicy
 import com.phonecodex.app.domain.promise.LegacyScopeContractGuard
 import com.phonecodex.app.domain.promise.PromiseClarificationLaw
+import com.phonecodex.app.domain.promise.PromiseContentRuleSupport
 
 /**
  * Human-readable confirmation of a compiled promise. Presentation only.
@@ -425,6 +426,8 @@ private fun strongerConfirmationLabel(draft: FocusPromise): String {
     val duration = formatDuration(draft.sessionDurationMinutes)
     return if (draft.isPermanentCommitment || duration.contains("year")) {
         "I understand this lasts $duration and is harder to remove"
+    } else if (PromiseContentRuleSupport.isTodayWindow(draft)) {
+        "I understand this commitment lasts until midnight tonight"
     } else {
         "I understand this commitment lasts $duration"
     }

@@ -15,6 +15,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * Real hosted v09 response (staging 8ed37e4, 2026-09-28): "Strict: only 2 YouTube Shorts today",
@@ -64,6 +66,30 @@ class HostedQuotaPickStartGateTest {
         assertEquals(2, bound.shortFormDailyQuotaLimit)
         assertEquals(ScopeKind.APP_SHORT_FORM_ONLY, bound.enforcementScope?.kind)
         assertTrue(bound.blockedSurfaces.isEmpty())
+    }
+
+    @Test
+    fun todayPromise_endsAtLocalMidnight_asTheCardSays() {
+        val d = draft()
+        val ist = ZoneId.of("Asia/Kolkata")
+        val startedAt = Instant.parse("2026-09-28T06:29:00Z").toEpochMilli()
+        val midnightIst = Instant.parse("2026-09-28T18:30:00Z").toEpochMilli()
+        val bound = ConfirmedPromiseBinder.bind(d)
+        assertEquals(midnightIst - startedAt, ConfirmedPromiseBinder.sessionDurationMillis(d, bound, startedAt, ist))
+
+        val card = buildPromiseUnderstanding(d, source = UnderstandingSource.PROMISE_COMPILER, selectedClarificationOptionId = "A")
+        assertEquals("I understand this commitment lasts until midnight tonight", card.strongerConfirmLabel)
+    }
+
+    @Test
+    fun oneDayOrDailyOrExplicitDuration_keepTheirLength() {
+        val d = draft()
+        val startedAt = Instant.parse("2026-09-28T06:29:00Z").toEpochMilli()
+        for (text in listOf("only 2 YouTube Shorts for 1 day", "only 2 YouTube Shorts daily", "only 2 YouTube Shorts today for 3 hours")) {
+            val other = d.copy(rawText = text)
+            val bound = ConfirmedPromiseBinder.bind(other)
+            assertEquals(text, ConfirmedPromiseBinder.sessionDurationMillis(bound), ConfirmedPromiseBinder.sessionDurationMillis(other, bound, startedAt))
+        }
     }
 
     @Test
