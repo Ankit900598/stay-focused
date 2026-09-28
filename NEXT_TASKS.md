@@ -47,6 +47,13 @@ Update 2026-09-28 13:30: item 3 fixed (`39f130c`); item 4 done — production ru
 2. Sideload the same APK to testers only after step 1 passes.
 3. Merge `checkpoint/2026-09-27` into `master` after review (still local, not pushed).
 
+Update 2026-09-28 15:35: production phone run done (see `CURRENT_STATUS.md`). Quota, card copy, midnight deadline: PASS. PiP: **FAIL for ads** — the media-pause key does not stop a YouTube ad playing in PiP. Next, in order:
+
+1. **P0 — PiP must stop, not just pause.** When the guard holds (locked, or same package blocked < 10 min), escalate if playback is still active after one pause: e.g. bring the Strlix block screen to front over the PiP (`performGlobalAction` / launch the overlay activity) or collapse PiP via `GLOBAL_ACTION_HOME` + re-block on expand. Research the Play-safe option first; add a pure-law test for "paused but still playing -> escalate". Check whether the repeated media key causes the MIUI volume panel; stop re-sending when `isMusicActive` stays true.
+2. Re-run the same phone test with `tools/phone/Capture-StrlixDiag.ps1` before/after.
+3. Then kill experiments #1 (OneKeyClean) and #3 (SwipeUpClean) from `docs/accessibility-kill-recovery-2026-09-28.md`, with captures.
+4. Only then sideload testers.
+
 Still open from 09-27: complaint-style promise dead end; "Block YouTube Shorts for 1 hour" always asks YouTube-only vs everywhere; ".," and duplicated "After limit" lines in the card; legacy `enforcement_scope_kind=youtube_app_only` saved beside the typed scope; regular player labeled COMMENTS (lecture allowed at SCOPE, not `ALLOW_LONG_EDUCATIONAL`); "1 shorts left" grammar; Home status refreshes only on "Run protection check".
 
 ### Launch bar (closed APK, not Play Store)

@@ -18,7 +18,14 @@ com.phonecodex.app
 
 The name may change later. Do not rename packages casually.
 
-## Latest Verified Checkpoint — 2026-09-28 13:30 (production promoted to v09)
+## Latest Verified Checkpoint — 2026-09-28 15:35 (production phone test; PiP gap found)
+
+- New tool `tools/phone/Capture-StrlixDiag.ps1` (read-only, sanitized; `61cb81f`, `820afec`). Captures in `.tmp-phone-verify-diag/` (ignored).
+- Before: capture `before_rebind` = Accessibility **crashed**, no PID; the only system kill was `OneKeyClean` at 13:33:57 (the others were package updates plus one `run-as kill` by the agent). Rebound through Settings > Accessibility > Downloaded apps > PhoneCodex Focus Detection, off (confirm) then on. Capture `after_rebind` = **bound**, PID 9995, event types include `TYPE_WINDOWS_CHANGED`.
+- Production promise on the tester APK `BF0A101A`, "Strict: only 2 YouTube Shorts today": scope question with two options; pick "YouTube short videos only"; card says "ends at local midnight", **no "not locking" line**; checkbox "lasts until midnight tonight"; saved deadline 29-09 00:00 IST, quota 2, lock threshold 3. Short 1 `count=1/2`, short 2 `count=2/2` (WARN), short 3 `QUOTA_BLOCK_EXCEEDED` with "Media paused reason=block_overlay" before the overlay (`compiler=promise_compiler_v09`).
+- **PiP escape: NOT closed.** After Home on the blocked Short, YouTube went PiP; `pip_guard` fired ("Media paused reason=pip_guard" about every 2 s) but the PiP content was a **sponsored ad** (Pocket FM) that kept playing: its audio player stayed `started` and later frames showed different video over Strlix Home. MIUI's volume panel also popped up during the guard. The PiP window expanded back to full screen by itself and Strlix blocked it again (attempt 2). A media-key pause does not stop YouTube ads.
+- End: Strict End Commitment + confirm -> `rules=RESTORED guardrails=kept`; session empty. After capture: still **bound**, same PID 9995, no new exits. `stay_on_while_plugged_in=0`.
+- Release gate: **not passed** (PiP ad playback). Do not sideload testers.
 
 - `39f130c`: the confirmation card drops model notes that deny the session lock ("…not locking the phone"); the drift line "I block it and lock the session after 3 tries." stays. Every strictness locks (Strict/Locked after 3, Gentle/Balanced after 10). **908 Android unit tests pass** (fresh result XMLs).
 - **Production `phonecodex-backend` promoted** (Ankit approved): App Settings `PROMISE_COMPILER_PROMPT_VERSION=promise_compiler_v09`, `STRLIX_BUILD_ID=8ed37e46d2f52f8d863473499944b37b7e3c2887`; zip built by `git archive 8ed37e4`, deployed `--async` (Azure deployment status 4 = success). Gate: `/health` `build=8ed37e4…`, `promise_compiler_v09`, compiler `pc-lab-astra`, classifier `pc-lab-terra`/`v04`, vision off, secret required, POST without secret -> 401. Live parity: "Strict: only 2 YouTube Shorts today" -> options "YouTube short videos only | Short videos everywhere"; pick -> `snapshot_and_carry_verified`, no clarification, stronger confirm required, rules identical to the staging fixture (≤2 count ALLOW, >2 count BLOCK).
