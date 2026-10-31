@@ -93,7 +93,7 @@ AI is necessary because promises are ambiguous. Policy is necessary because prom
 **AI without policy is dangerous.** BLOCK from an LLM is an opinion with UX consequences.
 
 ```text
-Safe App → Tamper Guard → Permanent Guardrail → App Rule
+Safe App → Accessibility-control telemetry → Permanent Guardrail → App Rule
     → Content Signals → AI Classifier (advisory)
     → AiConfidenceGate → PolicyEngine (law) → Overlay
 ```
@@ -103,7 +103,7 @@ Safe App → Tamper Guard → Permanent Guardrail → App Rule
 - Counter math (`shortsWatched` / `shortsLimit`)
 - Guardrail catalog (`no_adult_content`)
 - Attempt lock thresholds
-- Tamper → LOCK
+- Detect and log entry to Strlix's Accessibility controls; never prevent the user from disabling or uninstalling the service
 - Emergency override (calls, SOS)
 - Final merge when AI confidence is low
 
@@ -131,7 +131,9 @@ Safe App → Tamper Guard → Permanent Guardrail → App Rule
 
 Cloud AI is the **easy** part. The wedge is on-device: promise state, overlay, OCR pipeline, PolicyEngine merge, Recovery World.
 
-We eval cloud classifier now; Android must implement the same decision table locally for deterministic paths (tamper, emergency, quota exhausted).
+We eval cloud classifier now; Android must implement the same decision table locally for deterministic paths (emergency and quota exhausted). Accessibility revocation is an OS-controlled state transition: Strlix can report stale protection and offer recovery after the user returns, but cannot promise enforcement after the service is disabled.
+
+**Distribution gate (unresolved):** Google Play requires declaration and prominent disclosure/consent for non-disability uses of AccessibilityService and prohibits preventing users from disabling or uninstalling the service. Its [automation guidance](https://support.google.com/googleplay/android-developer/answer/10964491?hl=en) distinguishes deterministic, rule-based automation that follows a static, human-defined script from prohibited autonomous initiation/planning/execution. That distinction informs risk but is not a Play pre-approval: the explicit-confirmation → deterministic PolicyEngine enforcement loop is closer to the static-rule example, while a general AI phone/browser operator planning and executing actions via Accessibility is materially higher risk. Android's [API guidance](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService) says Accessibility services should only assist users with disabilities. Before Play launch, obtain policy/legal review of the actual user flow and choose a viable platform strategy; a closed sideload pilot does not establish eligibility. Never claim `isAccessibilityTool` eligibility or tamper-proof control. Prefer narrower APIs where feasible.
 
 ---
 

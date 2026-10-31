@@ -122,6 +122,7 @@ function createAzureClient(deployment) {
     apiKey: process.env.AZURE_OPENAI_API_KEY,
     baseURL: `${endpoint}/openai/deployments/${deployment}`,
     defaultQuery: { "api-version": process.env.AZURE_OPENAI_API_VERSION },
+    maxRetries: MODEL_MAX_RETRIES,
   });
 }
 
@@ -164,7 +165,17 @@ function createClassifierClient(provider, deploymentOverride) {
   if (provider.kind === "azure") {
     return createAzureClient(deploymentOverride || provider.deployment);
   }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: MODEL_MAX_RETRIES });
+}
+
+// SDK default is 2 retries per call; with a fallback chain that multiplies spend under abuse.
+const MODEL_MAX_RETRIES = 1;
+
+// Rate-limit / quota errors must not spill onto fallback deployments: that would
+// multiply the capacity an abusive caller can burn.
+function isQuotaError(err) {
+  const status = err && typeof err.status === "number" ? err.status : null;
+  return status === 429 || (err && err.code === "insufficient_quota");
 }
 
 function buildChatBody({ model, messages, maxTokens, temperature = 0, reasoning }) {
@@ -248,13 +259,16 @@ async function completeJsonChatWithFallback({
       return { completion, deployment, client, model };
     } catch (err) {
       lastErr = err;
+      const quota = isQuotaError(err);
       console.log(
         JSON.stringify({
-          event: "azure_deployment_fallback",
+          event: quota ? "azure_deployment_quota_stop" : "azure_deployment_fallback",
           failedDeployment: deployment,
-          message: err && err.message ? err.message : String(err),
+          errorName: (err && err.name) || "Error",
+          upstreamStatus: err && typeof err.status === "number" ? err.status : null,
         })
       );
+      if (quota) throw err;
     }
   }
   throw lastErr || new Error("No Azure deployment succeeded");
@@ -287,4 +301,6 @@ module.exports = {
   createClassifierClient,
   completeJsonChat,
   completeJsonChatWithFallback,
+  isQuotaError,
+  MODEL_MAX_RETRIES,
 };

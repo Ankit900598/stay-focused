@@ -377,7 +377,7 @@ class PromiseFullPathEnforcementTest {
             appRule = AppRuleBehavior.AI_DECIDE
         )
         assertEquals(DecisionType.ALLOW, contacts.decision)
-        assertEquals(EnforcementReasonCodes.ENFORCEMENT_SCOPE_ALLOW, contacts.reasonCode)
+        assertEquals(EnforcementReasonCodes.EMERGENCY_ALLOW, contacts.reasonCode)
 
         val chatgpt = evaluate(
             packageName = "com.openai.chatgpt",

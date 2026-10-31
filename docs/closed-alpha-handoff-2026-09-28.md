@@ -36,7 +36,7 @@ Five opted-in people Ankit knows personally, Android 8+, who agree to send feedb
 
 ## Known limitations (tell testers up front)
 
-- **YouTube ads may continue playing in picture-in-picture** after a block. The current build asks the system for audio focus (up to 3 times) and only logs "stopped" when device audio actually stops; it cannot force another app's PiP closed.
+- **Video (including ads) may continue playing in picture-in-picture** after a block, in any video app. Strlix cannot tell which app is playing without extra access, so it does not interrupt audio at all (that would also stop your allowed music). Note: the APK `24AEBE22…` listed above still has the older audio-focus behaviour; rebuild from the fail-safe change before sending.
 - On Xiaomi/HyperOS, cleaning recent apps or "OneKeyClean" kills Accessibility; protection stays off until the tester re-toggles it in Settings.
 - Needs internet to understand a promise; offline, Start stays off.
 - Some promises ask a follow-up question even when the wording looks clear ("Block YouTube Shorts for 1 hour").

@@ -118,7 +118,7 @@ eq(notVerbatim.unresolvedReason, "MISSING_EVIDENCE", "reason for non-verbatim");
 const empty = validateScope({ ...appOnlyScope, evidenceSpans: [] }, "YouTube app only");
 eq(empty.kind, "UNRESOLVED", "empty evidence on non-PACKAGE_PINNED -> UNRESOLVED");
 
-// PACKAGE_PINNED tolerates empty evidence
+// PACKAGE_PINNED uses an explicit named-app match as its evidence.
 const packagePinned = validateScope(
   {
     version: 1,
@@ -145,6 +145,55 @@ const packagePinned = validateScope(
   "block NetMirror app"
 );
 eq(packagePinned.kind, "PACKAGE_PINNED", "PACKAGE_PINNED valid without evidenceSpans");
+
+const discordPinned = validateScope(
+  {
+    ...packagePinned,
+    include: packagePinned.include.map((clause) => ({
+      ...clause,
+      packages: ["com.discord"],
+    })),
+  },
+  "Let me focus for one hour"
+);
+eq(discordPinned.kind, "UNRESOLVED", "PACKAGE_PINNED cannot target an app absent from the promise");
+eq(discordPinned.unresolvedReason, "MISSING_EVIDENCE", "unmentioned package fails closed");
+
+const discordAgainstWhatsApp = validateScope(
+  {
+    ...packagePinned,
+    include: packagePinned.include.map((clause) => ({
+      ...clause,
+      packages: ["com.discord"],
+    })),
+  },
+  "Block WhatsApp for one hour"
+);
+eq(discordAgainstWhatsApp.kind, "UNRESOLVED", "scope package must match the named app");
+
+const namedDiscord = validateScope(
+  {
+    ...packagePinned,
+    include: packagePinned.include.map((clause) => ({
+      ...clause,
+      packages: ["com.discord"],
+    })),
+  },
+  "ब्लॉक Discord for one hour"
+);
+eq(namedDiscord.kind, "PACKAGE_PINNED", "named app matching is robust to surrounding language");
+
+const unknownPinned = validateScope(
+  {
+    ...packagePinned,
+    include: packagePinned.include.map((clause) => ({
+      ...clause,
+      packages: ["com.vendor.unlisted"],
+    })),
+  },
+  "Block Unlisted App for one hour"
+);
+eq(unknownPinned.kind, "UNRESOLVED", "unknown app package is not trusted from model prose");
 
 // -- 6. Package id in appliesToText -> UNRESOLVED --------------------------
 

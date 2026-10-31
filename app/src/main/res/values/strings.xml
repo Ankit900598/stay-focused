@@ -1,7 +1,16 @@
 <resources>
     <string name="app_name">Strlix</string>
-    <string name="accessibility_service_label">PhoneCodex Focus Detection</string>
-    <string name="accessibility_service_description">Strlix detects which app is open so your commitment can be enforced. It does not control calls or emergency apps.</string>
+    <string name="accessibility_service_label">Strlix Focus Protection</string>
+    <string name="accessibility_service_description">Strlix identifies the foreground app and reads text exposed by its visible screen to apply your commitments. During a commitment, the app name, visible text, promise, and safety-rule context may be sent to Strlix’s configured backend for AI classification. If the active promise leaves a content decision to AI, that result may lead to a warning or block. Emergency and out-of-scope protections are checked on-device first. A separate optional, time-limited image experiment may send a downscaled screenshot in limited uncertainty cases if enabled.</string>
+    <string name="accessibility_disclosure_title">Before enabling Accessibility</string>
+    <string name="accessibility_disclosure_body">Strlix uses Android Accessibility to identify the foreground app and read text exposed by its visible screen so it can apply your commitments. That text may include private messages or other sensitive content. During a commitment, the app name, visible text, your promise, and safety-rule context may be sent to Strlix’s configured backend for AI classification. If the active promise leaves a content decision to AI, that result may lead to a warning or block. Emergency and out-of-scope protections are checked on-device first. A separate, optional, time-limited image experiment may send a downscaled screenshot in limited uncertainty cases if enabled. Continue opens Android Settings; you must enable Strlix there. You can choose Not now or turn Accessibility off later in Settings.</string>
+    <string name="accessibility_disclosure_continue">Agree and open Settings</string>
+    <string name="accessibility_disclosure_dismiss">Not now</string>
+    <string name="privacy_policy_url">https://strlix.tech/privacy</string>
+    <string name="privacy_policy_title">Privacy policy</string>
+    <string name="privacy_policy_open">Open privacy policy</string>
+    <string name="privacy_policy_row_hint">Opens the public policy page (placeholder URL until the owner publishes the final page).</string>
+    <string name="accessibility_disclosure_save_failed">We could not save your choice. Accessibility will stay off until we can record your consent.</string>
     <string name="protection_heartbeat_channel_name">Protection heartbeat</string>
     <string name="protection_heartbeat_notification_title">Strlix</string>
     <string name="protection_heartbeat_notification_text">Strlix protection active</string>

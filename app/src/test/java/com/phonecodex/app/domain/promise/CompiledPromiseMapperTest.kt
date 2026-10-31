@@ -114,6 +114,60 @@ class CompiledPromiseMapperTest {
     }
 
     @Test
+    fun mappedStudyRuleCannotStartUntilPhoneCanEnforceStudyClassification() {
+        val response = CompiledPromiseResponse(
+            rawText = "Kal exam hai, 3 hours sirf padhai",
+            sessionDurationMinutes = 180,
+            strictness = "STRICT",
+            allowedSummaries = listOf("Study videos only"),
+            blockedSummaries = emptyList(),
+            conditionalSummaries = emptyList(),
+            contentRules = listOf(
+                CompiledContentRuleDto(
+                    appLabel = "YouTube",
+                    packageName = "com.google.android.youtube",
+                    surface = "study",
+                    contentType = "study",
+                    operator = null,
+                    value = null,
+                    unit = null,
+                    action = "ALLOW"
+                )
+            ),
+            clarificationQuestion = null,
+            cautionMessages = emptyList(),
+            source = "azure_promise_compiler",
+            confidence = 0.9,
+            suggestedAppRules = listOf(
+                CompiledAppRuleDto(
+                    packageName = "com.google.android.youtube",
+                    label = "YouTube",
+                    behavior = "AI_DECIDE"
+                )
+            ),
+            canStartCommitment = true
+        )
+
+        val draft = CompiledPromiseMapper.toFocusPromise(response)
+        assertEquals("study", draft.contentRules.single().surface)
+        assertEquals(
+            EffectivePromisePolicy.UNSUPPORTED_STUDY_CONTENT,
+            EffectivePromisePolicy.conflictReason(draft)
+        )
+
+        val gated = PromiseClarificationLaw.apply(draft)
+        val ui = buildPromiseUnderstanding(
+            draft = gated,
+            source = UnderstandingSource.PROMISE_COMPILER
+        )
+
+        assertFalse(gated.canStartCommitment == true)
+        assertTrue(gated.needsClarification)
+        assertFalse(ui.canStart)
+        assertTrue(ui.clarificationQuestion.orEmpty().contains("study", ignoreCase = true))
+    }
+
+    @Test
     fun parsesClarificationOptionsAndUserFacingConfirmation() {
         val json = """
             {

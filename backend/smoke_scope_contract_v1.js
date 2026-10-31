@@ -295,6 +295,94 @@ eq(
   "label ignores model prose"
 );
 
+const socialAnyScope = canonicalizeScope(
+  modelScope("SOCIAL_FEED_AND_REELS_ONLY", "SOCIAL_ANY", { evidenceSpans: ["social apps"] })
+);
+const socialAnyLabel = scopeOptionLabel(socialAnyScope);
+for (const service of ["Instagram", "Facebook", "Messenger", "TikTok", "Snapchat", "WhatsApp"]) {
+  check(socialAnyLabel.includes(service), `SOCIAL_ANY option names supported service ${service}`);
+}
+check(socialAnyLabel.includes("Recognized social apps/sites only"), "SOCIAL_ANY option discloses finite coverage");
+
+const packagePinnedScope = validateAndCanonicalizeScope(
+  modelScope("PACKAGE_PINNED", "ANY", {
+    evidenceSpans: [],
+    include: [{
+      id: "i1",
+      host: "ANY_HOST",
+      identity: "ANY",
+      surfaces: ["ANY"],
+      sites: [],
+      packages: ["com.discord"],
+      packageMatch: "PINNED",
+    }],
+  }),
+  "Block Discord for one hour"
+);
+eq(scopeOptionLabel(packagePinnedScope), "Discord only", "PACKAGE_PINNED option discloses verified app names");
+
+// ---------------------------------------------------------------------------
+// 8. Local installed-app selection is exposed only for the sole missing target
+// ---------------------------------------------------------------------------
+const unknownAppPromise = "Block BeReal for 1 hour";
+const unknownAppScope = {
+  version: 1,
+  kind: "PACKAGE_PINNED",
+  resolution: "EXCLUSIVE",
+  identity: "ANY",
+  include: [{
+    id: "i1",
+    host: "ANY_HOST",
+    identity: "ANY",
+    surfaces: ["ANY"],
+    sites: [],
+    packages: ["com.bereal.app"],
+    packageMatch: "PINNED",
+  }],
+  exempt: [],
+  confidence: 0.9,
+  appliesToText: null,
+  evidenceSpans: [],
+};
+const unknownAppCompile = (overrides = {}, promise = unknownAppPromise) =>
+  compile(basePolicy({
+    blockedContent: [],
+    blockedApps: [{ packageName: "com.bereal.app", appLabel: "BeReal", scope: "all" }],
+    scope: unknownAppScope,
+    ...overrides,
+  }), {}, promise);
+
+const localAppCandidate = unknownAppCompile();
+assertStartClosed(localAppCandidate, "unknown local app target remains gated before user picks");
+eq(localAppCandidate.localAppTargetSelection?.kind, "WHOLE_APP_BLOCK", "sole target gap emits local whole-app picker hint");
+eq(localAppCandidate.localAppTargetSelection?.label, "BeReal", "picker hint contains only the user-named label");
+check(!JSON.stringify(localAppCandidate.localAppTargetSelection).includes("com.bereal.app"), "picker hint does not expose model package ID");
+eq(unknownAppCompile({ scope: { ...unknownAppScope, include: [
+  { ...unknownAppScope.include[0], surfaces: ["PLAYER_ANY"] },
+] } }).localAppTargetSelection, undefined, "surface-constrained model scope gets no whole-app picker hint");
+eq(unknownAppCompile({ scope: { ...unknownAppScope, include: [
+  unknownAppScope.include[0], { ...unknownAppScope.include[0], id: "i2", packages: ["com.example.other"] },
+] } }).localAppTargetSelection, undefined, "multi-clause model scope gets no single-app picker hint");
+eq(unknownAppCompile({ scope: { ...unknownAppScope, exempt: [{ id: "e1", packages: ["com.example.other"] }] } }).localAppTargetSelection, undefined, "excluded-package model scope gets no single-app picker hint");
+
+eq(unknownAppCompile({}, "Block Discord for 1 hour").localAppTargetSelection, undefined, "different user target gets no picker hint");
+eq(unknownAppCompile({ blockedContent: [{ type: "video", operator: "gt", value: 40, unit: "minutes" }] }).localAppTargetSelection, undefined, "mixed content policy gets no picker hint");
+eq(unknownAppCompile({ clarificationRequired: true, followUpQuestionRequired: true }).localAppTargetSelection, undefined, "pre-existing ambiguity gets no picker hint");
+eq(
+  unknownAppCompile(
+    { duration: { kind: "fixed", value: 1, unit: "years", until: null } },
+    "Block BeReal for 1 year"
+  ).localAppTargetSelection,
+  undefined,
+  "permanent strong-confirmation promise gets no picker hint"
+);
+eq(unknownAppCompile({ blockedApps: [
+  { packageName: "com.bereal.app", appLabel: "BeReal", scope: "all" },
+  { packageName: "com.example.second", appLabel: "Second", scope: "all" },
+] }).localAppTargetSelection, undefined, "multiple app actions get no picker hint");
+eq(unknownAppCompile({ blockedApps: [{ packageName: "com.bereal.app", appLabel: "BeReal", scope: "shorts" }] }).localAppTargetSelection, undefined, "surface-only target gets no whole-app picker hint");
+eq(unknownAppCompile({ blockedApps: [{ packageName: "com.bereal.app", appLabel: "Discord", scope: "all" }] }).localAppTargetSelection, undefined, "model label must exactly occur in the promise");
+
 // ---------------------------------------------------------------------------
 // Cross-language fixtures (Android: TypedScopeContractFixtureTest)
 // ---------------------------------------------------------------------------

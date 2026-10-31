@@ -16,16 +16,18 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import com.phonecodex.app.data.DebugState
 import com.phonecodex.app.domain.enforcement.CommitmentTransparency
+import com.phonecodex.app.domain.enforcement.DecisionPromiseContext
 import com.phonecodex.app.domain.enforcement.LastDecisionSnapshot
 
 @Composable
 internal fun LastDecisionCard(
     debugState: DebugState,
-    promiseText: String?,
+    currentSessionId: String?,
+    currentSessionGoal: String?,
     nowMillis: Long
 ) {
-    val snapshot = remember(debugState, promiseText, nowMillis) {
-        debugState.toLastDecisionSnapshot(promiseText, nowMillis)
+    val snapshot = remember(debugState, currentSessionId, currentSessionGoal, nowMillis) {
+        debugState.toLastDecisionSnapshot(currentSessionId, currentSessionGoal, nowMillis)
     }
     val explained = remember(snapshot) { CommitmentTransparency.explain(snapshot) }
     val context = LocalContext.current
@@ -123,20 +125,32 @@ private fun LastDecisionField(label: String, value: String) {
 }
 
 internal fun DebugState.toLastDecisionSnapshot(
-    promiseText: String?,
+    currentSessionId: String?,
+    currentSessionGoal: String?,
     nowMillis: Long
-): LastDecisionSnapshot = LastDecisionSnapshot(
-    promiseText = promiseText,
-    decision = lastDecision,
-    reason = lastReason,
-    source = lastSource,
-    packageName = lastPackageName,
-    reasonCode = lastReasonCode,
-    surface = lastSurface,
-    activity = lastActivity,
-    durationSource = lastDurationSource,
-    matchedSignals = lastMatchedSignals,
-    updatedMillis = lastUpdatedMillis,
-    screenTextPreview = lastScreenTextPreview,
-    nowMillis = nowMillis
-)
+): LastDecisionSnapshot {
+    val promiseContextStatus = when {
+        lastSessionId.isNullOrBlank() -> DecisionPromiseContext.NONE
+        !currentSessionId.isNullOrBlank() && lastSessionId == currentSessionId ->
+            DecisionPromiseContext.CURRENT_SESSION
+        else -> DecisionPromiseContext.DIFFERENT_SESSION
+    }
+    return LastDecisionSnapshot(
+        promiseText = currentSessionGoal.takeIf {
+            promiseContextStatus == DecisionPromiseContext.CURRENT_SESSION
+        },
+        decision = lastDecision,
+        reason = lastReason,
+        source = lastSource,
+        packageName = lastPackageName,
+        reasonCode = lastReasonCode,
+        surface = lastSurface,
+        activity = lastActivity,
+        durationSource = lastDurationSource,
+        matchedSignals = lastMatchedSignals,
+        updatedMillis = lastUpdatedMillis,
+        screenTextPreview = lastScreenTextPreview,
+        nowMillis = nowMillis,
+        promiseContextStatus = promiseContextStatus
+    )
+}

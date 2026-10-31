@@ -6,7 +6,6 @@ import com.phonecodex.app.domain.model.FocusPromise
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.StudyWorldSettings
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -15,17 +14,30 @@ import java.time.ZoneId
  */
 object ConfirmedPromiseBinder {
 
-    fun bind(draft: FocusPromise): StudyWorldSettings {
+    fun bind(
+        draft: FocusPromise,
+        savedDefaults: StudyWorldSettings? = null
+    ): StudyWorldSettings {
         val isCalendarDay = PromiseContentRuleSupport.isCalendarDayWindow(draft)
-        val duration = if (isCalendarDay) {
-            maxOf(draft.sessionDurationMinutes, 24 * 60)
-        } else {
-            draft.sessionDurationMinutes
+        // Explicit promise duration wins. Otherwise Advanced Controls duration wins over
+        // the parser's inferred default (never leave a leftover Study World 30 mid-session
+        // when the user set 45/60 in Advanced).
+        val duration = when {
+            isCalendarDay -> maxOf(draft.sessionDurationMinutes, 24 * 60)
+            draft.sessionDurationWasExplicit -> draft.sessionDurationMinutes
+            else -> savedDefaults?.durationMinutes ?: draft.sessionDurationMinutes
         }
         return StudyWorldSettings(
             durationMinutes = duration.coerceAtLeast(1),
-            lockAttemptThreshold = lockAttemptThresholdFor(draft.strictness),
-            blockAttemptCooldownMinutes = 2,
+            // Promise-stated lock count > Advanced custom > strictness default map.
+            lockAttemptThreshold = draft.lockAttemptThreshold
+                ?: savedDefaults
+                ?.takeIf { it.lockAttemptThresholdCustomized }
+                ?.lockAttemptThreshold
+                ?: lockAttemptThresholdFor(draft.strictness),
+            // Block cooldown is always an Advanced Controls (or store default) value.
+            blockAttemptCooldownMinutes = savedDefaults?.blockAttemptCooldownMinutes
+                ?: DEFAULT_BLOCK_ATTEMPT_COOLDOWN_MINUTES,
             maxVideoLengthBlockMinutes =
                 PromiseContentRuleSupport.maxVideoLengthBlockMinutes(draft),
             minVideoLengthBlockMinutes =
@@ -112,7 +124,7 @@ object ConfirmedPromiseBinder {
         zoneId: ZoneId = ZoneId.systemDefault()
     ): Long {
         if (!PromiseContentRuleSupport.isTodayWindow(draft)) return sessionDurationMillis(bound)
-        val midnight = LocalDate.ofInstant(Instant.ofEpochMilli(nowMillis), zoneId)
+        val midnight = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
             .plusDays(1)
             .atStartOfDay(zoneId)
             .toInstant()
@@ -124,6 +136,8 @@ object ConfirmedPromiseBinder {
         StrictnessLevel.LOCKED, StrictnessLevel.STRICT -> 3
         StrictnessLevel.SOFT, StrictnessLevel.SMART -> 10
     }
+
+    private const val DEFAULT_BLOCK_ATTEMPT_COOLDOWN_MINUTES = 2
 }
 
 data class PromiseStartAudit(
@@ -154,7 +168,7 @@ data class PromiseStartAudit(
         }
 
     fun format(): String =
-        "rawPromise=${rawPromise.replace("\n", " ").take(240)} " +
+        "promiseChars=${rawPromise.length} " +
             "typedScope=$typedScopeLabel " +
             "compiler=${compilerPromptVersion ?: "unknown"} scopeContract=$scopeContract " +
             "strictness=$confirmedStrictness lockThreshold=$lockAttemptThreshold " +

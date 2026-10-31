@@ -13,13 +13,16 @@ internal sealed class HomeListItem(val id: String) {
     data object Header : HomeListItem("header")
     data object ProtectionStatus : HomeListItem("protection_status")
     data object ProtectionSetup : HomeListItem("protection_setup")
+    data object TodayInsight : HomeListItem("today_insight")
     data object ActiveCommitment : HomeListItem("active_commitment")
+    data object MailTask : HomeListItem("mail_task")
     data object LastDecision : HomeListItem("last_decision")
     data object PromiseComposer : HomeListItem("promise_composer")
     data object PromiseUnderstanding : HomeListItem("promise_understanding")
     data object AdvancedToggle : HomeListItem("advanced_toggle")
 
     data object AdvancedIntro : HomeListItem("adv_intro")
+    data object AdvancedPrivacyPolicy : HomeListItem("adv_privacy")
     data object AdvancedSessionTuning : HomeListItem("adv_tuning")
     data object AdvancedPermanentCommitments : HomeListItem("adv_permanent")
     data object AdvancedProtectionHealth : HomeListItem("adv_protection")
@@ -41,8 +44,7 @@ internal fun usesChatHome(
     showAdvancedControls: Boolean
 ): Boolean = !hasStoredSession && !showAdvancedControls
 
-enum class ConfirmationProtectionMode {
-    FULL,
+enum class ChatHomeProtectionMode {
     COMPACT,
     HIDDEN
 }
@@ -51,14 +53,15 @@ enum class ConfirmationProtectionMode {
 internal fun confirmationReviewHidesComposer(hasUnderstanding: Boolean): Boolean =
     hasUnderstanding
 
-internal fun confirmationReviewProtectionMode(
+internal fun chatHomeProtectionMode(
     hasUnderstanding: Boolean,
     protectionLevel: ProtectionReliabilityLevel
-): ConfirmationProtectionMode = when {
-    !hasUnderstanding -> ConfirmationProtectionMode.FULL
-    protectionLevel == ProtectionReliabilityLevel.PROTECTED -> ConfirmationProtectionMode.HIDDEN
-    else -> ConfirmationProtectionMode.COMPACT
-}
+): ChatHomeProtectionMode =
+    if (hasUnderstanding && protectionLevel == ProtectionReliabilityLevel.PROTECTED) {
+        ChatHomeProtectionMode.HIDDEN
+    } else {
+        ChatHomeProtectionMode.COMPACT
+    }
 
 /**
  * Builds the visible home list from lightweight flags. Pure function — no I/O.
@@ -68,15 +71,18 @@ internal fun buildHomeListItems(
     hasStoredSession: Boolean,
     hasPromiseUnderstanding: Boolean,
     showAdvancedControls: Boolean,
-    showAdvancedEngineering: Boolean = false
+    showAdvancedEngineering: Boolean = false,
+    hasMailTask: Boolean = false
 ): List<HomeListItem> {
     val items = ArrayList<HomeListItem>(24)
     items += HomeListItem.Header
     if (!showAdvancedControls) {
         items += HomeListItem.ProtectionStatus
+        items += HomeListItem.TodayInsight
     }
     if (hasStoredSession) {
         items += HomeListItem.ActiveCommitment
+        if (hasMailTask) items += HomeListItem.MailTask
         items += HomeListItem.LastDecision
     } else if (hasPromiseUnderstanding) {
         items += HomeListItem.PromiseUnderstanding
@@ -86,6 +92,7 @@ internal fun buildHomeListItems(
     items += HomeListItem.AdvancedToggle
     if (showAdvancedControls) {
         items += HomeListItem.AdvancedIntro
+        items += HomeListItem.AdvancedPrivacyPolicy
         if (!hasStoredSession) {
             items += HomeListItem.LastDecision
         }

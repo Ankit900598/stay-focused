@@ -320,6 +320,17 @@ const FIXTURES = {};
     eq(scopeOf(r.dto).kind, "APP_SHORT_FORM_ONLY", "model-options turn 1 -> pick B still YouTube shorts only");
     eq(r.dto.canStartCommitment, true, "model-options turn 1 -> pick B: Start opens");
   }
+  // Hosted v09 2026-09-29: the model asked "block or just warn?" while the server showed
+  // scope A/B; the question must match the options, and a verified pick clears it.
+  {
+    const offTopic = "Would you prefer to block short-form videos when you activate the rule, or just get a warning before watching?";
+    const t1 = await compile(SHORTS, {}, basePolicy({ scope: UNRESOLVED, followUpQuestionRequired: true, followUpQuestion: offTopic, clarificationQuestion: offTopic }));
+    eq(t1.dto.clarificationQuestion, inferShortFormScopeClarification(SHORTS).question, "server A/B come with the server's scope question");
+    const r = await compile(SHORTS, pickOptions(SHORTS, t1.dto.clarificationOptions, "A"), basePolicy({ scope: UNRESOLVED, followUpQuestionRequired: true, followUpQuestion: offTopic, clarificationQuestion: offTopic }));
+    eq(r.dto.optionVerification, "snapshot_and_carry_verified", "off-topic model question: pick still verifies");
+    eq(r.dto.clarificationQuestion, null, "verified pick clears the leftover question");
+    eq(r.dto.clarificationRequired, false, "verified pick: no clarification");
+  }
   // Hosted v09 2026-09-28: "Block YouTube Shorts for 1 hour" option A carried a valid typed
   // scope but no (or a whole-app `youtube_only`) legacy preview; the pick failed closed with
   // snapshot_invalid_scope in 1/3 runs. The legacy preview must follow the typed scope.
@@ -532,7 +543,74 @@ const FIXTURES = {};
     eq(svc.resolveClarificationSelection({ selectedId: "B", snapshot: [{ id: "B", label: "x" }], carried: null, promiseText: COMPOUND }).reason, "snapshot_invalid_scope", "general resolver: missing preview rejected");
   }
 
-  eq(Object.keys(FIXTURES).length, 4, "all fixtures captured");
+  // Real v09 output 2026-09-29 (pc-lab-astra): whole-app free-text scopes ("Entire native app
+  // only") were unrepresentable, so the exact promise and the "YouTube app only" pick both
+  // dead-ended on "What should Strlix block in YouTube?" with Start closed.
+  {
+    const YT = "com.google.android.youtube";
+    const YTM = "com.google.android.apps.youtube.music";
+    const EXACT = "Block the YouTube app for 30 minutes. YouTube Music is allowed.";
+    const ytAppScope = (evidence) => ({
+      version: 1, kind: "APP_ONLY", resolution: "EXCLUSIVE", identity: "YOUTUBE",
+      include: [{ id: "i1", host: "NATIVE_APP", identity: "YOUTUBE", surfaces: ["ANY"], sites: [], packages: [YT], packageMatch: "PINNED" }],
+      exempt: [], confidence: 0.9, evidenceSpans: [evidence],
+    });
+    const thirty = { duration: { kind: "fixed", value: 30, unit: "minutes", until: null }, transcriptConfidence: null };
+    const ytRule = (d) => (d.suggestedAppRules || []).find((x) => x.packageName === YT);
+    const ytmRule = (d) => (d.suggestedAppRules || []).find((x) => x.packageName === YTM);
+    for (const [free, allowed] of [
+      ["Entire native app only", []],
+      ["Entire native app", [{ packageName: YTM, appLabel: "YouTube Music" }]],
+    ]) {
+      const tag = `exact YouTube-app promise, scope "${free}"`;
+      const { dto } = await compile(EXACT, {}, basePolicy({ ...thirty, blockedApps: [{ packageName: YT, appLabel: "YouTube", scope: free }], allowedApps: allowed, scope: ytAppScope("the YouTube app") }));
+      eq(dto.policyConflict || null, null, `${tag}: no scope conflict`);
+      eq(dto.clarificationQuestion, null, `${tag}: no redundant question`);
+      eq(dto.clarificationRequired, false, `${tag}: no clarification`);
+      eq(scopeOf(dto).kind, "APP_ONLY", `${tag}: YouTube app scope kept`);
+      eq(ytRule(dto) && ytRule(dto).behavior, "BLOCK", `${tag}: YouTube app blocked`);
+      check(!ytmRule(dto) || ytmRule(dto).behavior !== "BLOCK", `${tag}: YouTube Music never blocked`);
+      eq(dto.canStartCommitment === true || dto.requiresStrongerConfirmation === true, true, `${tag}: Start opens only through the confirm step`);
+      if (allowed.length === 0) FIXTURES.v09_yt_app_music_exact = { promise: EXACT, modelScope: ytAppScope("the YouTube app"), dto };
+    }
+    const PLAIN = "Block YouTube for 30 minutes.";
+    const askHost = "Should YouTube be blocked only in its app, or in both apps and browsers?";
+    const hostOption = (id, label, kind, host, packages, packageMatch) => ({
+      id, label, description: `${label} for 30 minutes.`, recommended: id === "B", policyPreview: `${label}.`,
+      scope: { ...ytAppScope("Block YouTube"), kind, confidence: 0.4, include: [{ id: "i1", host, identity: "YOUTUBE", surfaces: ["ANY"], sites: [], packages, packageMatch }] },
+    });
+    const t1 = await compile(PLAIN, {}, basePolicy({
+      ...thirty, blockedApps: [{ packageName: YT, appLabel: "YouTube", scope: "Entire app" }], scope: UNRESOLVED,
+      followUpQuestionRequired: true, followUpQuestion: askHost, clarificationRequired: true, clarificationQuestion: askHost,
+      clarificationOptions: [
+        hostOption("A", "YouTube app only", "APP_ONLY", "NATIVE_APP", [YT], "PINNED"),
+        hostOption("B", "YouTube in apps and browsers", "CONTENT_ANY_HOST", "ANY_HOST", [], "CLASS_RESOLVED"),
+      ],
+    }));
+    const snap = t1.dto.clarificationOptions || [];
+    const a = snap.find((o) => o.id === "A");
+    eq(a && a.label, "YouTube app only", "plain YouTube: option A is the app-only choice");
+    const r = await compile(PLAIN, pickOptions(PLAIN, snap, "A"), basePolicy({ ...thirty, blockedApps: [{ packageName: YT, appLabel: "YouTube", scope: "Entire native app" }], scope: ytAppScope("Block YouTube") }));
+    eq(r.dto.optionVerification, "snapshot_and_carry_verified", "pick A: verified");
+    eq(r.dto.policyConflict || null, null, "pick A: no leftover scope conflict");
+    eq(r.dto.clarificationQuestion, null, "pick A: no redundant question");
+    eq(r.dto.clarificationRequired, false, "pick A: no clarification");
+    eq(scopeOf(r.dto).kind, "APP_ONLY", "pick A: saved scope is the YouTube app");
+    eq(ytRule(r.dto) && ytRule(r.dto).behavior, "BLOCK", "pick A: YouTube app blocked, not flipped to ALLOW");
+    eq(r.dto.canStartCommitment === true || r.dto.requiresStrongerConfirmation === true, true, "pick A: Start opens only through the confirm step");
+    FIXTURES.v09_yt_pick_a_app_only = { promise: PLAIN, modelScope: ytAppScope("Block YouTube"), dto: r.dto };
+    // Still gated: narrowing, negation, other surfaces, and whole-app claims on a Shorts-only promise.
+    for (const free of ["Entire app except search", "not the entire app", "entire app but keep music", "whole app home feed"]) {
+      const { dto } = await compile(EXACT, {}, basePolicy({ ...thirty, blockedApps: [{ packageName: YT, appLabel: "YouTube", scope: free }], scope: ytAppScope("the YouTube app") }));
+      eq(dto.policyConflict, "unrepresentable_app_scope", `"${free}": stays unrepresentable`);
+      eq(dto.canStartCommitment, false, `"${free}": Start closed`);
+    }
+    const shortsOnly = await compile("Block YouTube Shorts for 30 minutes.", {}, basePolicy({ ...thirty, blockedApps: [{ packageName: YT, appLabel: "YouTube", scope: "Entire native app" }], scope: { ...ytAppScope("YouTube Shorts"), kind: "APP_SHORT_FORM_ONLY", include: [{ id: "i1", host: "NATIVE_APP", identity: "YOUTUBE", surfaces: ["PLAYER_SHORT"], sites: [], packages: [YT], packageMatch: "PINNED" }] } }));
+    eq(shortsOnly.dto.canStartCommitment, false, "Shorts-only promise + whole-app free text: never silently broadened");
+    check(/whole_app_block_vs_narrow_scope/.test(String(shortsOnly.dto.policyConflict)), "Shorts-only promise + whole-app free text: conflict recorded");
+  }
+
+  eq(Object.keys(FIXTURES).length, 6, "all fixtures captured");
   if (process.argv.includes("--write-fixtures")) {
     const fs = require("fs");
     const path = require("path");

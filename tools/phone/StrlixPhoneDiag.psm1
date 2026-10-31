@@ -3,7 +3,7 @@ Set-StrictMode -Version 2
 $script:StrlixPackage = 'com.phonecodex.app'
 $script:StrlixServicePattern = '^com\.phonecodex\.app/(?:com\.phonecodex\.app)?\.accessibility\.PhoneCodexAccessibilityService$'
 # "Bound services" in dumpsys lists labels, not component names.
-$script:StrlixServiceLabels = @('PhoneCodex Focus Detection', 'PhoneCodex Accessibility')
+$script:StrlixServiceLabels = @('Strlix Focus Protection', 'PhoneCodex Focus Detection', 'PhoneCodex Accessibility')
 
 # The only device commands this tool may run. Every entry is read-only.
 # Keys double as fixture file names (<key>.txt) in -FixtureDir mode.

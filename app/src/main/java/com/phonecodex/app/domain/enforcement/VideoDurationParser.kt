@@ -76,6 +76,12 @@ object VideoDurationParser {
     fun extractPrimaryDurationSeconds(screenText: String): Int? =
         parse(screenText).currentPlayerDurationSeconds
 
+    internal fun hasSpokenPlayerProgressClock(screenText: String): Boolean {
+        val normalized = screenText.lowercase()
+        val (playerZone, _) = splitPlayerAndRecommendationZones(normalized)
+        return extractSpokenPlayerProgressTotalSeconds(playerZone) != null
+    }
+
     /**
      * Clock-B short-form equation.
      *
@@ -114,6 +120,11 @@ object VideoDurationParser {
     ): Int? {
         val recommendationSplit = playerZone != fullText
 
+        extractSpokenPlayerProgressTotalSeconds(playerZone)?.let { return it }
+        if (!recommendationSplit) {
+            extractSpokenPlayerProgressTotalSeconds(fullText)?.let { return it }
+        }
+
         // 1) Position / total clocks (NewPipe + many native players).
         PLAYER_POSITION_TOTAL_REGEX.find(playerZone)?.let { match ->
             val total = clockToSeconds(
@@ -139,7 +150,6 @@ object VideoDurationParser {
         // Nodes often glue: "1 secondTime duration 31 minutes, 33 seconds".
         // Do not require a word boundary before "time" — \btime misses that.
         extractSpokenTimeDurationSeconds(playerZone)?.let { return it }
-        extractSpokenTimeDurationSeconds(fullText)?.let { return it }
 
         // 3) Duration adjacent to player chrome / seekbar (not recommendation prose).
         findDurationNearPlayerChrome(playerZone)?.let { return it }
@@ -148,6 +158,29 @@ object VideoDurationParser {
         }
 
         return null
+    }
+
+    private fun extractSpokenPlayerProgressTotalSeconds(text: String): Int? {
+        val match = SPOKEN_PLAYER_PROGRESS_REGEX.find(text) ?: return null
+        val position = spokenDurationSeconds(
+            match.groupValues[1],
+            match.groupValues[2],
+            match.groupValues[3]
+        ) ?: return null
+        val total = spokenDurationSeconds(
+            match.groupValues[4],
+            match.groupValues[5],
+            match.groupValues[6]
+        ) ?: return null
+        return total.takeIf { position <= it && it > 0 }
+    }
+
+    private fun spokenDurationSeconds(hoursRaw: String, minutesRaw: String, secondsRaw: String): Int? {
+        val hours = hoursRaw.toIntOrNull() ?: 0
+        val minutes = minutesRaw.toIntOrNull() ?: 0
+        val seconds = secondsRaw.toIntOrNull() ?: 0
+        if (hoursRaw.isBlank() && minutesRaw.isBlank() && secondsRaw.isBlank()) return null
+        return hours * 3600 + minutes * 60 + seconds
     }
 
     private fun findDurationNearPlayerChrome(text: String): Int? {
@@ -273,6 +306,15 @@ object VideoDurationParser {
                 """(?:(\d+)\s*(?:minutes?|mins?)\s*,?\s*)?""" +
                 """(?:(\d+)\s*(?:seconds?|secs?))?"""
         )
+
+    private val SPOKEN_PLAYER_PROGRESS_REGEX = Regex(
+        """\b(?:(\d{1,3})\s*(?:hours?|hrs?)\s*,?\s*)?""" +
+            """(?:(\d{1,3})\s*(?:minutes?|mins?)\s*,?\s*)?""" +
+            """(?:(\d{1,2})\s*(?:seconds?|secs?))?\s+of\s+""" +
+            """(?:(\d{1,3})\s*(?:hours?|hrs?)\s*,?\s*)?""" +
+            """(?:(\d{1,3})\s*(?:minutes?|mins?)\s*,?\s*)?""" +
+            """(?:(\d{1,2})\s*(?:seconds?|secs?))?\b"""
+    )
 
     private val CLOCK_DURATION_REGEX =
         Regex("""\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b""")

@@ -11,6 +11,9 @@ const DEFAULT_REGION = "eastus2";
 const RECOGNITION_PATH =
   "/speech/recognition/conversation/cognitiveservices/v1";
 const FAST_TRANSCRIBE_API_VERSION = "2024-11-15";
+const MAX_PROMISE_AUDIO_BYTES = 2 * 1024 * 1024;
+const MAX_PROMISE_AUDIO_BASE64_CHARS = 4 * Math.ceil(MAX_PROMISE_AUDIO_BYTES / 3);
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const PROMISE_PHRASE_HINTS = [
   "monk mode",
   "shorts",
@@ -54,6 +57,23 @@ function getSpeechHealth() {
     mockAvailable: true,
     endpointConfigured: Boolean(cfg.endpoint),
   };
+}
+
+function willCallPaidSpeechProvider(input = {}) {
+  const cfg = getSpeechConfig();
+  const transcript = typeof input.transcript === "string" ? input.transcript.trim() : "";
+  const wantsMock = input.mock === true || input.provider === "mock" || cfg.mockEnv;
+  const provider = input.provider === "openai_whisper" || input.provider === "google_speech"
+    ? input.provider
+    : "azure_speech";
+  const audioBase64 = typeof input.audioBase64 === "string" ? input.audioBase64.trim() : "";
+  let hasValidAudio = false;
+  try {
+    hasValidAudio = Boolean(audioBase64) && decodePromiseAudio(audioBase64).length > 0;
+  } catch {
+    hasValidAudio = false;
+  }
+  return !transcript && !wantsMock && cfg.configured && provider === "azure_speech" && hasValidAudio;
 }
 
 /**
@@ -108,6 +128,8 @@ async function transcribePromise(input = {}) {
     });
   }
 
+  const audioBuffer = audioBase64 ? decodePromiseAudio(audioBase64) : null;
+
   if (!cfg.configured) {
     const err = new Error(
       "Speech unavailable: set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION (or SPEECH_TRANSCRIBE_MOCK=1)"
@@ -123,13 +145,6 @@ async function transcribePromise(input = {}) {
   if (provider !== "azure_speech") {
     const err = new Error(`Speech provider not implemented yet: ${provider}`);
     err.statusCode = 501;
-    throw err;
-  }
-
-  const audioBuffer = Buffer.from(audioBase64, "base64");
-  if (audioBuffer.length === 0) {
-    const err = new Error("audioBase64 decoded to empty buffer");
-    err.statusCode = 400;
     throw err;
   }
 
@@ -151,6 +166,31 @@ async function transcribePromise(input = {}) {
     provider: result.provider || "azure_speech_fast",
     latencyMs: Date.now() - started,
   };
+}
+
+function decodePromiseAudio(value) {
+  if (typeof value !== "string" || value.length === 0 || !BASE64_PATTERN.test(value)) {
+    const err = new Error("audioBase64 must be valid standard Base64");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (value.length > MAX_PROMISE_AUDIO_BASE64_CHARS) {
+    const err = new Error("audio clip exceeds the 2 MB limit");
+    err.statusCode = 413;
+    throw err;
+  }
+  const audioBuffer = Buffer.from(value, "base64");
+  if (audioBuffer.length === 0 || audioBuffer.toString("base64") !== value) {
+    const err = new Error("audioBase64 is empty or malformed");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (audioBuffer.length > MAX_PROMISE_AUDIO_BYTES) {
+    const err = new Error("audio clip exceeds the 2 MB limit");
+    err.statusCode = 413;
+    throw err;
+  }
+  return audioBuffer;
 }
 
 function normalizeAudioFormat(value) {
@@ -274,11 +314,10 @@ async function transcribeWithAzureSpeech({
       region,
       endpoint,
     });
-  } catch (fastErr) {
+  } catch (_fastErr) {
     console.log(
       JSON.stringify({
         event: "speech_fast_fallback",
-        message: fastErr.message,
       })
     );
   }
@@ -369,8 +408,11 @@ function buildMockResult({ audioBase64, language, started }) {
 module.exports = {
   getSpeechConfig,
   getSpeechHealth,
+  willCallPaidSpeechProvider,
   transcribePromise,
   normalizeAudioFormat,
   buildMockResult,
   parseFastTranscriptionResult,
+  decodePromiseAudio,
+  MAX_PROMISE_AUDIO_BYTES,
 };

@@ -2,9 +2,11 @@ package com.phonecodex.app.ui.home
 
 import com.phonecodex.app.data.StudyWorldSettingsStore
 import com.phonecodex.app.domain.model.AppRuleBehavior
+import com.phonecodex.app.domain.model.AppRule
 import com.phonecodex.app.domain.model.ClarificationOption
 import com.phonecodex.app.domain.model.ContentRuleAction
 import com.phonecodex.app.domain.model.FocusPromise
+import com.phonecodex.app.domain.model.LocalAppTargetSelectionCandidate
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.StudyWorldSettings
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
@@ -15,6 +17,7 @@ import com.phonecodex.app.domain.promise.EffectivePromisePolicy
 import com.phonecodex.app.domain.promise.LegacyScopeContractGuard
 import com.phonecodex.app.domain.promise.PromiseClarificationLaw
 import com.phonecodex.app.domain.promise.PromiseContentRuleSupport
+import java.util.Locale
 
 /**
  * Human-readable confirmation of a compiled promise. Presentation only.
@@ -57,7 +60,9 @@ internal data class PromiseUnderstanding(
     /** Short pill / status line for the confirmation card. */
     val statusLabel: String,
     /** One-line guidance under the status (why Start is off, or what this preview is). */
-    val statusDetail: String
+    val statusDetail: String,
+    val startBlockReason: String? = null,
+    val localAppTargetSelectionCandidate: LocalAppTargetSelectionCandidate?
 ) {
     val durationLabel: String get() = sessionTimeLabel
     val caution: String? get() = cautions.firstOrNull()
@@ -66,6 +71,7 @@ internal data class PromiseUnderstanding(
     fun userFacingTextBlob(): String = listOfNotNull(
         statusLabel,
         statusDetail,
+        startBlockReason,
         sessionTimeLabel,
         allowedLabel,
         blockedLabel,
@@ -134,10 +140,14 @@ internal fun buildPromiseUnderstanding(
     alwaysBlockedLabels: List<String> = emptyList(),
     source: UnderstandingSource = UnderstandingSource.LOCAL_PREVIEW,
     selectedClarificationOptionId: String? = null,
-    strongerConfirmAcknowledged: Boolean = false
+    strongerConfirmAcknowledged: Boolean = false,
+    existingAppRules: List<AppRule> = emptyList(),
+    fallbackLockAttemptThreshold: Int? = null
 ): PromiseUnderstanding {
     val draft = PromiseClarificationLaw.apply(draft, selectedClarificationOptionId)
-    val threshold = lockAttemptThresholdFor(draft.strictness)
+    val threshold = draft.lockAttemptThreshold
+        ?: fallbackLockAttemptThreshold
+        ?: lockAttemptThresholdFor(draft.strictness)
     val promiseText = draft.rawText
 
     fun clean(value: String): String = ConfirmationUserCopy.sanitize(value, promiseText)
@@ -155,10 +165,10 @@ internal fun buildPromiseUnderstanding(
                         draft.copy(suggestedAppRules = listOf(rule))
                     ).forEach { add(it) }
                 }
-            draft.contentRules
-                .filter { it.action == ContentRuleAction.ALLOW }
-                .forEach { add(ConfirmationUserCopy.describeContentRuleForUser(it, promiseText)) }
         }
+        draft.contentRules
+            .filter { it.action == ContentRuleAction.ALLOW }
+            .forEach { add(ConfirmationUserCopy.describeContentRuleForUser(it, promiseText)) }
         ShortFormLanguage.parseLimit(promiseText)?.let { quota ->
             val already = any { line ->
                 line.contains(quota.toString()) && line.contains("short", ignoreCase = true)
@@ -180,10 +190,10 @@ internal fun buildPromiseUnderstanding(
                         draft.copy(suggestedAppRules = listOf(rule))
                     ).forEach { add(it) }
                 }
-            draft.contentRules
-                .filter { it.action == ContentRuleAction.BLOCK }
-                .forEach { add(ConfirmationUserCopy.describeContentRuleForUser(it, promiseText)) }
         }
+        draft.contentRules
+            .filter { it.action == ContentRuleAction.BLOCK }
+            .forEach { add(ConfirmationUserCopy.describeContentRuleForUser(it, promiseText)) }
         // NOTE: Life Rules (alwaysBlockedLabels) intentionally NOT merged here.
         // They render as a separate section — see PromiseUnderstanding.alwaysOnLifeRules.
     }.map(::clean).filter { it.isNotBlank() }
@@ -195,16 +205,25 @@ internal fun buildPromiseUnderstanding(
     // blocks adult content as part of *this* promise. Enforcement is unchanged.
     val alwaysOnLifeRules = alwaysBlockedLabels.map(::clean).filter { it.isNotBlank() }.distinct()
 
+    val visibleAppLabels = ConfirmationUserCopy.userVisibleAppLabels(draft)
+        .map { it.lowercase(Locale.ROOT) }
+        .toSet()
     val conditionalRaw = ConfirmationUserCopy.stripAppliesToLines(
-        draft.conditionalSummaries.ifEmpty {
+        buildList {
+            addAll(draft.conditionalSummaries)
             draft.contentRules
                 .filter {
                     it.action == ContentRuleAction.AI_DECIDE || it.action == ContentRuleAction.WARN
                 }
-                .map { ConfirmationUserCopy.describeContentRuleForUser(it, promiseText) }
-                .distinct()
+                .forEach { add(ConfirmationUserCopy.describeContentRuleForUser(it, promiseText)) }
+            draft.suggestedAppRules
+                .filter {
+                    it.behavior == AppRuleBehavior.AI_DECIDE || it.behavior == AppRuleBehavior.WARN
+                }
+                .filter { it.label.trim().lowercase(Locale.ROOT) in visibleAppLabels }
+                .forEach { add("${it.label.trim()} judged live") }
         }
-    ).map(::clean).filter { it.isNotBlank() }
+    ).map(::clean).filter { it.isNotBlank() }.distinct()
 
     // Blank-check after sanitize: a field that was only a package ID must fall
     // through to the category label, never render as an empty row.
@@ -229,9 +248,13 @@ internal fun buildPromiseUnderstanding(
     val clarificationResolved = !selectedClarificationOptionId.isNullOrBlank() &&
         !draft.clarificationRequired &&
         (draft.canStartCommitment == true || draft.requiresStrongerConfirmation)
-    val clarification = draft.clarificationQuestion
-        ?.takeIf { it.isNotBlank() && !clarificationResolved }
-        ?.let(::clean)
+    val clarification = if (draft.lockAttemptThresholdInvalid) {
+        "I couldn't safely represent that lock-after-attempt count. Edit the promise to choose a count from 1 to 100."
+    } else {
+        draft.clarificationQuestion
+            ?.takeIf { it.isNotBlank() && !clarificationResolved }
+            ?.let(::clean)
+    }
     val sourceOptions = if (clarificationResolved) emptyList() else draft.clarificationOptions
     val options = sourceOptions.map { option ->
         ClarificationOption(
@@ -249,16 +272,19 @@ internal fun buildPromiseUnderstanding(
     val ghostClarify = draft.clarificationRequired &&
         !hasRenderableClarify &&
         PromiseClarificationLaw.isConcreteClockPolicy(draft)
-    val needsClarification = !ghostClarify &&
-        !clarificationResolved &&
-        (draft.needsClarification || needsOptionPick)
+    val needsClarification = draft.localAppTargetSelection != null || (
+        !ghostClarify &&
+            !clarificationResolved &&
+            (draft.needsClarification || needsOptionPick)
+        )
     val requiresStrongerConfirm = draft.requiresStrongerConfirmation
     val strongerConfirmLabel = if (requiresStrongerConfirm) {
         strongerConfirmationLabel(draft)
     } else {
         null
     }
-    val canStart = computeCanStart(
+    val startBlockReason = EffectivePromisePolicy.savedWholeAppRuleConflict(draft, existingAppRules)
+    val canStart = startBlockReason == null && draft.localAppTargetSelection == null && computeCanStart(
         draft = draft,
         source = source,
         needsOptionPick = needsOptionPick,
@@ -291,8 +317,12 @@ internal fun buildPromiseUnderstanding(
         sessionTimeLabel = draft.userFacingTime?.let(::clean)
             ?.takeIf { it.isNotBlank() }
             ?: formatDuration(draft.sessionDurationMinutes),
-        allowedLabel = joinForDisplay(effectiveAllowed).ifEmpty { "Anything that fits this promise" },
-        blockedLabel = joinForDisplay(effectiveBlocked).ifEmpty { "Whatever pulls you away" },
+        allowedLabel = joinForDisplay(effectiveAllowed).ifEmpty {
+            if (needsClarification) "Not decided until you clarify" else "Anything that fits this promise"
+        },
+        blockedLabel = joinForDisplay(effectiveBlocked).ifEmpty {
+            if (needsClarification) "Not decided until you clarify" else "Whatever pulls you away"
+        },
         alwaysOnLifeRules = alwaysOnLifeRules,
         conditionalLabel = joinForDisplay(conditionalRaw).ifEmpty { null },
         strictnessLabel = strictnessLabel(draft.strictness),
@@ -309,10 +339,12 @@ internal fun buildPromiseUnderstanding(
         cautions = cautions,
         canStart = canStart,
         source = source,
-        statusLabel = if (draft.legacyContractGap != null && !requiresOnlineCompiler) {
-            LEGACY_CONTRACT_STATUS_LABEL
-        } else {
-            understandingStatusLabel(
+        statusLabel = when {
+            startBlockReason != null -> "Resolve saved app rule"
+            draft.legacyContractGap != null && !requiresOnlineCompiler -> {
+                LEGACY_CONTRACT_STATUS_LABEL
+            }
+            else -> understandingStatusLabel(
                 source = source,
                 needsClarification = needsClarificationForStatus,
                 requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged,
@@ -320,16 +352,25 @@ internal fun buildPromiseUnderstanding(
                 requiresOnlineCompiler = requiresOnlineCompiler
             )
         },
-        statusDetail = if (draft.legacyContractGap != null && !requiresOnlineCompiler) {
-            LegacyScopeContractGuard.START_BLOCKED_COPY
-        } else understandingStatusDetail(
-            source = source,
-            needsClarification = needsClarificationForStatus,
-            clarificationQuestion = clarification,
-            hasClarificationOptions = hasOptions,
-            requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged,
-            requiresOnlineCompiler = requiresOnlineCompiler
-        )
+        statusDetail = when {
+            startBlockReason != null -> startBlockReason
+            draft.localAppTargetSelection != null -> {
+                "Choose the exact app shown in your launcher. Only apps with a launcher icon appear; the lookup stays on this phone, and nothing starts automatically."
+            }
+            draft.legacyContractGap != null && !requiresOnlineCompiler -> {
+                LegacyScopeContractGuard.START_BLOCKED_COPY
+            }
+            else -> understandingStatusDetail(
+                source = source,
+                needsClarification = needsClarificationForStatus,
+                clarificationQuestion = clarification,
+                hasClarificationOptions = hasOptions,
+                requiresStrongerConfirmation = requiresStrongerConfirm && !strongerConfirmAcknowledged,
+                requiresOnlineCompiler = requiresOnlineCompiler
+            )
+        },
+        startBlockReason = startBlockReason,
+        localAppTargetSelectionCandidate = draft.localAppTargetSelection
     )
 }
 
@@ -498,15 +539,25 @@ private fun driftLabel(level: StrictnessLevel, threshold: Int): String = when (l
     StrictnessLevel.LOCKED -> "I block it, no talking me out of it, and lock after $threshold tries."
 }
 
-private fun joinForDisplay(values: List<String>): String =
-    values.map { it.trim() }
+internal fun joinForDisplay(values: List<String>): String =
+    values.map { it.trim().trimEnd('.', ',', ';').trim() }
         .filter { it.isNotEmpty() }
-        .distinctBy { it.lowercase() }
+        .distinctBy(::displayDedupeKey)
         .take(8)
         .joinToString(", ")
 
+/** "block short-form until tomorrow" and "block short-form videos until tomorrow" are one line. */
+private fun displayDedupeKey(value: String): String =
+    value.lowercase()
+        .replace(Regex("""\b(short(?:-form)?)\s+videos?\b"""), "$1")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+
 internal fun startDisabledMessage(understanding: PromiseUnderstanding): String = when {
     understanding.canStart -> ""
+    understanding.startBlockReason != null -> understanding.startBlockReason
+    understanding.localAppTargetSelectionCandidate != null ->
+        "Choose the exact app shown in your launcher, review the updated preview, then start if it matches. Only apps with a launcher icon appear."
     understanding.clarificationOptions.isNotEmpty() &&
         understanding.selectedClarificationOptionId.isNullOrBlank() ->
         "Start Commitment stays off until you pick one of the options above."
@@ -530,9 +581,10 @@ internal fun lockAttemptThresholdFor(level: StrictnessLevel): Int = when (level)
 internal fun applyFocusPromiseDraft(
     draft: FocusPromise,
     studyWorldSettingsStore: StudyWorldSettingsStore
-): StudyWorldSettings {
-    val bound = ConfirmedPromiseBinder.bind(draft)
-    studyWorldSettingsStore.replaceSettings(bound)
+): StudyWorldSettings? {
+    val savedDefaults = studyWorldSettingsStore.getSettings()
+    val bound = ConfirmedPromiseBinder.bind(draft, savedDefaults)
+    if (!studyWorldSettingsStore.beginCommitment(bound)) return null
     val stored = studyWorldSettingsStore.getSettings()
     val audit = ConfirmedPromiseBinder.audit(draft, stored)
     android.util.Log.i("PhoneCodexPromiseStart", audit.format())

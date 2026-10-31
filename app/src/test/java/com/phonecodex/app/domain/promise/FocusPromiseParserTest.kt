@@ -1,6 +1,8 @@
 package com.phonecodex.app.domain.promise
 
 import com.phonecodex.app.domain.model.AppRuleBehavior
+import com.phonecodex.app.ui.home.UnderstandingSource
+import com.phonecodex.app.ui.home.buildPromiseUnderstanding
 import com.phonecodex.app.domain.model.ContentRuleAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +14,25 @@ import org.junit.Test
 class FocusPromiseParserTest {
 
     private val parser = FocusPromiseParser()
+
+    @Test
+    fun explicitLockAfterAttempts_isParsedWithoutConfusingSessionDuration() {
+        val draft = parser.parse("Block Instagram and lock after 4 attempts for 1 hour")
+
+        assertEquals(4, draft.lockAttemptThreshold)
+        assertEquals(60, draft.sessionDurationMinutes)
+    }
+
+    @Test
+    fun unsupportedOrConflictingAttemptThreshold_cannotFallBackSilently() {
+        val tooHigh = parser.parse("Block Instagram and lock after 101 attempts")
+        val conflicting = parser.parse("Lock after 3 attempts, or maybe after 5 attempts")
+
+        assertTrue(tooHigh.lockAttemptThresholdInvalid)
+        assertTrue(tooHigh.needsClarification)
+        assertTrue(conflicting.lockAttemptThresholdInvalid)
+        assertTrue(conflicting.needsClarification)
+    }
 
     @Test
     fun brokenGrammar_allowLongYoutubeOrChrome_asksClarification_andDoesNotStealSessionDuration() {
@@ -120,7 +141,9 @@ class FocusPromiseParserTest {
         )
 
         assertEquals(180, draft.sessionDurationMinutes)
-        assertFalse(draft.needsClarification)
+        assertTrue(draft.needsClarification)
+        assertFalse(draft.canStartCommitment == true)
+        assertTrue(draft.clarificationQuestion.orEmpty().contains("can't reliably"))
         assertTrue(
             draft.suggestedAppRules.any {
                 it.packageName == "com.google.android.youtube" &&
@@ -262,7 +285,9 @@ class FocusPromiseParserTest {
         )
 
         assertEquals(180, draft.sessionDurationMinutes)
-        assertFalse(draft.needsClarification)
+        assertTrue(draft.needsClarification)
+        assertFalse(draft.canStartCommitment == true)
+        assertTrue(draft.clarificationQuestion.orEmpty().contains("can't reliably"))
         assertTrue(
             draft.suggestedAppRules.any {
                 it.packageName == "com.google.android.youtube" &&
@@ -323,6 +348,7 @@ class FocusPromiseParserTest {
 
         assertEquals(120, draft.sessionDurationMinutes)
         assertFalse(draft.needsClarification)
+        assertFalse(draft.contentRules.any { it.surface == "playlist" })
         assertTrue(draft.suggestedAppRules.any { it.packageName == "com.google.android.youtube" })
     }
 
@@ -581,6 +607,25 @@ class FocusPromiseParserTest {
         assertTrue(stored.enforcementScopePackages.isEmpty())
         assertEquals(40, stored.minVideoLengthBlockMinutes)
         assertFalse(draft.needsClarification)
+    }
+
+    @Test
+    fun blockYouTubeAppWithMusicAllowed_offlinePreviewBlocksAppAndAllowsMusic() {
+        val draft = parser.parse(
+            "Block the YouTube app for 30 minutes. YouTube Music is allowed."
+        )
+        assertTrue(PromiseIntentRules.namesYouTubeAppOnly(draft.rawText))
+        val rules = draft.suggestedAppRules.associateBy { it.packageName }
+        assertEquals(AppRuleBehavior.BLOCK, rules["com.google.android.youtube"]?.behavior)
+        assertEquals(AppRuleBehavior.ALLOW, rules["com.google.android.apps.youtube.music"]?.behavior)
+        assertTrue(draft.blockedSummaries.any { it.contains("YouTube", ignoreCase = true) })
+        assertTrue(draft.allowedSummaries.any { it.contains("YouTube Music", ignoreCase = true) })
+        assertFalse(draft.allowedSummaries.any { it.equals("YouTube", ignoreCase = true) })
+        val card = buildPromiseUnderstanding(
+            draft = draft,
+            source = UnderstandingSource.LOCAL_PREVIEW
+        )
+        assertFalse("typed offline preview must not Start", card.canStart)
     }
 
     @Test

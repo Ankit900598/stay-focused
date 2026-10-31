@@ -3,6 +3,7 @@ package com.phonecodex.app.domain.enforcement
 import android.util.Log
 import com.phonecodex.app.domain.diagnostics.BackendConfig
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
+import com.phonecodex.app.domain.diagnostics.diagnosticErrorKind
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
@@ -52,7 +53,7 @@ class AppDossierClient(
             )
             parse(packageName, responseText)
         } catch (err: Exception) {
-            Log.w(TAG, "research-app failed for $packageName: ${err.message}")
+            Log.w(TAG, "research-app failed for $packageName: ${diagnosticErrorKind(err)}")
             null
         } finally {
             connection.disconnect()
@@ -78,7 +79,7 @@ class AppDossierClient(
                 researchedAtMillis = json.optLong("researchedAtMillis", System.currentTimeMillis())
             )
         } catch (err: Exception) {
-            Log.w(TAG, "research-app parse failed: ${err.message}")
+            Log.w(TAG, "research-app parse failed: ${diagnosticErrorKind(err)}")
             null
         }
     }

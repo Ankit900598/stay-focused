@@ -52,4 +52,38 @@ class AiConfidenceGateTest {
 
         assertEquals(original, result)
     }
+
+    @Test
+    fun invalidNetworkConfidence_neverAuthorizesBlock() {
+        for (confidence in listOf(2.0, -0.01, Double.NaN)) {
+            val result = gate.apply(
+                ContentClassification(
+                    decision = DecisionType.BLOCK,
+                    confidence = confidence,
+                    reason = "Model guess",
+                    source = AiConfidenceGate.NETWORK_AI_SOURCE
+                )
+            )
+
+            assertEquals(DecisionType.WARN, result.decision)
+        }
+    }
+
+    @Test
+    fun incompleteNetworkVerification_remainsWarnAcrossConfidenceAndModelDecision() {
+        for (decision in listOf(DecisionType.ALLOW, DecisionType.WARN, DecisionType.BLOCK, DecisionType.LOCK)) {
+            val result = gate.apply(
+                ContentClassification(
+                    decision = decision,
+                    confidence = 0.2,
+                    reason = "Model result",
+                    source = AiConfidenceGate.NETWORK_AI_SOURCE,
+                    verificationIncomplete = true
+                )
+            )
+
+            assertEquals(DecisionType.WARN, result.decision)
+            assertEquals("Could not verify this screen safely", result.reason)
+        }
+    }
 }

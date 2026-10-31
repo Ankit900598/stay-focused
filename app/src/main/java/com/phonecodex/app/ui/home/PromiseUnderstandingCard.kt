@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +24,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.phonecodex.app.domain.model.ClarificationOption
+import com.phonecodex.app.domain.model.InstalledApp
+import com.phonecodex.app.domain.promise.LocalAppTargetSelectionLaw
 
 @Composable
 internal fun PromiseUnderstandingCard(
@@ -30,10 +34,19 @@ internal fun PromiseUnderstandingCard(
     onStartCommitment: () -> Unit,
     onEditPromise: () -> Unit,
     onSelectClarificationOption: (String) -> Unit,
-    onStrongerConfirmChange: (Boolean) -> Unit
+    onStrongerConfirmChange: (Boolean) -> Unit,
+    extraSection: (@Composable () -> Unit)? = null,
+    localAppTargetMatches: List<InstalledApp> = emptyList(),
+    localAppTargetLookupRequested: Boolean = false,
+    localAppTargetLookupLoading: Boolean = false,
+    localAppTargetLookupError: String? = null,
+    onFindLocalAppTarget: () -> Unit = {},
+    onRefreshLocalAppTarget: () -> Unit = {},
+    onSelectLocalAppTarget: (InstalledApp) -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
-    val needsClarification = understanding.clarificationOptions.isNotEmpty() ||
+    val needsClarification = understanding.localAppTargetSelectionCandidate != null ||
+        understanding.clarificationOptions.isNotEmpty() ||
         !understanding.clarificationQuestion.isNullOrBlank()
     val isOffline = understanding.source == UnderstandingSource.LOCAL_PREVIEW
 
@@ -44,7 +57,7 @@ internal fun PromiseUnderstandingCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "I understood",
+                text = if (needsClarification) "Let's clarify" else "I understood",
                 style = MaterialTheme.typography.headlineSmall,
                 color = colors.onSurface
             )
@@ -146,6 +159,20 @@ internal fun PromiseUnderstandingCard(
             )
         }
 
+        understanding.localAppTargetSelectionCandidate?.let { candidate ->
+            Spacer(modifier = Modifier.height(18.dp))
+            LocalAppTargetSelectionSection(
+                label = candidate.label,
+                matches = localAppTargetMatches,
+                lookupRequested = localAppTargetLookupRequested,
+                loading = localAppTargetLookupLoading,
+                error = localAppTargetLookupError,
+                onFind = onFindLocalAppTarget,
+                onRefresh = onRefreshLocalAppTarget,
+                onSelect = onSelectLocalAppTarget
+            )
+        }
+
         if (understanding.cautions.isNotEmpty()) {
             Spacer(modifier = Modifier.height(14.dp))
             SummaryRow(
@@ -172,6 +199,13 @@ internal fun PromiseUnderstandingCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )
+        }
+
+        extraSection?.let { section ->
+            Spacer(modifier = Modifier.height(18.dp))
+            HorizontalDivider(color = colors.outlineVariant)
+            Spacer(modifier = Modifier.height(14.dp))
+            section()
         }
 
         Spacer(modifier = Modifier.height(22.dp))
@@ -203,6 +237,76 @@ internal fun PromiseUnderstandingCard(
             text = if (needsClarification) "Edit promise" else "Change my promise",
             onClick = onEditPromise
         )
+    }
+}
+
+@Composable
+private fun LocalAppTargetSelectionSection(
+    label: String,
+    matches: List<InstalledApp>,
+    lookupRequested: Boolean,
+    loading: Boolean,
+    error: String?,
+    onFind: () -> Unit,
+    onRefresh: () -> Unit,
+    onSelect: (InstalledApp) -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Choose which launchable app “$label” means",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Text(
+            text = "Only apps with a launcher icon appear. This lookup stays on your phone. Nothing is blocked until you review the updated preview and tap Start Commitment.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
+        when {
+            loading -> Text("Checking launchable apps on this phone…", color = colors.onSurfaceVariant)
+            error != null -> {
+                Text(error, color = colors.error)
+                OutlinedButton(onClick = onFind, modifier = Modifier.testTag("local_app_target_retry")) {
+                    Text("Try again")
+                }
+            }
+            !lookupRequested -> OutlinedButton(
+                onClick = onFind,
+                modifier = Modifier.testTag("local_app_target_find")
+            ) {
+                Text("Find exact app on this phone")
+            }
+            matches.isEmpty() -> {
+                Text(
+                    text = "No launchable app has the exact name “$label”. Refresh the list or edit the promise to use the name shown on your phone.",
+                    color = colors.error
+                )
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.testTag("local_app_target_refresh")) {
+                    Text("Refresh app list")
+                }
+            }
+            matches.size > 1 -> {
+                Text(
+                    text = "More than one launchable app has this exact name. Strlix won’t guess; edit the promise to make the target clear, or refresh the list.",
+                    color = colors.error
+                )
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.testTag("local_app_target_refresh")) {
+                    Text("Refresh app list")
+                }
+            }
+            !LocalAppTargetSelectionLaw.canSelect(matches.single()) -> Text(
+                text = "This is a phone-safety app and remains available; choose a different target.",
+                color = colors.error
+            )
+            else -> Button(
+                onClick = { onSelect(matches.single()) },
+                modifier = Modifier.testTag("local_app_target_select")
+            ) {
+                Text("Use ${matches.single().label}")
+            }
+        }
     }
 }
 
@@ -278,7 +382,8 @@ private fun StrongerConfirmRow(
     ) {
         Checkbox(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.testTag("stronger_confirm_checkbox")
         )
         Text(
             text = label,

@@ -60,7 +60,7 @@ internal fun SafeAppsSection(
         modifier = Modifier.fillMaxWidth(),
         enabled = !installedAppsLoading
     ) {
-        Text(if (installedAppsLoading) "Loading apps…" else "Load Installed Apps")
+        Text(if (installedAppsLoading) "Loading apps…" else "Load Launchable Apps")
     }
 
     if (installedApps.isNotEmpty()) {
@@ -68,7 +68,7 @@ internal fun SafeAppsSection(
         OutlinedTextField(
             value = safeAppsSearch,
             onValueChange = onSafeAppsSearchChange,
-            label = { Text("Search installed apps") },
+            label = { Text("Search launchable apps") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )

@@ -133,8 +133,9 @@ function userFacingHasPackageLeak(text) {
 //   - Enum values on `resolution`, `identity`, clause `host` / `identity` / `surfaces`
 //     / `packageMatch` MUST be in their enum sets. Otherwise UNRESOLVED (MALFORMED_CLAUSE).
 //   - `appliesToText` MUST NOT contain a package id. Leak -> UNRESOLVED (PACKAGE_LEAK_IN_APPLIES_TO).
-//   - `evidenceSpans` MUST be verbatim substrings of `userPromise`, except for
-//     `PACKAGE_PINNED` (user literally named an app). Otherwise UNRESOLVED (MISSING_EVIDENCE).
+//   - `evidenceSpans` MUST be verbatim substrings of `userPromise`. PACKAGE_PINNED instead
+//     requires every package to map to a supported app name present in `userPromise`.
+//     Otherwise UNRESOLVED (MISSING_EVIDENCE).
 //   - A non-UNRESOLVED kind with an empty `include` -> UNRESOLVED (MALFORMED_CLAUSE).
 //
 // Any failure ALSO forces `canStartCommitment=false` and `clarificationRequired=true`
@@ -395,8 +396,14 @@ function validateScope(rawScope, userPromise) {
     };
   }
 
-  // Non-UNRESOLVED kinds require evidence (except PACKAGE_PINNED — user named a literal app).
-  if (kindRaw !== "PACKAGE_PINNED") {
+  if (kindRaw === "PACKAGE_PINNED") {
+    const packages = uniqueStrings(
+      includeResult.list.flatMap((clause) => clause.packages || [])
+    );
+    if (packages.length === 0 || !packages.every((pkg) => packageWasNamedInPromise(pkg, userPromise))) {
+      return unresolvedScope("MISSING_EVIDENCE", evidenceSpans);
+    }
+  } else {
     if (evidenceSpans.length === 0) {
       return unresolvedScope("MISSING_EVIDENCE");
     }
@@ -713,11 +720,76 @@ const SCOPE_IDENTITY_LABELS = {
   ANY: "the selected",
 };
 
+const SCOPE_PACKAGE_LABELS = {
+  "com.google.android.youtube": "YouTube",
+  "org.schabi.newpipe": "NewPipe",
+  "app.netmirror.newtv": "NetMirror",
+  "com.instagram.android": "Instagram",
+  "com.facebook.katana": "Facebook",
+  "com.facebook.orca": "Messenger",
+  "com.whatsapp": "WhatsApp",
+  "com.android.chrome": "Chrome",
+  "org.telegram.messenger": "Telegram",
+  "com.google.android.gm": "Gmail",
+  "com.google.android.apps.drive": "Google Drive",
+  "com.google.android.apps.docs": "Google Docs",
+  "com.zhiliaoapp.musically": "TikTok",
+  "com.twitter.android": "X (Twitter)",
+  "com.netflix.mediaclient": "Netflix",
+  "com.reddit.frontpage": "Reddit",
+  "com.discord": "Discord",
+  "com.spotify.music": "Spotify",
+  "com.snapchat.android": "Snapchat",
+  "com.android.vending": "Play Store",
+};
+
+const SCOPE_PACKAGE_ALIASES = {
+  "com.google.android.youtube": ["youtube", "you tube", "yt"],
+  "org.schabi.newpipe": ["newpipe"],
+  "app.netmirror.newtv": ["netmirror", "newtv"],
+  "com.instagram.android": ["instagram", "insta", "ig"],
+  "com.facebook.katana": ["facebook", "fb"],
+  "com.facebook.orca": ["messenger"],
+  "com.whatsapp": ["whatsapp", "whats app"],
+  "com.android.chrome": ["chrome"],
+  "org.telegram.messenger": ["telegram"],
+  "com.google.android.gm": ["gmail", "google mail"],
+  "com.google.android.apps.drive": ["google drive"],
+  "com.google.android.apps.docs": ["google docs"],
+  "com.zhiliaoapp.musically": ["tiktok", "tik tok"],
+  "com.twitter.android": ["twitter"],
+  "com.netflix.mediaclient": ["netflix"],
+  "com.reddit.frontpage": ["reddit"],
+  "com.discord": ["discord"],
+  "com.spotify.music": ["spotify"],
+  "com.snapchat.android": ["snapchat"],
+  "com.android.vending": ["play store", "google play"],
+};
+
+function packageWasNamedInPromise(packageName, userPromise) {
+  if (typeof userPromise !== "string" || !userPromise.trim()) return false;
+  const aliases = SCOPE_PACKAGE_ALIASES[packageName] || [];
+  return aliases.some((alias) => {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, "i").test(userPromise);
+  });
+}
+
+function scopePackageLabels(scope) {
+  return uniqueStrings(
+    (scope.include || []).flatMap((clause) => clause.packages || [])
+      .map((packageName) => SCOPE_PACKAGE_LABELS[packageName])
+      .filter(Boolean)
+  );
+}
+
 /** Mirrors ScopeAppliesToCopy.optionLabel on Android. */
 function scopeOptionLabel(scope) {
   if (!isEnforceableScope(scope)) return null;
   const identity = scope.identity || (scope.include[0] && scope.include[0].identity) || "ANY";
-  const name = SCOPE_IDENTITY_LABELS[identity] || SCOPE_IDENTITY_LABELS.ANY;
+  const name = identity === "SOCIAL_ANY"
+    ? "Recognized social apps/sites only (Instagram, Facebook, Messenger, TikTok, Snapchat, WhatsApp)"
+    : SCOPE_IDENTITY_LABELS[identity] || SCOPE_IDENTITY_LABELS.ANY;
   switch (scope.kind) {
     case "APP_ONLY": return `${name} app only`;
     case "BROWSER_ONLY": return `${name} in your browser only`;
@@ -730,7 +802,10 @@ function scopeOptionLabel(scope) {
     case "SOCIAL_FEED_AND_REELS_ONLY": return `${name} feed and short videos`;
     case "SITE_SCOPED": return "Specific sites in your browser";
     case "HOST_WITH_CATEGORY_EXEMPTIONS": return "Adult, movie, and video pages in your browser";
-    case "PACKAGE_PINNED": return "Specific apps you named";
+    case "PACKAGE_PINNED": {
+      const labels = scopePackageLabels(scope);
+      return labels.length > 0 ? `${labels.join(", ")} only` : "Specific apps you named";
+    }
     default: return null;
   }
 }
@@ -1206,6 +1281,22 @@ function normalizeInternalPolicy(raw, built = {}) {
       ? base.guardrails
       : built.guardrails || [],
   };
+}
+
+function normalizedLockAttemptThreshold(parsed) {
+  const topLevelPolicy = parsed && parsed.strikePolicy;
+  const internalPolicy = parsed && parsed.internalPolicy;
+  const nestedPolicy = internalPolicy && internalPolicy.strikePolicy;
+  const raw =
+    topLevelPolicy && typeof topLevelPolicy === "object"
+      ? topLevelPolicy.strikesBeforeLock ?? nestedPolicy?.strikesBeforeLock
+      : nestedPolicy?.strikesBeforeLock;
+  if (raw == null || raw === 0 || raw === "0") return { value: null, invalid: false };
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 100) {
+    return { value: null, invalid: true };
+  }
+  return { value, invalid: false };
 }
 
 function isPermanentCommitment(parsed, promiseText) {
@@ -2699,12 +2790,23 @@ const NEGATED_WHOLE_APP_SCOPE = /\b(?:not|no|never|without|rather than|instead o
 const WHOLE_APP_SCOPE_CLAIM = /\b(whole|entire|full|all|everything|every)\b/;
 const EXCLUSION_SCOPE_WORD = /\b(except|but|besides|other than|apart from|excluding|outside)\b/;
 const OTHER_SURFACE_SCOPE_WORD = /\b(feed|home|comments?|messages?|dms?|chats?|stor(?:y|ies)|search|live|long|explore|brows(?:e|ing)|music|subscriptions?|posts?|calls?)\b/;
+// Free-text whole-app scopes ("Entire native app only"): a whole-app claim on the app itself
+// and nothing that narrows, negates, or names another surface.
+const WHOLE_APP_FREE_TEXT = /\b(?:whole|entire|full|all of)\b(?:\s+[\w-]+){0,3}?\s+app\b/;
+const NEGATION_SCOPE_WORD = /\b(not|no|never|without|rather than|instead of)\b/;
 
 function classifyAppScope(raw) {
   const s = String(raw == null ? "" : raw).trim().toLowerCase().replace(/\s+/g, " ");
   if (WHOLE_APP_SCOPES.has(s)) return "whole_app";
   if (SHORT_FORM_APP_SCOPES.has(s)) return "short_form";
-  if (!SHORT_FORM_SCOPE_WORD.test(s)) return "unknown";
+  if (!SHORT_FORM_SCOPE_WORD.test(s)) {
+    return WHOLE_APP_FREE_TEXT.test(s) &&
+      !NEGATION_SCOPE_WORD.test(s) &&
+      !EXCLUSION_SCOPE_WORD.test(s) &&
+      !OTHER_SURFACE_SCOPE_WORD.test(s)
+      ? "whole_app"
+      : "unknown";
+  }
   const rest = s.replace(NEGATED_WHOLE_APP_SCOPE, " ");
   if (
     WHOLE_APP_SCOPE_CLAIM.test(rest) ||
@@ -2978,6 +3080,120 @@ function applyScopedAppRuleGates(dto, scopedSplit, ctx = {}) {
   return dto;
 }
 
+function hasOnlyPotentialTypedScopeBlocker(dto) {
+  const confirmation = dto && dto.userFacingConfirmation && typeof dto.userFacingConfirmation === "object"
+    ? dto.userFacingConfirmation
+    : {};
+  return Boolean(
+    dto &&
+      dto.canStartCommitment === true &&
+      dto.clarificationRequired !== true &&
+      dto.followUpQuestionRequired !== true &&
+      !String(dto.clarificationQuestion || "").trim() &&
+      (dto.clarificationOptions || []).length === 0 &&
+      dto.requiresStrongerConfirmation !== true &&
+      !(dto.riskReview && dto.riskReview.requiresHumanConfirmation === true) &&
+      (dto.contentRules || []).length === 0 &&
+      (dto.scopePackages || []).length === 0 &&
+      (dto.contentBrands || []).length === 0 &&
+      (dto.surfaceScope || []).length === 0 &&
+      (dto.contentScope || []).length === 0 &&
+      (dto.cautionMessages || []).length === 0 &&
+      (dto.interpretationNotes || []).length === 0 &&
+      (confirmation.checkThis || []).length === 0 &&
+      (confirmation.safetyNotes || []).length === 0
+  );
+}
+
+function hasExactUserLabel(label, promiseText) {
+  const value = typeof label === "string" ? label.trim() : "";
+  if (
+    !value ||
+    value.length > 64 ||
+    /[\r\n]/.test(value) ||
+    SCOPE_PACKAGE_ID_RE.test(value)
+  ) {
+    return false;
+  }
+  const escaped = escapeRegExp(value);
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, "iu")
+    .test(String(promiseText || ""));
+}
+
+function localAppTargetSelectionCandidate(dto, parsedScope, promiseText, preScopeReady, selectedId) {
+  if (
+    !preScopeReady ||
+    selectedId ||
+    !parsedScope ||
+    parsedScope.kind !== "PACKAGE_PINNED" ||
+    !dto ||
+    !dto.scope ||
+    dto.scope.kind !== "UNRESOLVED" ||
+    dto.scope.unresolvedReason !== "MISSING_EVIDENCE" ||
+    dto.canStartCommitment !== false ||
+    dto.clarificationRequired !== true ||
+    dto.requiresStrongerConfirmation === true ||
+    dto.isPermanentCommitment === true ||
+    (dto.riskReview && dto.riskReview.requiresHumanConfirmation === true) ||
+    dto.policyConflict ||
+    String(dto.scopeKind || "").trim() ||
+    (dto.scopePackages || []).length > 0 ||
+    (dto.contentBrands || []).length > 0 ||
+    (dto.surfaceScope || []).length > 0 ||
+    (dto.contentScope || []).length > 0 ||
+    (dto.cautionMessages || []).length > 0 ||
+    (dto.interpretationNotes || []).length > 0 ||
+    String(dto.clarificationQuestion || "").trim() ||
+    (dto.clarificationOptions || []).length > 0 ||
+    (dto.contentRules || []).length > 0 ||
+    (dto.allowedSummaries || []).length > 0 ||
+    (dto.blockedSummaries || []).length > 0 ||
+    (dto.conditionalSummaries || []).length > 0 ||
+    (dto.confirmationPreview || []).length > 0 ||
+    (dto.userFacingConfirmation && (
+      (dto.userFacingConfirmation.allowed || []).length > 0 ||
+      (dto.userFacingConfirmation.blocked || []).length > 0 ||
+      (dto.userFacingConfirmation.checkThis || []).length > 0 ||
+      (dto.userFacingConfirmation.safetyNotes || []).length > 0
+    ))
+  ) {
+    return null;
+  }
+
+  const includes = Array.isArray(parsedScope.include) ? parsedScope.include : [];
+  const packages = includes.flatMap((clause) =>
+    clause && Array.isArray(clause.packages) ? clause.packages : []
+  );
+  const include = includes.length === 1 ? includes[0] : null;
+  const appRules = Array.isArray(dto.suggestedAppRules) ? dto.suggestedAppRules : [];
+  const appRule = appRules.length === 1 ? appRules[0] : null;
+  if (
+    parsedScope.resolution !== "EXCLUSIVE" ||
+    parsedScope.identity !== "ANY" ||
+    !Array.isArray(parsedScope.exempt) ||
+    parsedScope.exempt.length !== 0 ||
+    !include ||
+    include.host !== "ANY_HOST" ||
+    include.identity !== "ANY" ||
+    !Array.isArray(include.surfaces) ||
+    include.surfaces.length !== 1 ||
+    include.surfaces[0] !== "ANY" ||
+    (Array.isArray(include.sites) && include.sites.length > 0) ||
+    packages.length !== 1 ||
+    typeof packages[0] !== "string" ||
+    !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(packages[0]) ||
+    !appRule ||
+    appRule.packageName !== packages[0] ||
+    appRule.behavior !== "BLOCK" ||
+    classifyAppScope(appRule.scope) !== "whole_app" ||
+    !hasExactUserLabel(appRule.label, promiseText)
+  ) {
+    return null;
+  }
+
+  return { kind: "WHOLE_APP_BLOCK", label: appRule.label.trim() };
+}
+
 function contentTypeToSurface(type) {
   switch (type) {
     case "short_form_video":
@@ -3206,11 +3422,16 @@ function knownAppLabel(packageName) {
   const known = {
     "com.google.android.youtube": "YouTube",
     "org.schabi.newpipe": "NewPipe",
+    "app.netmirror.newtv": "NetMirror",
     "com.instagram.android": "Instagram",
     "com.facebook.katana": "Facebook",
+    "com.facebook.orca": "Messenger",
     "com.whatsapp": "WhatsApp",
     "com.android.chrome": "Chrome",
     "org.telegram.messenger": "Telegram",
+    "com.google.android.gm": "Gmail",
+    "com.google.android.apps.drive": "Google Drive",
+    "com.google.android.apps.docs": "Google Docs",
     "com.zhiliaoapp.musically": "TikTok",
     "com.twitter.android": "X",
     "com.netflix.mediaclient": "Netflix",
@@ -3541,6 +3762,7 @@ function stripFalseUnrecognizedWarnings(dto, selectedId) {
 
 function clearGhostClarificationIfConcrete(dto) {
   if (!dto || typeof dto !== "object") return dto;
+  if (dto.lockAttemptThresholdInvalid) return dto;
   // Concrete clocks say nothing about WHERE a v1 promise applies.
   if (dto.scopeContract === "v1" && !isEnforceableScope(dto.scope)) return dto;
   const options = Array.isArray(dto.clarificationOptions)
@@ -4239,10 +4461,9 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
   if (shortsClarify && !googleClarify) {
     // Server-built A/B only: model-authored shorts options carried their own typed
     // scopes and often collapsed both choices to SHORT_FORM_ANY_HOST.
+    // The question must ask what these options answer (the model's often asked block vs warn).
     clarificationOptions = normalizeClarificationOptions(shortsClarify.options);
-    if (!clarificationQuestion) {
-      clarificationQuestion = shortsClarify.question;
-    }
+    clarificationQuestion = shortsClarify.question;
   }
 
   const selectedClarifyId =
@@ -4482,6 +4703,8 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
   // Keep packages out of the nested confirmation object shown to primary UI helpers.
   userFacingConfirmation.hiddenInternalScope = [];
 
+  const lockAttemptPolicy = normalizedLockAttemptThreshold(parsed);
+
   const dto = {
     rawText: promiseText,
     cleanedPromiseText,
@@ -4509,6 +4732,8 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
     // Never strip emergency exceptions — fail-closed safety path (CK-EMERGENCY).
     emergencyExceptions: normalizeEmergencyExceptions(parsed.emergencyExceptions),
     sessionDurationMinutes: durationMapped.minutes,
+    lockAttemptThreshold: lockAttemptPolicy.value,
+    lockAttemptThresholdInvalid: lockAttemptPolicy.invalid,
     timeWindowKind: durationMapped.timeWindowKind,
     quotaBoundary: QUOTA_BOUNDARY,
     strictness,
@@ -4548,6 +4773,17 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
     requiresStrongerConfirmation: permanent || lowTranscript,
     isStudyModeLike: looksLikeStudyMode(parsed),
   };
+
+  if (dto.lockAttemptThresholdInvalid) {
+    dto.clarificationRequired = true;
+    dto.clarificationQuestion =
+      "I can only safely lock after 1 to 100 attempts. Edit the promise to choose a supported number.";
+    dto.cautionMessages = uniqueStrings([
+      ...dto.cautionMessages,
+      "The requested lock-after-attempt count is outside the supported range.",
+    ]);
+    dto.canStartCommitment = false;
+  }
 
   const selectedId =
     typeof options.selectedClarificationOptionId === "string"
@@ -4623,6 +4859,7 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
       dto.optionVerification = resolution.reason;
       dto.optionVerificationReason = resolution.reason;
       dto.clarificationRequired = false;
+      dto.clarificationQuestion = null;
       dto.ambiguityLevel = "low";
       if (dto.riskReview && typeof dto.riskReview === "object") {
         dto.riskReview = {
@@ -4687,6 +4924,7 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
   stripPackageLeaksFromDto(dto, promiseText);
   applyYouTubeContentOrAppScope(dto, promiseText);
   applyFailClosedStartGates(dto);
+  const localAppTargetPreScopeReady = hasOnlyPotentialTypedScopeBlocker(dto);
   // Last: nothing after this may reopen Start on a missing/unresolved v1 scope.
   applyScopeContract(dto, parsed, {
     promptVersion: options.promptVersion || PROMPT_VERSION,
@@ -4706,6 +4944,16 @@ function normalizeCompiledPromise(parsed, rawText, options = {}, trusted = {}) {
     selectedId,
     contract: scopeContractFor(options.promptVersion || PROMPT_VERSION),
   });
+  const localAppTargetSelection = localAppTargetSelectionCandidate(
+    dto,
+    parsed && parsed.scope,
+    promiseText,
+    localAppTargetPreScopeReady,
+    selectedId
+  );
+  if (localAppTargetSelection) {
+    dto.localAppTargetSelection = localAppTargetSelection;
+  }
   return dto;
 }
 
@@ -5286,9 +5534,9 @@ async function compilePromise(rawPromise, options = {}) {
     console.error(
       JSON.stringify({
         event: "compile_promise_api_error",
-        message: apiErr.message,
+        errorName: (apiErr && apiErr.name) || "Error",
+        upstreamStatus: apiErr && typeof apiErr.status === "number" ? apiErr.status : null,
         promiseLength: safe.length,
-        promisePreview: safe.preview,
       })
     );
     const err = new Error("Promise compiler model request failed");
@@ -5366,7 +5614,6 @@ async function compilePromise(rawPromise, options = {}) {
       typedScopeKind: normalized.scope ? normalized.scope.kind : null,
       typedScopeUnresolvedReason: normalized.scope ? normalized.scope.unresolvedReason || null : null,
       promiseLength: safe.length,
-      promisePreview: safe.preview,
       sessionDurationMinutes: normalized.sessionDurationMinutes,
       strictness: normalized.strictness,
     })

@@ -23,12 +23,28 @@ local.properties
 !.env.example
 .android-cloud-phone-creds.txt
 .android-cloud-phone/
-.tmp-phone-debug/
-.tmp-azure-deploy/
-.tmp-phone-verify-*/
-.tmp-azure-*/
-.tmp-deployed-inspect-*/
+
+# Local scratch: phone dumps, Azure zip unpacks, harness logs, screenshots
+.tmp*/
+.tmp-*.log
 phone_screen_*.png
+/phone_*.png
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/captures/
 
 __pycache__/
 *.pyc
+
+# Firebase (never commit)
+app/google-services.json
+**/google-services.json
+
+secrets/
+
+*.log.err
+phonecodex-p0-auth-scaffold-*.tar.gz
+backend/*.err.log
+backend/*.out.log

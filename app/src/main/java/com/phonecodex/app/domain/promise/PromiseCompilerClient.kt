@@ -3,6 +3,7 @@ package com.phonecodex.app.domain.promise
 import android.util.Log
 import com.phonecodex.app.domain.diagnostics.BackendConfig
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
+import com.phonecodex.app.domain.diagnostics.diagnosticErrorKind
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -103,7 +104,7 @@ class PromiseCompilerClient(
                 } catch (_: Exception) {
                     "HTTP $code"
                 }
-                Log.w(TAG, "compile failure HTTP $code: ${errMsg.take(120)}")
+                Log.w(TAG, "compile failure HTTP $code")
                 throw PromiseCompilerException(errMsg, code)
             }
 
@@ -118,7 +119,7 @@ class PromiseCompilerClient(
         } catch (err: PromiseCompilerException) {
             throw err
         } catch (err: Exception) {
-            Log.w(TAG, "compile failure network: ${err.message}")
+            Log.w(TAG, "compile failure network: ${diagnosticErrorKind(err)}")
             throw PromiseCompilerException(err.message ?: "network error", cause = err)
         } finally {
             connection.disconnect()

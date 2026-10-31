@@ -75,7 +75,9 @@ data class StudyWorldSettings(
      * Default OFF. Still requires [VisionExperiment] calendar window.
      * Not a promise clock — [StudyWorldSettingsStore.replaceSettings] must not wipe it.
      */
-    val visionExperimentEnabled: Boolean = false
+    val visionExperimentEnabled: Boolean = false,
+    /** True only when the user chose a lock threshold override in Advanced Controls. */
+    val lockAttemptThresholdCustomized: Boolean = false
 ) {
     val typedScopeRecord: TypedScopeRecord
         get() = when {

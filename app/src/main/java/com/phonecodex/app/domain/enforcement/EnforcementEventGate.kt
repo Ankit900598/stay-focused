@@ -50,7 +50,8 @@ object EnforcementEventGate {
         if (classificationInFlight) return true
         if (packageName != lastRequestPackage) return false
         if (lastRequestAtMillis <= 0L) return false
-        return nowMillis - lastRequestAtMillis < minIntervalMs
+        val requestAgeMillis = nowMillis - lastRequestAtMillis
+        return requestAgeMillis >= 0L && requestAgeMillis < minIntervalMs
     }
 
     fun shouldUseCachedClassification(
@@ -65,6 +66,7 @@ object EnforcementEventGate {
         if (packageName != lastPackage) return false
         if (textSignature != lastSignature) return false
         if (lastClassifiedAtMillis <= 0L) return false
-        return nowMillis - lastClassifiedAtMillis < cacheTtlMs
+        val classificationAgeMillis = nowMillis - lastClassifiedAtMillis
+        return classificationAgeMillis >= 0L && classificationAgeMillis < cacheTtlMs
     }
 }

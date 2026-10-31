@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.phonecodex.app.accessibility.AccessibilityHealthChecker
 import com.phonecodex.app.data.AccessibilityHeartbeat
 import com.phonecodex.app.data.AppRulesStore
+import com.phonecodex.app.data.AccessibilityDisclosureConsentStore
 import com.phonecodex.app.data.CommitmentTeardown
 import com.phonecodex.app.data.EmergencyExitStore
 import com.phonecodex.app.data.DebugState
@@ -28,10 +29,15 @@ import com.phonecodex.app.data.RuntimeDiagStore
 import com.phonecodex.app.data.SafeAppsStore
 import com.phonecodex.app.data.SessionStore
 import com.phonecodex.app.data.StudyWorldSettingsStore
+import com.phonecodex.app.domain.delegation.MailDelegationIntent
+import com.phonecodex.app.domain.delegation.MailDelegationOfferLaw
+import com.phonecodex.app.domain.delegation.MailDelegationRequest
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
 import com.phonecodex.app.domain.diagnostics.BackendProbeKind
 import com.phonecodex.app.domain.diagnostics.BackendProbeResult
+import com.phonecodex.app.domain.diagnostics.diagnosticErrorKind
 import com.phonecodex.app.domain.model.AppRule
+import com.phonecodex.app.domain.model.ConfirmedSessionPolicy
 import com.phonecodex.app.domain.model.AppRuleBehavior
 import com.phonecodex.app.domain.model.FeedbackEntry
 import com.phonecodex.app.domain.model.FocusPromise
@@ -52,24 +58,29 @@ import com.phonecodex.app.domain.promise.ClarificationChoiceCarry
 import com.phonecodex.app.domain.promise.ClarificationChoiceSnapshot
 import com.phonecodex.app.domain.promise.CompiledPromiseMapper
 import com.phonecodex.app.domain.promise.ConfirmedPromiseBinder
+import com.phonecodex.app.domain.promise.EffectivePromisePolicy
 import com.phonecodex.app.domain.promise.FocusPromiseParser
 import com.phonecodex.app.domain.promise.LegacyScopeContractGuard
 import com.phonecodex.app.domain.promise.PromiseCompilerClient
 import com.phonecodex.app.domain.promise.PromiseTextCleanup
 import com.phonecodex.app.domain.promise.PromiseUnderstandingRequestGate
+import com.phonecodex.app.domain.promise.LocalAppTargetSelectionLaw
 import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
 import com.phonecodex.app.domain.promise.PromiseUnderstandingResolver
 import com.phonecodex.app.domain.scope.TypedScopeRecord
 import com.phonecodex.app.domain.session.CommitmentExitGate
+import com.phonecodex.app.domain.session.ConfirmedSessionPolicyCodec
 import com.phonecodex.app.domain.session.EmergencyExitGate
 import com.phonecodex.app.domain.session.ExitFriction
 import com.phonecodex.app.domain.session.SessionManager
 import com.phonecodex.app.protection.ProtectionHeartbeatController
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 /**
  * Home screen state holder. Store I/O lives here (and in polling effects) — never inside
@@ -98,7 +109,16 @@ internal class HomeScreenState(
     val emergencyExitStore: EmergencyExitStore = EmergencyExitStore(context),
     val recoveryPolicy: RecoveryPolicy = RecoveryPolicyDefaults.default()
 ) {
-    private val commitmentTeardown = CommitmentTeardown(sessionStore, appRulesStore, eventLogStore::addEvent)
+    private val commitmentTeardown = CommitmentTeardown(
+        sessionStore,
+        appRulesStore,
+        eventLogStore::addEvent,
+        studyWorldSettingsStore
+    )
+    private val voiceInputRequestGate = PromiseUnderstandingRequestGate()
+
+    /** Delegated mail helper; attached by [HomeScreen]. Null in previews/tests. */
+    var mailTask: MailTaskUiState? = null
 
     var promiseText by mutableStateOf("")
     var promiseUnderstanding by mutableStateOf<PromiseUnderstanding?>(null)
@@ -140,13 +160,26 @@ internal class HomeScreenState(
     var appRules by mutableStateOf<List<AppRule>>(emptyList())
     var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     var installedAppsLoading by mutableStateOf(false)
+    var installedAppsLoaded by mutableStateOf(false)
+    var installedAppsLoadError by mutableStateOf<String?>(null)
     var installedAppsSearch by mutableStateOf("")
+    var localAppTargetLookupRequested by mutableStateOf(false)
+    val localAppTargetMatches: List<InstalledApp>
+        get() {
+            val candidate = promiseDraft?.localAppTargetSelection ?: return emptyList()
+            if (!localAppTargetLookupRequested || !installedAppsLoaded) return emptyList()
+            return LocalAppTargetSelectionLaw.exactMatches(installedApps, candidate.label)
+        }
     var studyWorldSettings by mutableStateOf(DEFAULT_STUDY_SETTINGS)
     var permanentGuardrails by mutableStateOf<List<PermanentGuardrail>>(emptyList())
     var safeApps by mutableStateOf<List<SafeApp>>(emptyList())
     var safeAppsSearch by mutableStateOf("")
     var isAccessibilityEnabled by mutableStateOf(false)
     var isAccessibilityAlive by mutableStateOf(false)
+    var showAccessibilityDisclosure by mutableStateOf(false)
+        private set
+    var accessibilityDisclosureSaveFailed by mutableStateOf(false)
+        private set
     var lastHeartbeatMillis by mutableStateOf(0L)
     var lastHeartbeatPackage by mutableStateOf("")
     var lastHeartbeatReason by mutableStateOf("")
@@ -159,6 +192,7 @@ internal class HomeScreenState(
     private var lastBackendSuccessElapsedMs: Long? = null
     private var lastProbeAttemptElapsedMs: Long = 0L
     private var backendAutoProbeStarted: Boolean = false
+    private var lastProtectionStatusLogKey: String? = null
     var showAdvancedControls by mutableStateOf(false)
     var showAdvancedEngineering by mutableStateOf(false)
     var isBootstrapped by mutableStateOf(false)
@@ -184,6 +218,50 @@ internal class HomeScreenState(
     val protectionReliability: ProtectionReliabilityUiModel
         get() = ProtectionReliabilityGate.evaluate(protectionReliabilityInput())
 
+    suspend fun refreshAccessibilityStatus(source: String = "unspecified") {
+        val previousEnabled = isAccessibilityEnabled
+        val previousAlive = isAccessibilityAlive
+        val snapshot = withContext(Dispatchers.IO) {
+            Pair(
+                AccessibilityHealthChecker.isPhoneCodexAccessibilityEnabled(context),
+                runtimeDiagStore.getHeartbeat()
+            )
+        }
+        if (snapshot.first != isAccessibilityEnabled) {
+            isAccessibilityEnabled = snapshot.first
+        }
+        if (snapshot.second.serviceAlive != isAccessibilityAlive) {
+            isAccessibilityAlive = snapshot.second.serviceAlive
+        }
+        if (snapshot.second.lastEventMillis != lastHeartbeatMillis) {
+            lastHeartbeatMillis = snapshot.second.lastEventMillis
+            lastHeartbeatPackage = snapshot.second.packageName
+            lastHeartbeatReason = snapshot.second.reason
+        }
+        val now = System.currentTimeMillis()
+        if (now != nowMillis) nowMillis = now
+        val model = protectionReliability
+        val statusLogKey = listOf(
+            model.level,
+            isBootstrapped,
+            isAccessibilityEnabled,
+            isAccessibilityAlive,
+            hasStoredSession,
+            enabledGuardrailCount
+        ).joinToString("|")
+        if (statusLogKey != lastProtectionStatusLogKey) {
+            lastProtectionStatusLogKey = statusLogKey
+            Log.i(
+                TAG_PROTECTION_STATUS,
+                "refresh=$source previousEnabled=$previousEnabled previousAlive=$previousAlive " +
+                    "enabled=$isAccessibilityEnabled alive=$isAccessibilityAlive " +
+                    "session=$hasStoredSession guardrails=$enabledGuardrailCount " +
+                    "initialized=$isBootstrapped level=${model.level} " +
+                    runtimeDiagStore.serviceLeaseDiagnostics()
+            )
+        }
+    }
+
     fun protectionReliabilityInput(): ProtectionReliabilityInput =
         ProtectionReliabilityInput(
             accessibilityEnabled = isAccessibilityEnabled,
@@ -197,7 +275,8 @@ internal class HomeScreenState(
             backendLoopback = ProtectionReliabilityGate.backendLoopback(),
             nowMillis = nowMillis,
             commitmentScopeUnverified =
-                studyWorldSettings.typedScopeRecord == TypedScopeRecord.CORRUPT
+                studyWorldSettings.typedScopeRecord == TypedScopeRecord.CORRUPT,
+            statusInitialized = isBootstrapped
         )
 
     val developerDiagnostics: DeveloperDiagnosticsUiModel
@@ -220,8 +299,29 @@ internal class HomeScreenState(
         }
     }
 
+    fun openPrivacyPolicy() {
+        launchPrivacyPolicy(context)
+    }
+
     fun openAccessibilitySettings() {
-        openAccessibilitySettings(context)
+        accessibilityDisclosureSaveFailed = false
+        showAccessibilityDisclosure = true
+    }
+
+    fun dismissAccessibilityDisclosure() {
+        accessibilityDisclosureSaveFailed = false
+        showAccessibilityDisclosure = false
+    }
+
+    fun continueToAccessibilitySettings() {
+        if (!showAccessibilityDisclosure) return
+        if (!AccessibilityDisclosureConsentStore(context).acceptCurrentDisclosure()) {
+            accessibilityDisclosureSaveFailed = true
+            return
+        }
+        accessibilityDisclosureSaveFailed = false
+        showAccessibilityDisclosure = false
+        launchAccessibilitySettings(context)
     }
 
     /**
@@ -236,6 +336,9 @@ internal class HomeScreenState(
             val heartbeat = runtimeDiagStore.getHeartbeat()
             val storedSession = sessionStore.getStoredSession()
             appRulesStore.restoreStaleCommitmentRules(hasActiveSession = storedSession != null)
+                .eventMessage?.let(eventLogStore::addEvent)
+            studyWorldSettingsStore
+                .restoreStaleCommitmentTuningDefaults(hasActiveSession = storedSession != null)
                 .eventMessage?.let(eventLogStore::addEvent)
             BootstrapSnapshot(
                 session = storedSession,
@@ -284,28 +387,86 @@ internal class HomeScreenState(
     }
 
     fun loadInstalledApps(coroutineScope: CoroutineScope) {
-        if (installedAppsLoading) return
+        if (installedAppsLoading || (installedAppsLoaded && installedAppsLoadError == null)) return
         installedAppsLoading = true
+        installedAppsLoadError = null
         coroutineScope.launch {
             val started = SystemClock.elapsedRealtime()
-            val apps = withContext(Dispatchers.Default) {
-                installedAppsReader.getLaunchableApps()
+            try {
+                val apps = withContext(Dispatchers.Default) {
+                    installedAppsReader.getLaunchableApps()
+                }
+                installedApps = apps
+                installedAppsLoaded = true
+                Log.d(
+                    "PhoneCodexUIPerf",
+                    "installedAppsLoad=${SystemClock.elapsedRealtime() - started}ms count=${apps.size}"
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                installedAppsLoaded = false
+                installedAppsLoadError = "Couldn't load apps with a launcher icon on this phone. Try again or edit the promise."
+                Log.w("PhoneCodexAppPicker", "Installed-app lookup failed: ${error.javaClass.simpleName}")
+            } finally {
+                installedAppsLoading = false
             }
-            installedApps = apps
-            installedAppsLoading = false
-            Log.d(
-                "PhoneCodexUIPerf",
-                "installedAppsLoad=${SystemClock.elapsedRealtime() - started}ms count=${apps.size}"
-            )
         }
     }
 
+    fun requestLocalAppTargetLookup(coroutineScope: CoroutineScope) {
+        refreshLocalAppTargetLookup(coroutineScope)
+    }
+
+    fun refreshLocalAppTargetLookup(coroutineScope: CoroutineScope) {
+        if (promiseDraft?.localAppTargetSelection == null) return
+        localAppTargetLookupRequested = true
+        installedAppsLoaded = false
+        installedAppsLoadError = null
+        loadInstalledApps(coroutineScope)
+    }
+
+    fun selectLocalAppTarget(app: InstalledApp) {
+        val draft = promiseDraft ?: return
+        val uniqueMatch = localAppTargetMatches.singleOrNull()
+        if (uniqueMatch?.packageName != app.packageName) {
+            startBlockedMessage = "That app is not a unique exact match. Choose again or edit the promise."
+            return
+        }
+        if (!LocalAppTargetSelectionLaw.canSelect(app)) {
+            startBlockedMessage = "This phone-safety app stays available and can't be blocked by this promise."
+            return
+        }
+        val bound = LocalAppTargetSelectionLaw.bindSelectedApp(draft, app)
+        if (bound == null) {
+            startBlockedMessage = "The app target no longer matches this preview. Edit the promise and understand it again."
+            return
+        }
+        promiseDraft = bound
+        selectedClarificationOptionId = null
+        strongerConfirmAcknowledged = false
+        localAppTargetLookupRequested = false
+        startBlockedMessage = null
+        promiseUnderstanding = buildPromiseUnderstanding(
+            draft = bound,
+            alwaysBlockedLabels = enabledGuardrails.map(::guardrailBlockedLabel),
+            source = UnderstandingSource.PROMISE_COMPILER,
+            selectedClarificationOptionId = null,
+            strongerConfirmAcknowledged = false,
+            existingAppRules = appRulesStore.getRules(),
+            fallbackLockAttemptThreshold = studyWorldSettings.lockAttemptThreshold
+                .takeIf { studyWorldSettings.lockAttemptThresholdCustomized }
+        )
+    }
+
     fun selectExamplePromise(example: ExamplePromise) {
+        voiceInputRequestGate.invalidate()
         promiseText = example.promiseText
         clearUnderstanding()
     }
 
     fun updatePromiseText(text: String) {
+        voiceInputRequestGate.invalidate()
         promiseText = PromiseTextCleanup.normalizeTyped(text)
         voiceInputStatus = null
         if (promiseUnderstanding != null || understandingInProgress) {
@@ -313,7 +474,8 @@ internal class HomeScreenState(
         }
     }
 
-    fun applyVoiceTranscript(transcript: String) {
+    fun applyVoiceTranscript(transcript: String, requestVersion: Long) {
+        if (!voiceInputRequestGate.isCurrent(requestVersion)) return
         val cleanTranscript = PromiseTextCleanup.normalizeTyped(transcript.trim())
         if (cleanTranscript.isEmpty()) {
             voiceInputStatus = "I did not hear a promise. Try again or type it."
@@ -325,11 +487,22 @@ internal class HomeScreenState(
         clearUnderstanding()
     }
 
-    fun beginVoiceCapture() {
-        voiceInputStatus = "Listening…"
+    fun beginVoiceCapture(status: String = "Listening…"): Long {
+        val requestVersion = voiceInputRequestGate.begin()
+        voiceInputStatus = status
+        return requestVersion
     }
 
-    fun markVoiceInputUnavailable(message: String) {
+    fun isVoiceCaptureCurrent(requestVersion: Long): Boolean =
+        voiceInputRequestGate.isCurrent(requestVersion)
+
+    fun markVoiceInputUnavailable(message: String, requestVersion: Long) {
+        if (voiceInputRequestGate.isCurrent(requestVersion)) voiceInputStatus = message
+    }
+
+    fun cancelVoiceCapture(requestVersion: Long, message: String) {
+        if (!voiceInputRequestGate.isCurrent(requestVersion)) return
+        voiceInputRequestGate.invalidate()
         voiceInputStatus = message
     }
 
@@ -339,11 +512,18 @@ internal class HomeScreenState(
         if (text != promiseText) {
             promiseText = text
         }
+        // "…but let me ask Strlix to check mail from X" is a delegated-task request, decided
+        // on-device. Only the enforcement part goes to the Promise Compiler.
+        val mailRequest = MailDelegationIntent.detect(text)
+        val commitmentText = mailRequest.commitmentText
+        val fallbackDurationMinutes = studyWorldSettings.durationMinutes
+        val fallbackLockAttemptThreshold = studyWorldSettings.lockAttemptThreshold
+            .takeIf { studyWorldSettings.lockAttemptThresholdCustomized }
 
         val scope = diagnosticsScope
         if (scope == null) {
             Log.w(TAG_UNDERSTAND, "compile skipped — no coroutine scope; using local fallback")
-            applyLocalUnderstanding(text)
+            applyLocalUnderstanding(commitmentText, mailRequest)
             return
         }
 
@@ -352,6 +532,7 @@ internal class HomeScreenState(
         understandingInProgress = true
         promiseUnderstanding = null
         promiseDraft = null
+        localAppTargetLookupRequested = false
         startBlockedMessage = null
         if (selectedOptionId == null) {
             selectedClarificationOptionId = null
@@ -368,14 +549,14 @@ internal class HomeScreenState(
         // Read carry state on the main thread before launching.
         val choicePayload = selectedOptionId
             ?.takeIf { it.isNotBlank() }
-            ?.let { ClarificationChoiceCarry.payloadFor(it, text, lastClarificationSnapshot) }
+            ?.let { ClarificationChoiceCarry.payloadFor(it, commitmentText, lastClarificationSnapshot) }
 
         scope.launch {
             try {
                 val compiledResult = withContext(Dispatchers.IO) {
                     runCatching {
                         promiseCompilerClient.compile(
-                            promise = text,
+                            promise = commitmentText,
                             selectedClarificationOptionId = selectedOptionId,
                             selectedClarificationOptionFullTextJson = choicePayload?.selectedOptionJson,
                             priorClarificationOptionsSnapshotJson = choicePayload?.snapshotJson,
@@ -391,7 +572,7 @@ internal class HomeScreenState(
                 compiledResult.fold(
                     onSuccess = {
                         lastClarificationSnapshot =
-                            ClarificationChoiceCarry.snapshotFrom(text, it.clarificationOptionsRawJson)
+                            ClarificationChoiceCarry.snapshotFrom(commitmentText, it.clarificationOptionsRawJson)
                         Log.i(
                             TAG_UNDERSTAND,
                             "compile success v=$requestVersion clarificationRequired=${it.clarificationRequired} " +
@@ -403,17 +584,18 @@ internal class HomeScreenState(
                     onFailure = { err ->
                         Log.w(
                             TAG_UNDERSTAND,
-                            "compile failure v=$requestVersion — fallback used: ${err.message}"
+                            "compile failure v=$requestVersion — fallback used: ${diagnosticErrorKind(err)}"
                         )
                     }
                 )
 
                 val resolved = PromiseUnderstandingResolver.resolve(
-                    text = text,
+                    text = commitmentText,
                     compiledResult = compiledResult,
                     parser = focusPromiseParser,
                     selectedClarificationOptionId = selectedOptionId,
-                    namedPackageHint = namedPackageHint()
+                    namedPackageHint = namedPackageHint(),
+                    fallbackDurationMinutes = fallbackDurationMinutes
                 )
 
                 if (!understandingRequestGate.isCurrent(requestVersion)) {
@@ -421,10 +603,12 @@ internal class HomeScreenState(
                     return@launch
                 }
 
-                promiseDraft = resolved.draft
+                val draft = MailDelegationOfferLaw.withDeterministicGmailBlock(resolved.draft)
+                promiseDraft = draft
+                mailTask?.onPreview(mailRequest, draft)
                 selectedClarificationOptionId = selectedOptionId
                 promiseUnderstanding = buildPromiseUnderstanding(
-                    draft = resolved.draft,
+                    draft = draft,
                     alwaysBlockedLabels = enabledGuardrails.map(::guardrailBlockedLabel),
                     source = if (resolved.fromCompiler) {
                         UnderstandingSource.PROMISE_COMPILER
@@ -432,13 +616,15 @@ internal class HomeScreenState(
                         UnderstandingSource.LOCAL_PREVIEW
                     },
                     selectedClarificationOptionId = selectedOptionId,
-                    strongerConfirmAcknowledged = strongerConfirmAcknowledged
+                    strongerConfirmAcknowledged = strongerConfirmAcknowledged,
+                    existingAppRules = appRulesStore.getRules(),
+                    fallbackLockAttemptThreshold = fallbackLockAttemptThreshold
                 )
                 Log.i(
                     TAG_UNDERSTAND,
                     "preview ready source=${if (resolved.fromCompiler) "AI" else "local"} " +
                         "canStart=${promiseUnderstanding?.canStart} " +
-                        "clarificationRequired=${resolved.draft.needsClarification}"
+                        "clarificationRequired=${draft.needsClarification}"
                 )
             } finally {
                 if (understandingRequestGate.isCurrent(requestVersion)) {
@@ -463,24 +649,34 @@ internal class HomeScreenState(
             alwaysBlockedLabels = enabledGuardrails.map(::guardrailBlockedLabel),
             source = promiseUnderstanding?.source ?: UnderstandingSource.PROMISE_COMPILER,
             selectedClarificationOptionId = selectedClarificationOptionId,
-            strongerConfirmAcknowledged = acknowledged
+            strongerConfirmAcknowledged = acknowledged,
+            existingAppRules = appRulesStore.getRules(),
+            fallbackLockAttemptThreshold = studyWorldSettings.lockAttemptThreshold
+                .takeIf { studyWorldSettings.lockAttemptThresholdCustomized }
         )
     }
 
-    private fun applyLocalUnderstanding(text: String) {
+    private fun applyLocalUnderstanding(text: String, mailRequest: MailDelegationRequest) {
         val resolved = PromiseUnderstandingResolver.resolve(
             text = text,
             compiledResult = Result.failure(IllegalStateException("no coroutine scope")),
             parser = focusPromiseParser,
-            namedPackageHint = namedPackageHint()
+            namedPackageHint = namedPackageHint(),
+            fallbackDurationMinutes = studyWorldSettings.durationMinutes
         )
-        promiseDraft = resolved.draft
+        val draft = MailDelegationOfferLaw.withDeterministicGmailBlock(resolved.draft)
+        promiseDraft = draft
+        localAppTargetLookupRequested = false
+        mailTask?.onPreview(mailRequest, draft)
         promiseUnderstanding = buildPromiseUnderstanding(
-            draft = resolved.draft,
+            draft = draft,
             alwaysBlockedLabels = enabledGuardrails.map(::guardrailBlockedLabel),
             source = UnderstandingSource.LOCAL_PREVIEW,
             selectedClarificationOptionId = null,
-            strongerConfirmAcknowledged = false
+            strongerConfirmAcknowledged = false,
+            existingAppRules = appRulesStore.getRules(),
+            fallbackLockAttemptThreshold = studyWorldSettings.lockAttemptThreshold
+                .takeIf { studyWorldSettings.lockAttemptThresholdCustomized }
         )
         startBlockedMessage = null
         selectedClarificationOptionId = null
@@ -488,8 +684,8 @@ internal class HomeScreenState(
         lastClarificationSnapshot = null
         Log.i(
             TAG_UNDERSTAND,
-            "local-only preview canStart=${!resolved.draft.needsClarification} " +
-                "clarificationRequired=${resolved.draft.needsClarification}"
+            "local-only preview canStart=${!draft.needsClarification} " +
+                "clarificationRequired=${draft.needsClarification}"
         )
     }
 
@@ -503,19 +699,27 @@ internal class HomeScreenState(
         understandingRequestGate.invalidate()
         promiseUnderstanding = null
         promiseDraft = null
+        localAppTargetLookupRequested = false
         selectedClarificationOptionId = null
         strongerConfirmAcknowledged = false
         startBlockedMessage = null
         lastClarificationSnapshot = null
         understandingInProgress = false
+        mailTask?.resetPreview()
     }
 
     fun startCommitment() {
         val draft = promiseDraft ?: return
         val understanding = promiseUnderstanding
 
+        EffectivePromisePolicy.savedWholeAppRuleConflict(draft, appRulesStore.getRules())?.let {
+            startBlockedMessage = it
+            return
+        }
+
         if (understanding != null && !understanding.canStart) {
             startBlockedMessage = when {
+                understanding.startBlockReason != null -> understanding.startBlockReason
                 draft.legacyContractGap != null -> LegacyScopeContractGuard.START_BLOCKED_COPY
                 understanding.clarificationOptions.isNotEmpty() &&
                     understanding.selectedClarificationOptionId.isNullOrBlank() ->
@@ -543,12 +747,36 @@ internal class HomeScreenState(
             return
         }
 
+        mailTask?.startBlockReason()?.let {
+            startBlockedMessage = it
+            return
+        }
+
+        val visibleAppLabels = ConfirmationUserCopy.userVisibleAppLabels(draft)
+            .map { it.lowercase(Locale.ROOT) }
+            .toSet()
+        val confirmedPolicy = ConfirmedSessionPolicy(
+            appRules = draft.suggestedAppRules.filter {
+                it.label.trim().lowercase(Locale.ROOT) in visibleAppLabels
+            }.toList(),
+            contentRules = draft.contentRules.toList()
+        )
+        if (ConfirmedSessionPolicyCodec.encode(confirmedPolicy) == null) {
+            startBlockedMessage =
+                "This promise has too many or unsupported rules to save safely. Simplify it and review the preview again."
+            return
+        }
+
         startBlockedMessage = null
 
         val bound = applyFocusPromiseDraft(
             draft = draft,
             studyWorldSettingsStore = studyWorldSettingsStore
-        )
+        ) ?: run {
+            startBlockedMessage =
+                "I couldn't safely preserve your saved session settings, so nothing was started. Reopen Strlix and try again."
+            return
+        }
         appRulesStore.applyCommitmentSuggestions(draft.suggestedAppRules)
             .eventMessage?.let(eventLogStore::addEvent)
         appRules = appRulesStore.getRules()
@@ -561,13 +789,18 @@ internal class HomeScreenState(
             goal = goal,
             durationMillis = ConfirmedPromiseBinder.sessionDurationMillis(draft, bound, startedAt),
             nowMillis = startedAt
-        ).copy(promiseStrictness = draft.strictness)
+        ).copy(
+            promiseStrictness = draft.strictness,
+            confirmedPolicy = confirmedPolicy
+        )
         sessionStore.saveActiveSession(started)
         session = started
+        mailTask?.bindToSession(started)
         ProtectionHeartbeatController.start(context)
 
         promiseUnderstanding = null
         promiseDraft = null
+        localAppTargetLookupRequested = false
     }
 
     /** Tap on "End Commitment". Soft/expired ends now; Strict/Locked opens a confirm step. */
@@ -643,8 +876,10 @@ internal class HomeScreenState(
         exitPhraseError = null
         pendingEmergencyExit = false
         appRules = appRulesStore.getRules()
+        studyWorldSettings = studyWorldSettingsStore.getSettings()
         session = sessionStore.getStoredSession()
         if (session == null) {
+            mailTask?.onCommitmentEnded()
             ProtectionHeartbeatController.stop(context)
             promiseText = ""
             clearUnderstanding()
@@ -660,7 +895,7 @@ internal class HomeScreenState(
         studyWorldSettings = studyWorldSettingsStore.getSettings()
     }
 
-    fun setLockAttemptThreshold(threshold: Int) {
+    fun setLockAttemptThreshold(threshold: Int?) {
         studyWorldSettingsStore.setLockAttemptThreshold(threshold)
         studyWorldSettings = studyWorldSettingsStore.getSettings()
     }
@@ -897,13 +1132,22 @@ internal class HomeScreenState(
         safeApps = safeAppsStore.getSafeApps()
     }
 
-    fun submitFeedback(correctedDecision: String) {
+    fun submitFeedback(
+        correctedDecision: String,
+        includePrivateContext: Boolean = false
+    ) {
         saveFeedback(
             feedbackStore = feedbackStore,
             debugState = debugState,
-            correctedDecision = correctedDecision
+            correctedDecision = correctedDecision,
+            includePrivateContext = includePrivateContext
         )
         recentFeedback = feedbackStore.getRecentFeedback()
+    }
+
+    fun clearSavedFeedback() {
+        feedbackStore.clearFeedback()
+        recentFeedback = emptyList()
     }
 
     fun updateAppRules(rules: List<AppRule>) {
@@ -981,6 +1225,7 @@ private val DEFAULT_STUDY_SETTINGS = StudyWorldSettings(
 
 private const val TAG_UNDERSTAND = "PromiseUnderstand"
 private const val TAG_PROTECTION_CHECK = "PhoneCodexProtect"
+private const val TAG_PROTECTION_STATUS = "PhoneCodexHealthUi"
 
 @Composable
 internal fun rememberHomeScreenState(): HomeScreenState {

@@ -1,0 +1,280 @@
+{
+  "promise": "Block YouTube for 30 minutes.",
+  "modelScope": {
+    "version": 1,
+    "kind": "APP_ONLY",
+    "resolution": "EXCLUSIVE",
+    "identity": "YOUTUBE",
+    "include": [
+      {
+        "id": "i1",
+        "host": "NATIVE_APP",
+        "identity": "YOUTUBE",
+        "surfaces": [
+          "ANY"
+        ],
+        "sites": [],
+        "packages": [
+          "com.google.android.youtube"
+        ],
+        "packageMatch": "PINNED"
+      }
+    ],
+    "exempt": [],
+    "confidence": 0.9,
+    "evidenceSpans": [
+      "Block YouTube"
+    ]
+  },
+  "response": {
+    "rawText": "Block YouTube for 30 minutes.",
+    "cleanedPromiseText": "Block YouTube for 30 minutes.",
+    "detectedLanguage": "en",
+    "transcriptConfidence": 0,
+    "userIntentSummary": "Block YouTube for 30 minutes.",
+    "recommendedInterpretation": "YouTube app only.",
+    "alternativeInterpretations": [],
+    "interpretationConfidence": 0.9,
+    "ambiguityLevel": "low",
+    "clarificationRequired": false,
+    "clarificationOptions": [
+      {
+        "id": "A",
+        "label": "YouTube app only",
+        "description": "YouTube app only for 30 minutes.",
+        "recommended": false,
+        "policyPreview": "YouTube app only.",
+        "resultingPolicyPreview": "YouTube app only.",
+        "internalPolicyPreview": {
+          "scopeKind": "youtube_only",
+          "appliesTo": "YouTube only",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.google.android.youtube",
+              "appLabel": "YouTube"
+            }
+          ],
+          "scopePackages": [
+            "com.google.android.youtube"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "APP_ONLY",
+          "resolution": "EXCLUSIVE",
+          "identity": "YOUTUBE",
+          "include": [
+            {
+              "id": "i1",
+              "host": "NATIVE_APP",
+              "identity": "YOUTUBE",
+              "surfaces": [
+                "ANY"
+              ],
+              "sites": [],
+              "packages": [
+                "com.google.android.youtube"
+              ],
+              "packageMatch": "PINNED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 0.4,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Block YouTube"
+          ],
+          "candidateScopes": []
+        }
+      },
+      {
+        "id": "B",
+        "label": "YouTube anywhere",
+        "description": "YouTube in apps and browsers for 30 minutes.",
+        "recommended": true,
+        "policyPreview": "YouTube in apps and browsers.",
+        "resultingPolicyPreview": "YouTube in apps and browsers.",
+        "internalPolicyPreview": {
+          "scopeKind": "chrome_browser",
+          "appliesTo": "Chrome / browser video",
+          "expandShortForm": false,
+          "packages": [
+            {
+              "packageName": "com.android.chrome",
+              "appLabel": "Chrome"
+            }
+          ],
+          "scopePackages": [
+            "com.android.chrome"
+          ],
+          "contentBrands": [],
+          "surfaceScope": [],
+          "contentScope": []
+        },
+        "scope": {
+          "version": 1,
+          "kind": "CONTENT_ANY_HOST",
+          "resolution": "EXCLUSIVE",
+          "identity": "YOUTUBE",
+          "include": [
+            {
+              "id": "i1",
+              "host": "ANY_HOST",
+              "identity": "YOUTUBE",
+              "surfaces": [
+                "ANY"
+              ],
+              "sites": [],
+              "packages": [],
+              "packageMatch": "CLASS_RESOLVED"
+            }
+          ],
+          "exempt": [],
+          "confidence": 0.4,
+          "appliesToText": null,
+          "unresolvedReason": null,
+          "evidenceSpans": [
+            "Block YouTube"
+          ],
+          "candidateScopes": []
+        }
+      }
+    ],
+    "userFacingConfirmation": {
+      "understood": "Review the allow and block lists below.",
+      "allowed": [],
+      "blocked": [],
+      "time": "About 30 minutes",
+      "appliesTo": "YouTube only",
+      "checkThis": [
+        "Voice transcript looked uncertain — please re-read before locking a long commitment."
+      ],
+      "safetyNotes": [
+        "Transcript confidence was low — verify wording before permanent Start."
+      ],
+      "understoodSummary": "Review the allow and block lists below.",
+      "allowedBullets": [],
+      "blockedBullets": [],
+      "timeWindowText": "About 30 minutes",
+      "appliesToText": "YouTube only",
+      "hiddenInternalScope": []
+    },
+    "internalPolicy": {
+      "timeWindow": {
+        "kind": "session_fixed",
+        "minutes": 30,
+        "label": "About 30 minutes"
+      },
+      "surfaceRules": [],
+      "contentRules": [],
+      "appRules": [
+        {
+          "packageName": "com.google.android.youtube",
+          "label": "YouTube",
+          "behavior": "BLOCK"
+        }
+      ],
+      "quotaRules": [],
+      "recoveryRules": {
+        "hardness": "normal",
+        "requiresExplicitConfirm": false,
+        "notes": ""
+      },
+      "guardrails": []
+    },
+    "riskReview": {
+      "falseAllowRisk": "low",
+      "falseBlockRisk": "low",
+      "safetyRisk": "none",
+      "requiresHumanConfirmation": true
+    },
+    "hiddenInternalScope": [
+      "com.google.android.youtube"
+    ],
+    "emergencyExceptions": [],
+    "sessionDurationMinutes": 30,
+    "timeWindowKind": "session_fixed",
+    "quotaBoundary": "allow_first_n",
+    "strictness": "STRICT",
+    "allowedSummaries": [],
+    "blockedSummaries": [],
+    "conditionalSummaries": [
+      "Applies to: YouTube only"
+    ],
+    "confirmationPreview": [],
+    "interpretationNotes": [],
+    "scopePackages": [
+      "com.google.android.youtube"
+    ],
+    "scopeKind": "youtube_app_only",
+    "contentBrands": [],
+    "surfaceScope": [],
+    "contentScope": [],
+    "contentRules": [],
+    "clarificationQuestion": null,
+    "cautionMessages": [
+      "Using your choice: YouTube app only"
+    ],
+    "source": "azure_promise_compiler",
+    "confidence": 0.9,
+    "suggestedAppRules": [
+      {
+        "packageName": "com.google.android.youtube",
+        "label": "YouTube",
+        "behavior": "BLOCK"
+      }
+    ],
+    "commitmentType": "focus_session",
+    "promptVersion": "promise_compiler_v09",
+    "canStartCommitment": false,
+    "isPermanentCommitment": false,
+    "requiresStrongerConfirmation": true,
+    "isStudyModeLike": false,
+    "selectedClarificationOptionId": "A",
+    "optionRematerialized": true,
+    "optionScopeKind": "youtube_only",
+    "optionVerification": "snapshot_and_carry_verified",
+    "optionVerificationReason": "snapshot_and_carry_verified",
+    "scopeContract": "v1",
+    "scope": {
+      "version": 1,
+      "kind": "APP_ONLY",
+      "resolution": "EXCLUSIVE",
+      "identity": "YOUTUBE",
+      "include": [
+        {
+          "id": "i1",
+          "host": "NATIVE_APP",
+          "identity": "YOUTUBE",
+          "surfaces": [
+            "ANY"
+          ],
+          "sites": [],
+          "packages": [
+            "com.google.android.youtube"
+          ],
+          "packageMatch": "PINNED"
+        }
+      ],
+      "exempt": [],
+      "confidence": 0.4,
+      "appliesToText": null,
+      "unresolvedReason": null,
+      "evidenceSpans": [
+        "Block YouTube"
+      ],
+      "candidateScopes": []
+    },
+    "meta": {
+      "provider": "test",
+      "deployment": "test",
+      "promptVersion": "promise_compiler_v09",
+      "latencyMs": 0
+    }
+  }
+}

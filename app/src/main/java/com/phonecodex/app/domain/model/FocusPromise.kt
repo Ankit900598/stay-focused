@@ -67,7 +67,13 @@ data class FocusPromise(
     /** Backend `meta.promptVersion` verbatim; null for offline previews. Never inferred. */
     val compilerPromptVersion: String? = null,
     /** [com.phonecodex.app.domain.promise.LegacyScopeContractGuard] reason; Start stays blocked. */
-    val legacyContractGap: String? = null
+    val legacyContractGap: String? = null,
+    val localAppTargetSelection: LocalAppTargetSelectionCandidate? = null,
+    val sessionDurationWasExplicit: Boolean = false,
+    /** Explicit compiler/local interpretation of a user-requested lock-after-attempt count. */
+    val lockAttemptThreshold: Int? = null,
+    /** True when an explicit attempt count cannot be represented safely by this client. */
+    val lockAttemptThresholdInvalid: Boolean = false
 ) {
     /** A v1 promise whose typed scope is missing or unresolved cannot start. */
     val typedScopeBlocksStart: Boolean
@@ -89,6 +95,8 @@ data class FocusPromise(
      * pick; once the user ticks that confirm, only the echoed options stop blocking Start.
      */
     fun needsClarification(strongerConfirmAcknowledged: Boolean): Boolean = when {
+        localAppTargetSelection != null -> true
+        lockAttemptThresholdInvalid -> true
         clarificationRequired -> true
         choiceVerificationFailed -> true
         typedScopeBlocksStart -> true

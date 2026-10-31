@@ -25,9 +25,14 @@ import com.phonecodex.app.domain.scope.ScopeKindPresets
  */
 class FocusPromiseParser {
 
-    fun parse(rawText: String, namedPackageHint: String? = null): FocusPromise {
+    fun parse(
+        rawText: String,
+        namedPackageHint: String? = null,
+        fallbackDurationMinutes: Int = DEFAULT_DURATION_MINUTES
+    ): FocusPromise {
         val trimmed = rawText.trim()
         val normalized = trimmed.lowercase()
+        val fallbackDuration = fallbackDurationMinutes.coerceAtLeast(1)
         val hintedPackage = VideoPlatformRegistry.canonicalizeNamedPackage(namedPackageHint.orEmpty())
             ?: namedPackageHint?.trim()?.takeIf { VideoPlatformRegistry.isVideoOrStreamingPackage(it) }
 
@@ -35,14 +40,21 @@ class FocusPromiseParser {
         var contentRules = buildContentRules(normalized, contentLengthHits, hintedPackage)
         contentRules = applyOnlyLongVideoSemantics(normalized, contentRules, contentLengthHits)
 
-        val sessionDurationMinutes = parseSessionDurationMinutes(normalized, contentLengthHits)
+        val parsedSessionDuration = parseSessionDuration(normalized, contentLengthHits, fallbackDuration)
+        val sessionDurationMinutes = parsedSessionDuration.minutes
         val suggestedAppRules = parseSuggestedAppRules(normalized, contentRules, hintedPackage)
         val contentBrands = inferContentBrands(normalized)
         val scopeKind = inferScopeKind(normalized, contentBrands)
         val scopePackages = inferScopePackages(normalized, contentRules, suggestedAppRules, hintedPackage)
         val strictness = parseStrictness(normalized)
+        val lockAttempt = parseLockAttemptThreshold(normalized)
         val clarification = detectClarification(normalized, contentRules, contentLengthHits)
-        val warnings = buildWarnings(normalized, sessionDurationMinutes, contentLengthHits)
+        val warnings = buildWarnings(
+            normalized,
+            parsedSessionDuration,
+            contentLengthHits,
+            fallbackDuration
+        )
         val typedScope = youtubeShortsOnlyScope(normalized, contentRules, suggestedAppRules, contentLengthHits)
 
         val summaries = buildHumanSummaries(
@@ -55,6 +67,9 @@ class FocusPromiseParser {
             FocusPromise(
                 rawText = trimmed,
                 sessionDurationMinutes = sessionDurationMinutes,
+                lockAttemptThreshold = lockAttempt.threshold,
+                lockAttemptThresholdInvalid = lockAttempt.invalid,
+                sessionDurationWasExplicit = parsedSessionDuration.wasExplicit,
                 allowedKeywords = findKeywords(normalized, ALLOW_KEYWORDS),
                 blockedKeywords = findKeywords(normalized, BLOCK_KEYWORDS),
                 strictness = strictness,
@@ -81,6 +96,11 @@ class FocusPromiseParser {
         val range: IntRange,
         val minutes: Int,
         val operator: String
+    )
+
+    private data class ParsedSessionDuration(
+        val minutes: Int,
+        val wasExplicit: Boolean
     )
 
     private data class HumanSummaries(
@@ -217,11 +237,9 @@ class FocusPromiseParser {
             }
         }
 
-        if ((normalized.contains("youtube") || normalized.contains("neso") ||
-                normalized.contains("playlist")) &&
+        if ((normalized.contains("youtube") || normalized.contains("neso")) &&
             (normalized.contains("neso") || normalized.contains("playlist") ||
-                normalized.contains("only on") ||
-                (normalized.contains("only") && normalized.contains("lecture")))
+                normalized.contains("channel"))
         ) {
             rules += ContentRule(
                 appLabel = "YouTube",
@@ -357,10 +375,11 @@ class FocusPromiseParser {
         return apps.distinctBy { it.packageName }
     }
 
-    private fun parseSessionDurationMinutes(
+    private fun parseSessionDuration(
         normalized: String,
-        contentHits: List<ContentLengthHit>
-    ): Int {
+        contentHits: List<ContentLengthHit>,
+        fallbackDurationMinutes: Int
+    ): ParsedSessionDuration {
         val occupied = contentHits.map { it.range }
 
         fun overlapsContent(range: IntRange): Boolean =
@@ -371,13 +390,17 @@ class FocusPromiseParser {
         SESSION_FOR_PATTERN.findAll(normalized).forEach { match ->
             if (overlapsContent(match.range)) return@forEach
             val amount = parseAmountToken(match.groupValues[1]) ?: return@forEach
-            toMinutes(amount, match.groupValues[2])?.let { return it }
+            toMinutes(amount, match.groupValues[2])?.let {
+                return ParsedSessionDuration(it, wasExplicit = true)
+            }
         }
 
         SESSION_NEXT_PATTERN.findAll(normalized).forEach { match ->
             if (overlapsContent(match.range)) return@forEach
             val amount = parseAmountToken(match.groupValues[1]) ?: return@forEach
-            toMinutes(amount, match.groupValues[2])?.let { return it }
+            toMinutes(amount, match.groupValues[2])?.let {
+                return ParsedSessionDuration(it, wasExplicit = true)
+            }
         }
 
         SESSION_DAY_YEAR_PATTERN.findAll(normalized).forEach { match ->
@@ -385,11 +408,13 @@ class FocusPromiseParser {
             val before = normalized.substring(0, match.range.first).takeLast(24)
             if (CONTENT_COMPARE_CUES.containsMatchIn(before)) return@forEach
             val amount = parseAmountToken(match.groupValues[1]) ?: return@forEach
-            toMinutes(amount, match.groupValues[2])?.let { return it }
+            toMinutes(amount, match.groupValues[2])?.let {
+                return ParsedSessionDuration(it, wasExplicit = true)
+            }
         }
 
         if (Regex("""\btoday\b""").containsMatchIn(normalized)) {
-            return MINUTES_PER_DAY
+            return ParsedSessionDuration(MINUTES_PER_DAY, wasExplicit = true)
         }
 
         HOUR_PATTERN.findAll(normalized).forEach { match ->
@@ -397,16 +422,18 @@ class FocusPromiseParser {
             val before = normalized.substring(0, match.range.first).takeLast(24)
             if (CONTENT_COMPARE_CUES.containsMatchIn(before)) return@forEach
             val hours = parseAmountToken(match.groupValues[1]) ?: return@forEach
-            return hours * 60
+            return ParsedSessionDuration(hours * 60, wasExplicit = true)
         }
         MINUTE_PATTERN.findAll(normalized).forEach { match ->
             if (overlapsContent(match.range)) return@forEach
             val before = normalized.substring(0, match.range.first).takeLast(24)
             if (CONTENT_COMPARE_CUES.containsMatchIn(before)) return@forEach
-            return parseAmountToken(match.groupValues[1]) ?: DEFAULT_DURATION_MINUTES
+            val minutes = parseAmountToken(match.groupValues[1])
+                ?: return ParsedSessionDuration(fallbackDurationMinutes, wasExplicit = false)
+            return ParsedSessionDuration(minutes, wasExplicit = true)
         }
 
-        return DEFAULT_DURATION_MINUTES
+        return ParsedSessionDuration(fallbackDurationMinutes, wasExplicit = false)
     }
 
     private fun parseAmountToken(raw: String): Int? {
@@ -519,6 +546,9 @@ class FocusPromiseParser {
             normalized.contains("session") ||
                 normalized.contains("focus") ||
                 normalized.contains("study") ||
+                normalized.contains("padhai") ||
+                normalized.contains("lecture") ||
+                normalized.contains("exam") ||
                 normalized.contains("budget") ||
                 normalized.contains("total") ||
                 normalized.contains("quota") ||
@@ -566,21 +596,18 @@ class FocusPromiseParser {
 
     private fun buildWarnings(
         normalized: String,
-        sessionMinutes: Int,
-        contentHits: List<ContentLengthHit>
+        parsedSessionDuration: ParsedSessionDuration,
+        contentHits: List<ContentLengthHit>,
+        fallbackDurationMinutes: Int
     ): List<String> {
         val warnings = mutableListOf<String>()
-        if (sessionMinutes == DEFAULT_DURATION_MINUTES &&
-            !SESSION_FOR_PATTERN.containsMatchIn(normalized) &&
-            !SESSION_NEXT_PATTERN.containsMatchIn(normalized) &&
-            !SESSION_DAY_YEAR_PATTERN.containsMatchIn(normalized) &&
-            !Regex("""\btoday\b""").containsMatchIn(normalized) &&
+        if (!parsedSessionDuration.wasExplicit &&
             contentHits.isNotEmpty()
         ) {
-            warnings += "I set session time to the default $DEFAULT_DURATION_MINUTES minutes " +
+            warnings += "I used the saved session-time default of $fallbackDurationMinutes minutes " +
                 "because I only saw a content length rule, not how long the commitment should run."
         }
-        if (sessionMinutes >= MINUTES_PER_YEAR) {
+        if (parsedSessionDuration.minutes >= MINUTES_PER_YEAR) {
             warnings += "Long commitments still need Accessibility kept on — preview, not a finished permanent lock."
         }
         if (normalized.contains("rest normal") || normalized.contains("everything else normal") ||
@@ -767,25 +794,36 @@ class FocusPromiseParser {
             }
             suggestions += AppRule(PKG_WHATSAPP, "WhatsApp", behavior)
         }
+        // Gmail is a safe app by default; only an explicit block creates a rule.
+        if (normalized.contains("gmail") && explicitlyBlocksNamedApp(normalized, "gmail")) {
+            suggestions += AppRule(PKG_GMAIL, "Gmail", AppRuleBehavior.BLOCK)
+        }
 
-        val youtubeRules = contentRules.filter { it.packageName == PKG_YOUTUBE }
-        if (normalized.contains("youtube") || normalized.contains("lecture") ||
-            normalized.contains("neso") || youtubeRules.isNotEmpty()
-        ) {
-            // Length-threshold YouTube stays AI_DECIDE (content rules decide), not whole-app BLOCK.
-            // A Shorts surface BLOCK is also content-level, never a whole-app BLOCK.
-            val wholeAppBlock = youtubeRules.any {
-                it.action == ContentRuleAction.BLOCK && it.operator == null &&
-                    !EffectivePromisePolicy.isShortFormSurfaceBlock(it)
+        if (PromiseIntentRules.namesYouTubeAppOnly(normalized)) {
+            suggestions += AppRule(PKG_YOUTUBE, "YouTube", AppRuleBehavior.BLOCK)
+            if (PromiseIntentRules.namesYouTubeMusicAllowed(normalized)) {
+                suggestions += AppRule(PKG_YOUTUBE_MUSIC, "YouTube Music", AppRuleBehavior.ALLOW)
             }
-            val behavior = when {
-                wholeAppBlock -> AppRuleBehavior.BLOCK
-                youtubeRules.any { it.operator != null } -> AppRuleBehavior.AI_DECIDE
-                youtubeRules.any { it.action == ContentRuleAction.AI_DECIDE } ->
-                    AppRuleBehavior.AI_DECIDE
-                else -> AppRuleBehavior.AI_DECIDE
+        } else {
+            val youtubeRules = contentRules.filter { it.packageName == PKG_YOUTUBE }
+            if (normalized.contains("youtube") || normalized.contains("lecture") ||
+                normalized.contains("neso") || youtubeRules.isNotEmpty()
+            ) {
+                // Length-threshold YouTube stays AI_DECIDE (content rules decide), not whole-app BLOCK.
+                // A Shorts surface BLOCK is also content-level, never a whole-app BLOCK.
+                val wholeAppBlock = youtubeRules.any {
+                    it.action == ContentRuleAction.BLOCK && it.operator == null &&
+                        !EffectivePromisePolicy.isShortFormSurfaceBlock(it)
+                }
+                val behavior = when {
+                    wholeAppBlock -> AppRuleBehavior.BLOCK
+                    youtubeRules.any { it.operator != null } -> AppRuleBehavior.AI_DECIDE
+                    youtubeRules.any { it.action == ContentRuleAction.AI_DECIDE } ->
+                        AppRuleBehavior.AI_DECIDE
+                    else -> AppRuleBehavior.AI_DECIDE
+                }
+                suggestions += AppRule(PKG_YOUTUBE, "YouTube", behavior)
             }
-            suggestions += AppRule(PKG_YOUTUBE, "YouTube", behavior)
         }
 
         if (normalized.contains("chrome") || normalized.contains("browser") ||
@@ -912,8 +950,8 @@ class FocusPromiseParser {
         if (preCue.containsMatchIn(normalized)) return true
 
         val postCue = Regex(
-            """\b""" + a + """\b\s+(?:is\s+|are\s+|will\s+be\s+|gets?\s+|)""" +
-                """(?:blocked|banned|forbidden|disabled|blacklisted|off|not\s+allowed)\b""",
+            """\b""" + a + """\b\s+(?:is\s+|are\s+|will\s+be\s+|gets?\s+|stays?\s+|remains?\s+|)""" +
+                """(?:blocked|banned|forbidden|disabled|blacklisted|off|not\s+allowed|closed|shut)\b""",
             RegexOption.IGNORE_CASE
         )
         if (postCue.containsMatchIn(normalized)) return true
@@ -954,16 +992,35 @@ class FocusPromiseParser {
         else -> DEFAULT_STRICTNESS
     }
 
+    private data class ParsedLockAttempt(val threshold: Int?, val invalid: Boolean)
+
+    private fun parseLockAttemptThreshold(normalizedText: String): ParsedLockAttempt {
+        val lockSentences = normalizedText.split(Regex("[.!?;\\n]+"))
+            .filter { Regex("\\b(lock|freeze)\\b", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+        val attemptCount = Regex(
+            """\b(\d{1,3})\s+(?:blocked\s+)?(?:attempts?|tries|times)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        val values = lockSentences.flatMap { sentence ->
+            attemptCount.findAll(sentence).mapNotNull { it.groupValues[1].toIntOrNull() }.toList()
+        }.distinct()
+        val threshold = values.singleOrNull()
+        val invalid = values.isNotEmpty() && (values.size > 1 || threshold == null || threshold !in 1..100)
+        return ParsedLockAttempt(threshold?.takeIf { it in 1..100 }, invalid)
+    }
+
     companion object {
         internal const val DEFAULT_DURATION_MINUTES = 30
         private const val MINUTES_PER_DAY = 24 * 60
         private const val MINUTES_PER_YEAR = 365 * MINUTES_PER_DAY
 
         private const val PKG_YOUTUBE = "com.google.android.youtube"
+        private const val PKG_YOUTUBE_MUSIC = "com.google.android.apps.youtube.music"
         private const val PKG_CHROME = "com.android.chrome"
         private const val PKG_INSTAGRAM = "com.instagram.android"
         private const val PKG_TELEGRAM = "org.telegram.messenger"
         private const val PKG_WHATSAPP = "com.whatsapp"
+        private const val PKG_GMAIL = "com.google.android.gm"
         private const val PKG_NETMIRROR = VideoPlatformRegistry.NETMIRROR
         private const val APP_BLOCK_WINDOW_CHARS = 80
 

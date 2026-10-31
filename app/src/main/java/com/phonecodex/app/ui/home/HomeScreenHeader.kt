@@ -24,7 +24,7 @@ import com.phonecodex.app.domain.protection.ProtectionReliabilityLevel
 @Composable
 internal fun HomeScreenHeader(
     protectionLevel: ProtectionReliabilityLevel,
-    permanentCommitmentCount: Int,
+    permanentSafetyRuleCount: Int,
     hasActiveCommitment: Boolean = true
 ) {
     val colors = MaterialTheme.colorScheme
@@ -57,21 +57,17 @@ internal fun HomeScreenHeader(
     ) {
         StatusPill(
             text = protectionStatusPillText(protectionLevel),
-            tone = if (isProtected) PillTone.POSITIVE else PillTone.ALERT
+            tone = protectionStatusPillTone(protectionLevel)
         )
-        if (permanentCommitmentCount > 0) {
+        if (permanentSafetyRuleCount > 0) {
             StatusPill(
-                text = if (permanentCommitmentCount == 1) {
-                    "1 permanent commitment"
-                } else {
-                    "$permanentCommitmentCount permanent commitments"
-                },
+                text = permanentSafetyRuleCountLabel(permanentSafetyRuleCount),
                 tone = PillTone.CALM
             )
         }
     }
 
-    if (shouldShowNoActiveCommitmentWarning(hasActiveCommitment, permanentCommitmentCount)) {
+    if (shouldShowNoActiveCommitmentWarning(hasActiveCommitment, permanentSafetyRuleCount)) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = SessionEnforcementCopy.NO_ACTIVE_COMMITMENT,
@@ -83,11 +79,22 @@ internal fun HomeScreenHeader(
 
 internal fun shouldShowNoActiveCommitmentWarning(
     hasActiveCommitment: Boolean,
-    permanentCommitmentCount: Int
-): Boolean = !hasActiveCommitment && permanentCommitmentCount == 0
+    permanentSafetyRuleCount: Int
+): Boolean = !hasActiveCommitment && permanentSafetyRuleCount == 0
+
+internal fun permanentSafetyRuleCountLabel(count: Int): String =
+    if (count == 1) "1 permanent safety rule" else "$count permanent safety rules"
 
 internal fun protectionStatusPillText(level: ProtectionReliabilityLevel): String = when (level) {
+    ProtectionReliabilityLevel.CHECKING -> "Checking"
     ProtectionReliabilityLevel.PROTECTED -> "Protected"
     ProtectionReliabilityLevel.NOT_PROTECTING -> "Not protecting"
     ProtectionReliabilityLevel.NEEDS_SETUP -> "Needs setup"
+}
+
+internal fun protectionStatusPillTone(level: ProtectionReliabilityLevel): PillTone = when (level) {
+    ProtectionReliabilityLevel.CHECKING -> PillTone.CALM
+    ProtectionReliabilityLevel.PROTECTED -> PillTone.POSITIVE
+    ProtectionReliabilityLevel.NOT_PROTECTING,
+    ProtectionReliabilityLevel.NEEDS_SETUP -> PillTone.ALERT
 }

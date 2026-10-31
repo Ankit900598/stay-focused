@@ -67,7 +67,7 @@ object PromiseEnforcementCoordinator {
         } else {
             ""
         }
-        return "evalStart goal=${input.goal.take(160)} " +
+        return "evalStart goalChars=${input.goal.length} " +
             "min=${input.settings.minVideoLengthBlockMinutes} " +
             "max=${input.settings.maxVideoLengthBlockMinutes} " +
             "quota=${input.settings.shortFormDailyQuotaLimit} " +

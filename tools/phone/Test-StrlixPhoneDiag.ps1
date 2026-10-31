@@ -31,6 +31,10 @@ $bound = A11y 'bound'
 Check 'bound: enabled+bound, not crashed' { $bound.Enabled -and $bound.Bound -and -not $bound.Crashed -and -not $bound.Binding -and $bound.Verdict -eq 'bound' }
 Check 'bound: entry is the Strlix label with its event types' { $bound.BoundEntry -like 'Service`[label=PhoneCodex Focus Detection*TYPE_WINDOWS_CHANGED*' }
 
+$currentBound = A11y 'bound_current'
+Check 'current Xiaomi label: enabled+bound, not crashed' { $currentBound.Enabled -and $currentBound.Bound -and -not $currentBound.Crashed -and -not $currentBound.Binding -and $currentBound.Verdict -eq 'bound' }
+Check 'current Xiaomi label: entry includes current event types' { $currentBound.BoundEntry -like 'Service`[label=Strlix Focus Protection*TYPE_WINDOWS_CHANGED*' }
+
 $crashed = A11y 'crashed'
 Check 'crashed: enabled, not bound, crashed' { $crashed.Enabled -and -not $crashed.Bound -and $crashed.Crashed -and $crashed.Verdict -eq 'crashed' }
 
@@ -52,7 +56,7 @@ $bindingOnlyState = Get-StrlixAccessibilityState -DumpsysText $bindingOnly
 Check 'binding-only dump: parsed and binding' { $bindingOnlyState.Parsed -and $bindingOnlyState.Binding -and $bindingOnlyState.Verdict -eq 'binding' }
 
 # --- sanitized output keeps only Strlix -----------------------------------------------
-foreach ($s in @($bound, $crashed, $binding, $disabled)) {
+foreach ($s in @($bound, $currentBound, $crashed, $binding, $disabled)) {
     $text = Format-StrlixAccessibilityState $s
     Check "sanitized ($($s.Verdict)) has no unrelated names" { (Leaks $text).Count -eq 0 }
 }

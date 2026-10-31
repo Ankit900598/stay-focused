@@ -13,21 +13,46 @@ object PromiseUnderstandingResolver {
         compiledResult: Result<CompiledPromiseResponse>,
         parser: FocusPromiseParser = FocusPromiseParser(),
         selectedClarificationOptionId: String? = null,
-        namedPackageHint: String? = null
+        namedPackageHint: String? = null,
+        fallbackDurationMinutes: Int = FocusPromiseParser.DEFAULT_DURATION_MINUTES
     ): ResolvedPromiseUnderstanding {
         val parseText = CompoundIntentLaw.effectivePromiseText(text, selectedClarificationOptionId)
-        val local = parser.parse(parseText, namedPackageHint)
+        val fallbackDuration = fallbackDurationMinutes.coerceAtLeast(1)
+        val local = parser.parse(parseText, namedPackageHint, fallbackDuration)
         return compiledResult.fold(
             onSuccess = { compiled ->
                 val mapped = CompiledPromiseMapper.toFocusPromise(compiled, fallbackRawText = text)
+                val compilerUsedDefaultDuration = compiled.timeWindowKind == "session_fixed_default"
+                val useSavedFallback = compilerUsedDefaultDuration && !local.sessionDurationWasExplicit
+                val sessionDurationMinutes = when {
+                    local.sessionDurationWasExplicit -> local.sessionDurationMinutes
+                    useSavedFallback -> fallbackDuration
+                    else -> reconcileSessionDurationMinutes(
+                        compiledMinutes = mapped.sessionDurationMinutes,
+                        localMinutes = local.sessionDurationMinutes
+                    )
+                }
+                val durationWarnings = if (compilerUsedDefaultDuration) {
+                    mapped.warnings.filterNot(::isCompilerDefaultDurationWarning)
+                } else {
+                    mapped.warnings
+                }.toMutableList()
+                when {
+                    useSavedFallback -> durationWarnings +=
+                        "No session time was stated; I used your saved default of $fallbackDuration minutes."
+                    compilerUsedDefaultDuration && local.sessionDurationWasExplicit &&
+                        local.sessionDurationMinutes != mapped.sessionDurationMinutes -> {
+                        durationWarnings +=
+                            "I used the explicit ${local.sessionDurationMinutes}-minute session time in your promise instead of the compiler's default."
+                    }
+                }
                 ResolvedPromiseUnderstanding(
                     draft = PromiseClarificationLaw.apply(
                         mapped.copy(
-                            sessionDurationMinutes = reconcileSessionDurationMinutes(
-                                rawText = text,
-                                compiledMinutes = mapped.sessionDurationMinutes,
-                                localMinutes = local.sessionDurationMinutes
-                            )
+                            sessionDurationMinutes = sessionDurationMinutes,
+                            sessionDurationWasExplicit = local.sessionDurationWasExplicit,
+                            userFacingTime = if (compilerUsedDefaultDuration) null else mapped.userFacingTime,
+                            warnings = durationWarnings.distinct()
                         ),
                         selectedClarificationOptionId
                     ),
@@ -39,6 +64,7 @@ object PromiseUnderstandingResolver {
                     draft = PromiseClarificationLaw.apply(
                         local.copy(
                             rawText = text,
+                            sessionDurationMinutes = local.sessionDurationMinutes,
                             warnings = (local.warnings + CompiledPromiseMapper.LOCAL_FALLBACK_CAUTION)
                                 .distinct()
                         ),
@@ -51,11 +77,10 @@ object PromiseUnderstandingResolver {
     }
 
     /**
-     * Azure often returns the 30-minute default when the user said "1 hrs" / "one hours".
-     * Local explicit hour/session phrases win over that leftover default. AI is not law.
+     * Older compiler responses omit the duration-origin field; preserve the historical
+     * 30-minute default contract only when local parsing has a different duration.
      */
     internal fun reconcileSessionDurationMinutes(
-        rawText: String,
         compiledMinutes: Int,
         localMinutes: Int
     ): Int {
@@ -66,13 +91,12 @@ object PromiseUnderstandingResolver {
         if (localMinutes <= 0 || localMinutes == FocusPromiseParser.DEFAULT_DURATION_MINUTES) {
             return compiledMinutes.coerceAtLeast(1)
         }
-        val normalized = rawText.lowercase()
-        val explicitDefaultThirty =
-            Regex("""\b(?:for\s+(?:the\s+)?(?:next\s+)?|next\s+)?30\s*(?:min|mins|minutes?)\b""")
-                .containsMatchIn(normalized)
-        if (explicitDefaultThirty) return compiledMinutes.coerceAtLeast(1)
         return localMinutes
     }
+
+    private fun isCompilerDefaultDurationWarning(warning: String): Boolean =
+        warning.contains("session duration was unclear", ignoreCase = true) ||
+            warning.contains("defaulted to 60 minutes", ignoreCase = true)
 }
 
 data class ResolvedPromiseUnderstanding(

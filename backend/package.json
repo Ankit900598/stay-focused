@@ -7,8 +7,13 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@azure/data-tables": "^13.3.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "firebase-admin": "^14.5.0",
     "openai": "^4.86.2"
+  },
+  "devDependencies": {
+    "azurite": "^3.37.0"
   }
 }

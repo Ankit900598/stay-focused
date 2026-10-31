@@ -1,0 +1,7 @@
+ACCESSIBILITY MANAGER
+User state[
+  Bound services:{Service[label=Strlix Focus Protection, feedbackType[FEEDBACK_GENERIC], capabilities=1, eventTypes=[TYPE_WINDOW_STATE_CHANGED, TYPE_WINDOW_CONTENT_CHANGED, TYPE_WINDOWS_CHANGED], notificationTimeout=100, requestA11yBtn=false]}
+  Enabled services:{{com.phonecodex.app/com.phonecodex.app.accessibility.PhoneCodexAccessibilityService}}
+  Binding services:{}
+  Crashed services:{}
+]

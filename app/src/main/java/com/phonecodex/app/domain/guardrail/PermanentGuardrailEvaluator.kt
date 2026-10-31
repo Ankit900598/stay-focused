@@ -9,7 +9,8 @@ class PermanentGuardrailEvaluator {
     fun evaluate(
         packageName: String,
         screenText: String,
-        guardrails: List<PermanentGuardrail>
+        guardrails: List<PermanentGuardrail>,
+        nowMillis: Long = System.currentTimeMillis()
     ): GuardrailMatch? {
         if (AdultContentLaw.shouldSkipPackage(packageName)) {
             return null
@@ -18,6 +19,9 @@ class PermanentGuardrailEvaluator {
         val normalizedText = screenText.lowercase()
 
         guardrails.forEach { guardrail ->
+            if (!guardrail.enabled || guardrail.expiresAtMillis?.let { nowMillis >= it } == true) {
+                return@forEach
+            }
             if (guardrail.blockedPackages.contains(packageName)) {
                 return GuardrailMatch(
                     guardrailId = guardrail.id,

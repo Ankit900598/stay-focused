@@ -29,6 +29,21 @@ class SafeAppsCatalogTest {
     }
 
     @Test
+    fun androidAndMiuiSettingsControls_areNonOverridableSafePackages() {
+        val settingsPackages = listOf(
+            "com.android.settings",
+            "com.android.settings.intelligence",
+            "com.xiaomi.misettings",
+            "com.miui.securitycenter",
+            "com.miui.permcenter"
+        )
+        for (packageName in settingsPackages) {
+            assertTrue("$packageName should remain available", SafeAppsCatalog.isDefaultPackage(packageName))
+            assertTrue("$packageName should ignore whole-app BLOCK", SafeAppsCatalog.isNonOverridableDefaultPackage(packageName))
+        }
+    }
+
+    @Test
     fun defaultPackages_rejectUnknownPackage() {
         assertFalse(SafeAppsCatalog.isDefaultPackage("com.instagram.android"))
     }

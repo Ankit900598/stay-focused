@@ -1,14 +1,26 @@
 package com.phonecodex.app.ui.home
 
+import com.phonecodex.app.R
+
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonecodex.app.domain.diagnostics.BackendProbeKind
@@ -44,11 +56,29 @@ internal fun AdvancedEngineeringToggle(
 @Composable
 internal fun AdvancedIntroCard() {
     Text(
-        text = "Session tuning and permanent commitments. Engineering tools stay collapsed " +
+        text = "Session tuning and permanent safety rules. Engineering tools stay collapsed " +
             "so Home stays light.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+}
+
+@Composable
+internal fun AdvancedPrivacyPolicyCard(onOpenPrivacyPolicy: () -> Unit) {
+    CalmCard {
+        MicroLabel(text = stringResource(R.string.privacy_policy_title))
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.privacy_policy_row_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        QuietAction(
+            text = stringResource(R.string.privacy_policy_open),
+            onClick = onOpenPrivacyPolicy
+        )
+    }
 }
 
 @Composable
@@ -87,6 +117,7 @@ internal fun AdvancedProtectionHealthCard(state: HomeScreenState) {
     CalmCard {
         ProtectionHealthDetails(
             isAccessibilityEnabled = state.isAccessibilityEnabled,
+            isAccessibilityAlive = state.isAccessibilityAlive,
             violationCount = state.protectionViolationState.violationCount,
             lastViolationReason = state.protectionViolationState.lastReason,
             onOpenAccessibilitySettings = state::openAccessibilitySettings,
@@ -247,14 +278,32 @@ internal fun AdvancedDebugCard(state: HomeScreenState) {
 
 @Composable
 internal fun AdvancedFeedbackCard(state: HomeScreenState) {
+    var includePrivateContext by remember { mutableStateOf(false) }
+    var confirmClearFeedback by remember { mutableStateOf(false) }
     CalmCard {
         MicroLabel(text = "Decision feedback")
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Correct the last decision so we can grade the classifier later.",
+            text = "Correct the last decision. Feedback stays on this device.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = includePrivateContext,
+                onCheckedChange = { includePrivateContext = it }
+            )
+            Text(
+                text = "Also save up to 300 characters of screen text and the AI explanation. " +
+                    "They may contain private information; stored locally and can affect future " +
+                    "matching decisions.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(modifier = Modifier.height(14.dp))
 
         val canSubmitFeedback = !state.debugState.lastPackageName.isNullOrBlank() &&
@@ -263,7 +312,10 @@ internal fun AdvancedFeedbackCard(state: HomeScreenState) {
         QuietAction(
             text = "That was correct",
             onClick = {
-                state.submitFeedback(state.debugState.lastDecision.orEmpty())
+                state.submitFeedback(
+                    correctedDecision = state.debugState.lastDecision.orEmpty(),
+                    includePrivateContext = includePrivateContext
+                )
             },
             enabled = canSubmitFeedback
         )
@@ -271,13 +323,17 @@ internal fun AdvancedFeedbackCard(state: HomeScreenState) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QuietAction(
                 text = "Should allow",
-                onClick = { state.submitFeedback("ALLOW") },
+                onClick = {
+                    state.submitFeedback("ALLOW", includePrivateContext)
+                },
                 modifier = Modifier.weight(1f),
                 enabled = canSubmitFeedback
             )
             QuietAction(
                 text = "Should block",
-                onClick = { state.submitFeedback("BLOCK") },
+                onClick = {
+                    state.submitFeedback("BLOCK", includePrivateContext)
+                },
                 modifier = Modifier.weight(1f),
                 enabled = canSubmitFeedback
             )
@@ -297,6 +353,39 @@ internal fun AdvancedFeedbackCard(state: HomeScreenState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (state.recentFeedback.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            QuietAction(
+                text = "Clear saved feedback",
+                onClick = { confirmClearFeedback = true }
+            )
+        }
+        if (confirmClearFeedback) {
+            AlertDialog(
+                onDismissRequest = { confirmClearFeedback = false },
+                title = { Text("Clear saved feedback?") },
+                text = {
+                    Text(
+                        "This removes all on-device decision feedback and any opted-in " +
+                            "screen text. It does not change your promises or app rules."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        state.clearSavedFeedback()
+                        includePrivateContext = false
+                        confirmClearFeedback = false
+                    }) {
+                        Text("Clear feedback")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmClearFeedback = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -310,6 +399,8 @@ internal fun AdvancedControlsContent(
     val openedAt = SystemClock.elapsedRealtime()
     Log.d("PhoneCodexUIPerf", "legacy AdvancedControlsContent used")
     AdvancedIntroCard()
+    Spacer(modifier = Modifier.height(14.dp))
+    AdvancedPrivacyPolicyCard(onOpenPrivacyPolicy = state::openPrivacyPolicy)
     Spacer(modifier = Modifier.height(14.dp))
     AdvancedSessionTuningCard(state)
     Spacer(modifier = Modifier.height(14.dp))

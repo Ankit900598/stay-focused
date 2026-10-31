@@ -37,6 +37,38 @@ class CommitmentTransparencyTest {
     }
 
     @Test
+    fun safeAppAllowWithoutPromise_doesNotReferToPromiseMatch() {
+        val explained = CommitmentTransparency.explain(
+            chromeLongAllow().copy(
+                promiseText = null,
+                reason = "Always allowed safe app",
+                source = "Safe App",
+                reasonCode = EnforcementReasonCodes.EMERGENCY_ALLOW,
+                matchedSignals = listOf(EnforcementReasonCodes.EMERGENCY_ALLOW)
+            )
+        )
+
+        assertEquals("No active promise at the time of this decision.", explained.userPromise)
+        assertEquals(
+            "This app is always allowed. Start a promise to set commitment-specific rules.",
+            explained.userNext
+        )
+    }
+
+    @Test
+    fun regularAllowWithoutPromiseDoesNotClaimPromiseMatch() {
+        val explained = CommitmentTransparency.explain(
+            chromeLongAllow().copy(promiseText = null)
+        )
+
+        assertEquals("No active promise at the time of this decision.", explained.userPromise)
+        assertEquals(
+            "No commitment was active for this decision. Start a promise to set commitment-specific rules.",
+            explained.userNext
+        )
+    }
+
+    @Test
     fun staleDecision_isLabeled() {
         val explained = CommitmentTransparency.explain(
             chromeLongAllow().copy(

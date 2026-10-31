@@ -89,10 +89,10 @@ data class CommitmentDecision(
  * and [com.phonecodex.app.domain.enforcement.trace.EnforcementTraceEvaluator].
  *
  * Precedence (first match wins):
- *  1. safe / emergency apps (a BLOCK rule cannot remove non-overridable emergency apps)
- *  2. productivity apps unrelated to the promise
- *  3. own-overlay / system UI noise is ignored
- *  4. permanent guardrails (independent of any session)
+ *  1. non-overridable emergency / system apps
+ *  2. own-overlay / system UI noise is ignored
+ *  3. permanent guardrails (independent of any session)
+ *  4. overridable safe apps and unrelated productivity apps
  *  5. no session -> allow;  locked session -> unrelated apps stay usable
  *  6. typed / legacy scope; outside scope only an app-rule BLOCK still applies
  *  7. structured surface BLOCK, blank video tree, app-rule BLOCK
@@ -117,19 +117,8 @@ object CommitmentPolicyEvaluator {
         val text = snapshot.screenText
         val appRule = law.appRule
 
-        if (snapshot.isSafePackage &&
-            (appRule != AppRuleBehavior.BLOCK || SafeAppsCatalog.isNonOverridableDefaultPackage(pkg))
-        ) {
+        if (SafeAppsCatalog.isNonOverridableDefaultPackage(pkg)) {
             return law.decide(LawVerdict.ALLOW, EnforcementReasonCodes.EMERGENCY_ALLOW, LawStage.SAFE_APP)
-        }
-
-        val session = snapshot.sessionStatus
-        if (session != null && PromiseIntentRules.isUnrelatedProductivityPackage(pkg, snapshot.goal)) {
-            return law.decide(
-                LawVerdict.ALLOW,
-                EnforcementReasonCodes.PRODUCTIVITY_UNRELATED_ALLOW,
-                LawStage.UNRELATED_PRODUCTIVITY
-            )
         }
 
         if (snapshot.isSystemOverlayNoise) {
@@ -145,6 +134,22 @@ object CommitmentPolicyEvaluator {
                 EnforcementReasonCodes.ADULT_BLOCK_GUARDRAIL,
                 LawStage.PERMANENT_GUARDRAIL,
                 guardrail = guardrail
+            )
+        }
+
+        if (snapshot.isSafePackage && appRule != AppRuleBehavior.BLOCK) {
+            return law.decide(LawVerdict.ALLOW, EnforcementReasonCodes.EMERGENCY_ALLOW, LawStage.SAFE_APP)
+        }
+
+        val session = snapshot.sessionStatus
+        if (session != null &&
+            appRule != AppRuleBehavior.BLOCK &&
+            PromiseIntentRules.isUnrelatedProductivityPackage(pkg, snapshot.goal)
+        ) {
+            return law.decide(
+                LawVerdict.ALLOW,
+                EnforcementReasonCodes.PRODUCTIVITY_UNRELATED_ALLOW,
+                LawStage.UNRELATED_PRODUCTIVITY
             )
         }
 

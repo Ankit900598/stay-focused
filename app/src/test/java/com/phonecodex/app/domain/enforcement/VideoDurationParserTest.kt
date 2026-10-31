@@ -112,6 +112,57 @@ class VideoDurationParserTest {
     }
 
     @Test
+    fun recommendationTimeDuration_afterMoreVideos_neverDrivesMediaLengthBlock() {
+        val shortRecommendation =
+            "Hide player controls Playback Settings More videos Time duration 12 minutes"
+        val longRecommendation =
+            "Hide player controls Playback Settings More videos Time duration 1 hour 25 minutes"
+        val maxLengthPromise =
+            "for 1 hour do not allow to watch any video whose length is greater than 40 min"
+
+        assertEquals(
+            MediaLengthLocalDecision.WAIT,
+            MediaLengthEnforcement.decide(
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                goal = minLengthPromise,
+                screenText = shortRecommendation,
+                structuredMaxBlockMinutes = null,
+                structuredMinBlockMinutes = 30
+            )
+        )
+        assertEquals(
+            MediaLengthLocalDecision.WAIT,
+            MediaLengthEnforcement.decide(
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                goal = maxLengthPromise,
+                screenText = shortRecommendation,
+                structuredMaxBlockMinutes = 40
+            )
+        )
+        assertEquals(
+            MediaLengthLocalDecision.WAIT,
+            MediaLengthEnforcement.decide(
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                goal = maxLengthPromise,
+                screenText = longRecommendation,
+                structuredMaxBlockMinutes = 40
+            )
+        )
+        assertEquals(
+            MediaLengthLocalDecision.WAIT,
+            MediaLengthEnforcement.decide(
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                goal = minLengthPromise,
+                screenText = longRecommendation,
+                structuredMaxBlockMinutes = null,
+                structuredMinBlockMinutes = 30
+            )
+        )
+        assertNull(VideoDurationParser.parse(shortRecommendation).currentPlayerDurationSeconds)
+        assertNull(VideoDurationParser.parse(longRecommendation).currentPlayerDurationSeconds)
+    }
+
+    @Test
     fun extractPrimary_neverReturnsRecommendationOnlyDuration() {
         val screen =
             "Chip design from the bottom up – Reiner Pope Show player controls " +
@@ -182,6 +233,44 @@ class VideoDurationParserTest {
         val parsed = VideoDurationParser.parse("Play Pause 0:01 / 31:33")
         assertEquals(31 * 60 + 33, parsed.currentPlayerDurationSeconds)
         assertEquals(DurationSource.CURRENT_PLAYER, parsed.source)
+    }
+
+    @Test
+    fun spokenCurrentPositionOfTotal_isCurrentPlayerTotal() {
+        val parsed = VideoDurationParser.parse(
+            "2 minutes 52 seconds of 17 minutes 4 seconds"
+        )
+        assertEquals(17 * 60 + 4, parsed.currentPlayerDurationSeconds)
+        assertEquals(DurationSource.CURRENT_PLAYER, parsed.source)
+    }
+
+    @Test
+    fun spokenProgressBeyondTotal_isNotCurrentPlayerDuration() {
+        val parsed = VideoDurationParser.parse(
+            "18 minutes 5 seconds of 17 minutes 4 seconds"
+        )
+        assertNull(parsed.currentPlayerDurationSeconds)
+        assertEquals(DurationSource.RECOMMENDATION_IGNORED, parsed.source)
+    }
+
+    @Test
+    fun spokenProgressAfterRecommendationHeader_isRecommendationOnly() {
+        val parsed = VideoDurationParser.parse(
+            "More videos 2 minutes 52 seconds of 17 minutes 4 seconds"
+        )
+        assertNull(parsed.currentPlayerDurationSeconds)
+        assertEquals(DurationSource.RECOMMENDATION_IGNORED, parsed.source)
+    }
+
+    @Test
+    fun spokenProgressAfterCommentsHeader_isNotCurrentPlayerDuration() {
+        val parsed = VideoDurationParser.parse(
+            "The essence of calculus 3 lakh likes 1.1 crore views Subscribe " +
+                "Comments Add a comment Top comments Someone wrote " +
+                "2 minutes 52 seconds of 17 minutes 4 seconds"
+        )
+        assertNull(parsed.currentPlayerDurationSeconds)
+        assertEquals(DurationSource.RECOMMENDATION_IGNORED, parsed.source)
     }
 
     @Test

@@ -122,6 +122,30 @@ object OverlayLifecycleGate {
         return mediaIdentity(screenText)
     }
 
+    fun pageIdentity(urlBarText: String?, screenText: String, packageName: String): String? {
+        pageIdentity(urlBarText, screenText)?.let { return it }
+        val surface = SurfaceDetector.detect(packageName, screenText).surface
+        return surface.takeUnless { it == SurfaceDetectionResult.UNKNOWN }
+            ?.let { "surface:${it.name.lowercase()}" }
+    }
+
+    fun pageLogKind(identity: String?): String = when {
+        identity?.startsWith("shorts:") == true -> "shorts"
+        identity?.startsWith("video:") == true -> "video"
+        identity?.startsWith("url:") == true -> "url"
+        identity?.startsWith("surface:") == true -> "surface"
+        else -> "unknown"
+    }
+
+    fun screenSignature(screenText: String): String? = screenText
+        .lowercase()
+        .replace(WHITESPACE_REGEX, " ")
+        .trim()
+        .take(3_000)
+        .takeIf { it.isNotEmpty() }
+
+    private val WHITESPACE_REGEX = Regex("\\s+")
+
     private fun normalizeUrl(raw: String): String? {
         val cleaned = raw.lowercase()
             .substringBefore(' ')

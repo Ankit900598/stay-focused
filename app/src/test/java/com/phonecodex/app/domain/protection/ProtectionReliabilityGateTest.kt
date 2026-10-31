@@ -3,12 +3,40 @@ package com.phonecodex.app.domain.protection
 import com.phonecodex.app.domain.diagnostics.BackendProbeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProtectionReliabilityGateTest {
 
     private val now = 1_000_000L
+
+    @Test
+    fun bootstrapPending_showsNeutralCheckingWithoutReconnectAction() {
+        val model = ProtectionReliabilityGate.evaluate(
+            input(
+                accessibilityEnabled = false,
+                accessibilityAlive = false,
+                lastEventMillis = 0L,
+                hasActiveCommitment = false,
+                permanentGuardrailOn = false,
+                statusInitialized = false
+            )
+        )
+
+        assertEquals(ProtectionReliabilityLevel.CHECKING, model.level)
+        assertEquals(ProtectionReliabilityGate.HEADLINE_CHECKING, model.headline)
+        assertEquals(ProtectionReliabilityGate.SUMMARY_CHECKING, model.summary)
+        assertEquals("Checking", model.accessibilityLine)
+        assertEquals("Checking", model.commitmentLine)
+        assertEquals("Checking", model.guardrailLine)
+        assertEquals("Checking", model.lastEventLine)
+        assertEquals(ProtectionPrimaryAction.NONE, model.primaryAction)
+        assertNull(model.primaryActionLabel)
+        assertFalse(model.detailsExpandedByDefault)
+        assertFalse(model.nothingEnforced)
+        assertFalse(model.isProtected)
+    }
 
     @Test
     fun accessibilityOff_needsSetup_andDeepLinks() {
@@ -161,6 +189,7 @@ class ProtectionReliabilityGateTest {
         assertEquals(ProtectionReliabilityLevel.PROTECTED, model.level)
         assertEquals("On", model.guardrailLine)
         assertEquals(ProtectionReliabilityGate.SUMMARY_GUARDRAIL_ONLY_ACTIVE, model.summary)
+        assertEquals("A permanent safety guardrail is active. No timed commitment is running.", model.summary)
         assertFalse(model.nothingEnforced)
     }
 
@@ -224,7 +253,8 @@ class ProtectionReliabilityGateTest {
         hasActiveCommitment: Boolean = false,
         permanentGuardrailOn: Boolean = false,
         backendKind: BackendProbeKind = BackendProbeKind.IDLE,
-        backendLoopback: Boolean = true
+        backendLoopback: Boolean = true,
+        statusInitialized: Boolean = true
     ): ProtectionReliabilityInput = ProtectionReliabilityInput(
         accessibilityEnabled = accessibilityEnabled,
         accessibilityAlive = accessibilityAlive,
@@ -235,6 +265,7 @@ class ProtectionReliabilityGateTest {
         permanentGuardrailOn = permanentGuardrailOn,
         backendKind = backendKind,
         backendLoopback = backendLoopback,
-        nowMillis = now
+        nowMillis = now,
+        statusInitialized = statusInitialized
     )
 }

@@ -105,6 +105,37 @@ class CommitmentPolicyLawTest {
     }
 
     @Test
+    fun androidAndMiuiSettingsRemainAvailableDuringLockedCommitments() {
+        val settingsPackages = listOf(
+            "com.android.settings",
+            "com.android.settings.intelligence",
+            "com.xiaomi.misettings",
+            "com.miui.securitycenter",
+            "com.miui.permcenter"
+        )
+        for (packageName in settingsPackages) {
+            val decision = law(
+                pkg = packageName,
+                text = "PhoneCodex Accessibility Use service turn off",
+                session = SessionStatus.LOCKED,
+                rule = AppRuleBehavior.BLOCK
+            )
+            assertEquals("$packageName verdict", LawVerdict.ALLOW, decision.verdict)
+            assertEquals("$packageName stage", LawStage.SAFE_APP, decision.stage)
+        }
+    }
+
+    @Test
+    fun serviceDoesNotRedirectAccessibilityControlsAwayFromSettings() {
+        val service = source("accessibility/PhoneCodexAccessibilityService.kt")
+        val observation = service.substringAfter("private fun recordAccessibilityControlAccess")
+            .substringBefore("\n    private fun ")
+        assertTrue("the observation hook must exist", observation.isNotEmpty())
+        assertFalse("Strlix must not force Home from accessibility settings", "performGlobalAction" in observation)
+        assertFalse("the observation hook must not show an overlay", "showBlockOverlay" in observation || "showWarningOverlay" in observation)
+    }
+
+    @Test
     fun dossierForAnotherPackage_isIgnored() {
         val wrongPkg = researchedAsGame.copy(packageName = "com.other.app")
         val r = law(cloneApp, cloneScreen, goal = noGamesGoal, settings = noGames, dossier = wrongPkg)
@@ -171,6 +202,63 @@ class CommitmentPolicyLawTest {
         val r = law(chrome, "pornhub.com free porn videos", session = null, guardrails = listOf(adultGuardrail))
         assertEquals(LawVerdict.BLOCK, r.verdict)
         assertEquals(LawStage.PERMANENT_GUARDRAIL, r.stage)
+    }
+
+    @Test
+    fun explicitPermanentGuardrail_overridesDefaultAllowedApps() {
+        val packages = listOf("com.whatsapp", "com.google.android.gm", "com.google.android.apps.drive")
+        for (packageName in packages) {
+            val guardrail = adultGuardrail.copy(blockedPackages = setOf(packageName))
+            for (session in listOf(null, SessionStatus.ACTIVE)) {
+                val decision = law(
+                    pkg = packageName,
+                    text = "Inbox Files",
+                    goal = "study math for one hour",
+                    session = session,
+                    guardrails = listOf(guardrail)
+                )
+                assertEquals("$packageName session=$session", LawVerdict.BLOCK, decision.verdict)
+                assertEquals("$packageName session=$session", LawStage.PERMANENT_GUARDRAIL, decision.stage)
+            }
+        }
+    }
+
+    @Test
+    fun nonOverridableEmergencyApp_staysAllowedDespitePackageGuardrail() {
+        val dialer = "com.android.phone"
+        val guardrail = adultGuardrail.copy(blockedPackages = setOf(dialer))
+        val decision = law(dialer, "Emergency call Phone keypad", guardrails = listOf(guardrail))
+        assertEquals(LawVerdict.ALLOW, decision.verdict)
+        assertEquals(LawStage.SAFE_APP, decision.stage)
+    }
+
+    @Test
+    fun nonOverridableEmergencyApp_doesNotDependOnCallerSafeFlag() {
+        val packages = listOf(
+            "com.android.phone",
+            "com.android.contacts",
+            "com.android.settings",
+            "com.phonecodex.app"
+        )
+        for (packageName in packages) {
+            val guardrail = adultGuardrail.copy(blockedPackages = setOf(packageName))
+            val decision = CommitmentPolicyEvaluator.evaluate(
+                CommitmentSnapshot(
+                    packageName = packageName,
+                    screenText = "Emergency controls",
+                    sessionStatus = SessionStatus.ACTIVE,
+                    goal = "block the phone app",
+                    settings = min40,
+                    storedAppRule = AppRuleBehavior.BLOCK,
+                    isSafePackage = false,
+                    guardrails = listOf(guardrail)
+                ),
+                ShortFormQuotaGate()
+            )
+
+            assertEquals(packageName, LawVerdict.ALLOW, decision.verdict)
+            assertEquals(packageName, LawStage.SAFE_APP, decision.stage)
+        }
     }
 
     @Test
@@ -288,6 +376,38 @@ class CommitmentPolicyLawTest {
             """storedDossier = if \(CommitmentPolicyEvaluator\.readsStoredDossier\([^)]*\)\) \{\s*appDossierStore\.get\(packageName\)"""
         )
         assertTrue("service loads the dossier only behind the preflight", load.containsMatchIn(service))
+    }
+
+    @Test
+    fun staleCloudReturn_rechecksCurrentLawBeforeCachingOrApplying() {
+        val service = source("accessibility/PhoneCodexAccessibilityService.kt")
+        val callback = service.substringAfter("Discarded stale classifier result for")
+        val recheck = callback.indexOf("evaluateCurrentLaw(")
+        val preemption = callback.indexOf("currentLaw.verdict != LawVerdict.CONTINUE")
+        val cache = callback.indexOf("lastClassifiedPackage = packageName")
+
+        assertTrue("cloud callback must recheck current law", recheck >= 0)
+        assertTrue("law must preempt stale counsel", preemption > recheck)
+        assertTrue("preemption must precede caching", cache > preemption)
+        val policyMatch = callback.indexOf("counselPolicyKey(currentSnapshot, storedSession) != policyKey")
+        assertTrue("changed policy must invalidate cloud counsel", policyMatch > preemption && policyMatch < cache)
+        assertTrue("cached counsel must match policy", "lastClassificationPolicyKey == policyKey" in service)
+        assertTrue("throttled counsel must use freshness gate", "reusableClassification &&" in service)
+        val throttledReuse = service.substringAfter("reusableClassification &&")
+            .substringBefore("applyClassificationOrFallback(")
+        assertTrue("throttled counsel must have a classification", "lastClassification != null" in throttledReuse)
+        assertTrue("cache identity must include screen and TTL", "EnforcementEventGate.shouldUseCachedClassification(" in service)
+        assertTrue("classifier identity must cover the full collected screen", "OverlayLifecycleGate.screenSignature(text).orEmpty()" in service)
+        assertTrue(
+            "preempting law must render its own decision",
+            "applyLawDecision(currentLaw, packageName, screenText, storedSession)" in
+                callback.substring(preemption, cache)
+        )
+        val identityCheck = service.substringAfter("private fun isCurrentPolicyEvaluation(")
+            .substringBefore("private fun ")
+        assertTrue("withdrawn service consent must invalidate late counsel", "if (!disclosureConsentAccepted) return false" in identityCheck)
+        assertTrue("changed session fields must invalidate counsel", "currentSession != storedSession" in identityCheck)
+        assertTrue("expired sessions must invalidate counsel", "SessionExpiryPolicy.isExpired(" in identityCheck)
     }
 
     private fun source(relative: String): String {

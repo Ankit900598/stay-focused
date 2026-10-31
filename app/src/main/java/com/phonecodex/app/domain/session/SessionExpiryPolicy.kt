@@ -3,7 +3,6 @@ package com.phonecodex.app.domain.session
 import com.phonecodex.app.domain.model.FocusSession
 import com.phonecodex.app.domain.model.SessionStatus
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 object SessionExpiryPolicy {
@@ -36,7 +35,7 @@ object SessionExpiryPolicy {
         if (shortFormDailyQuotaLimit == null || shortFormDailyQuotaLimit <= 0) {
             return session.deadlineMillis
         }
-        val endOfDay = LocalDate.ofInstant(Instant.ofEpochMilli(session.startTimeMillis), zoneId)
+        val endOfDay = Instant.ofEpochMilli(session.startTimeMillis).atZone(zoneId).toLocalDate()
             .plusDays(1)
             .atStartOfDay(zoneId)
             .toInstant()

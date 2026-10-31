@@ -39,7 +39,7 @@ object SessionEnforcementCopy {
         return if (left <= 0) {
             "0 shorts left. This commitment blocks more short videos."
         } else {
-            "$left shorts left of $limit."
+            "$left ${if (left == 1) "short" else "shorts"} left of $limit."
         }
     }
 

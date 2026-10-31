@@ -2,11 +2,11 @@ package com.phonecodex.app.domain.tamper
 
 data class TamperGuardMatch(
     val matchedSignals: List<String>,
-    val reason: String = PHONECODEX_CONTROLS_REASON
+    val reason: String = USER_CONTROL_REASON
 ) {
     companion object {
-        const val PHONECODEX_CONTROLS_REASON =
-            "Accessibility controls are locked during active Study World."
+        const val USER_CONTROL_REASON =
+            "You can always manage Strlix's Accessibility access in Android Settings."
     }
 }
 

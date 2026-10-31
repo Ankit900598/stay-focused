@@ -14,6 +14,12 @@ class HomeChatLayoutTest {
     }
 
     @Test
+    fun permanentSafetyRuleCount_isNotPresentedAsATimedCommitment() {
+        assertEquals("1 permanent safety rule", permanentSafetyRuleCountLabel(1))
+        assertEquals("2 permanent safety rules", permanentSafetyRuleCountLabel(2))
+    }
+
+    @Test
     fun activeSession_usesSettingsList() {
         assertFalse(usesChatHome(hasStoredSession = true, showAdvancedControls = false))
     }
@@ -32,6 +38,7 @@ class HomeChatLayoutTest {
         )
         assertEquals(HomeListItem.Header, items[0])
         assertEquals(HomeListItem.ProtectionStatus, items[1])
+        assertEquals(HomeListItem.TodayInsight, items[2])
         assertFalse(items.contains(HomeListItem.ProtectionSetup))
     }
 
@@ -44,6 +51,7 @@ class HomeChatLayoutTest {
         )
         assertEquals(HomeListItem.Header, items[0])
         assertFalse(items.contains(HomeListItem.ProtectionStatus))
+        assertFalse(items.contains(HomeListItem.TodayInsight))
         assertTrue(items.contains(HomeListItem.AdvancedProtectionHealth))
     }
 
@@ -105,24 +113,37 @@ class HomeChatLayoutTest {
     }
 
     @Test
-    fun confirmationPreview_compactsOrHidesProtectionCard() {
+    fun sessionDurationChoices_includeAnExistingCustomValue() {
+        assertEquals(listOf(5, 15, 30, 60), sessionDurationChoices(5))
+        assertEquals(listOf(15, 30, 60), sessionDurationChoices(30))
+    }
+
+    @Test
+    fun chatHome_compactsProtectionAndHidesItForProtectedConfirmation() {
         assertEquals(
-            ConfirmationProtectionMode.HIDDEN,
-            confirmationReviewProtectionMode(
+            ChatHomeProtectionMode.HIDDEN,
+            chatHomeProtectionMode(
                 hasUnderstanding = true,
                 protectionLevel = ProtectionReliabilityLevel.PROTECTED
             )
         )
         assertEquals(
-            ConfirmationProtectionMode.COMPACT,
-            confirmationReviewProtectionMode(
+            ChatHomeProtectionMode.COMPACT,
+            chatHomeProtectionMode(
                 hasUnderstanding = true,
                 protectionLevel = ProtectionReliabilityLevel.NEEDS_SETUP
             )
         )
         assertEquals(
-            ConfirmationProtectionMode.FULL,
-            confirmationReviewProtectionMode(
+            ChatHomeProtectionMode.COMPACT,
+            chatHomeProtectionMode(
+                hasUnderstanding = false,
+                protectionLevel = ProtectionReliabilityLevel.NEEDS_SETUP
+            )
+        )
+        assertEquals(
+            ChatHomeProtectionMode.COMPACT,
+            chatHomeProtectionMode(
                 hasUnderstanding = false,
                 protectionLevel = ProtectionReliabilityLevel.PROTECTED
             )

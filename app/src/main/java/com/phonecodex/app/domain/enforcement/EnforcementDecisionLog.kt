@@ -35,6 +35,8 @@ object EnforcementReasonCodes {
 
     // Supplementary codes for remaining deterministic call sites (same stability contract).
     const val AI_ALLOW = "AI_ALLOW"
+    const val CLASSIFIER_BLOCK_NO_CONFIRMED_RULE = "CLASSIFIER_BLOCK_NO_CONFIRMED_RULE"
+    const val CLASSIFIER_LOCK_NOT_AUTHORIZED = "CLASSIFIER_LOCK_NOT_AUTHORIZED"
     const val CONTENT_SIGNAL_ALLOW = "CONTENT_SIGNAL_ALLOW"
     const val CONTENT_SIGNAL_BLOCK = "CONTENT_SIGNAL_BLOCK"
     const val FEEDBACK_MEMORY_ALLOW = "FEEDBACK_MEMORY_ALLOW"

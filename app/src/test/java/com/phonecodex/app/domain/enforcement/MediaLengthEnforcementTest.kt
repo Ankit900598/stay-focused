@@ -19,7 +19,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun normalChromePage_passes_underLengthOnlyPromise() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = "Wikipedia Android (operating system) Edit Search",
             structuredMaxBlockMinutes = 40
@@ -34,7 +34,7 @@ class MediaLengthEnforcementTest {
                 "About 1,200,000 results YouTube 1 hour 25 minutes some channel"
         assertFalse(PromiseIntentRules.isActiveVideoPlayerSurface(screenText))
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = screenText,
             structuredMaxBlockMinutes = 40
@@ -55,7 +55,7 @@ class MediaLengthEnforcementTest {
             "Google New incognito tab Profile Other bookmarks Chrome tips " +
                 "Art and photos Short videos"
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = screenText,
             structuredMaxBlockMinutes = 40
@@ -66,7 +66,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun chromeYouTube_overLimit_blocks() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = "Hide player controls Time duration 1 hour 25 minutes YouTube",
             structuredMaxBlockMinutes = 40
@@ -77,7 +77,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun chromeYouTube_underLimit_allows() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = "Hide player controls Time duration 12 minutes YouTube",
             structuredMaxBlockMinutes = 40
@@ -86,9 +86,48 @@ class MediaLengthEnforcementTest {
     }
 
     @Test
+    fun maxLengthUsesExactSecondsAtMinuteBoundary() {
+        val overByOneSecond = "Hide player controls youtube.com Time duration 40 minutes, 1 second"
+        val exactlyAtLimit = "Hide player controls youtube.com Time duration 40 minutes"
+
+        assertTrue(
+            PromiseIntentRules.videoViolatesMediaLengthLimit(
+                goal = lengthPromise,
+                screenText = overByOneSecond,
+                structuredMaxBlockMinutes = 40
+            )
+        )
+        assertFalse(
+            PromiseIntentRules.videoViolatesMediaLengthLimit(
+                goal = lengthPromise,
+                screenText = exactlyAtLimit,
+                structuredMaxBlockMinutes = 40
+            )
+        )
+
+        val over = MediaLengthEnforcement.decideDetailed(
+            packageName = VideoPlatformRegistry.CHROME,
+            goal = lengthPromise,
+            screenText = overByOneSecond,
+            structuredMaxBlockMinutes = 40
+        )
+        assertEquals(40 * 60 + 1, over.currentPlayerDurationSeconds)
+        assertEquals(MediaLengthLocalDecision.BLOCK, over.decision)
+        assertEquals(EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX, over.blockReasonCode)
+
+        val exact = MediaLengthEnforcement.decide(
+            packageName = VideoPlatformRegistry.CHROME,
+            goal = lengthPromise,
+            screenText = exactlyAtLimit,
+            structuredMaxBlockMinutes = 40
+        )
+        assertEquals(MediaLengthLocalDecision.ALLOW, exact)
+    }
+
+    @Test
     fun chromeYouTube_withoutDuration_waits() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = "Hide player controls Search YouTube Playback Settings",
             structuredMaxBlockMinutes = 40
@@ -99,7 +138,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun chromeWatchUrl_withLongDuration_blocks() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = lengthPromise,
             screenText = "youtube.com/watch?v=abc123 Time duration 1 hour 10 minutes",
             structuredMaxBlockMinutes = 40
@@ -110,7 +149,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun nativeYouTube_overLimit_blocks() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.YOUTUBE_PACKAGE,
+            packageName = VideoPlatformRegistry.YOUTUBE,
             goal = lengthPromise,
             screenText = "Time duration 2 hours 5 minutes Subscribe Share",
             structuredMaxBlockMinutes = 40
@@ -121,7 +160,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun nativeYouTube_withoutDuration_waits_notAi() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.YOUTUBE_PACKAGE,
+            packageName = VideoPlatformRegistry.YOUTUBE,
             goal = lengthPromise,
             screenText = "Hide player controls Search Playback Settings",
             structuredMaxBlockMinutes = 40
@@ -132,7 +171,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun nativeYouTubeHome_returnsPass_notWarn() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.YOUTUBE_PACKAGE,
+            packageName = VideoPlatformRegistry.YOUTUBE,
             goal = lengthPromise,
             screenText = "Home Shorts Subscriptions Library",
             structuredMaxBlockMinutes = 40
@@ -146,7 +185,7 @@ class MediaLengthEnforcementTest {
             "Search results 1:25:30 45 minutes 12:04 Home Shorts Library"
         assertFalse(PromiseIntentRules.isActiveVideoPlayerSurface(screenText))
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.YOUTUBE_PACKAGE,
+            packageName = VideoPlatformRegistry.YOUTUBE,
             goal = lengthPromise,
             screenText = screenText,
             structuredMaxBlockMinutes = 40
@@ -193,7 +232,7 @@ class MediaLengthEnforcementTest {
     @Test
     fun noLengthPromise_returnsNone() {
         val decision = MediaLengthEnforcement.decide(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = "study mode for 1 hour no shorts",
             screenText = "Wikipedia Android",
             structuredMaxBlockMinutes = null
@@ -227,7 +266,7 @@ class MediaLengthEnforcementTest {
         assertEquals(
             MediaLengthLocalDecision.PASS,
             MediaLengthEnforcement.decide(
-                MediaLengthEnforcement.CHROME_PACKAGE,
+                VideoPlatformRegistry.CHROME,
                 minLengthPromise,
                 screen,
                 structuredMaxBlockMinutes = null,
@@ -246,7 +285,7 @@ class MediaLengthEnforcementTest {
                 "Andrew Tate... 4 minutes 48 seconds " +
                 "Introducing GPT-6 Astra... 2 minutes 43 seconds"
         val detailed = MediaLengthEnforcement.decideDetailed(
-            packageName = MediaLengthEnforcement.CHROME_PACKAGE,
+            packageName = VideoPlatformRegistry.CHROME,
             goal = minLengthPromise,
             screenText = screen,
             structuredMaxBlockMinutes = null,

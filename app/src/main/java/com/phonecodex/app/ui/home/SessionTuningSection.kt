@@ -9,6 +9,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonecodex.app.domain.model.StudyWorldSettings
 
+private val durationQuickChoices = listOf(15, 30, 60)
+
+internal fun sessionDurationChoices(currentMinutes: Int): List<Int> =
+    if (currentMinutes in durationQuickChoices) {
+        durationQuickChoices
+    } else {
+        listOf(currentMinutes) + durationQuickChoices
+    }
+
 /**
  * Raw session knobs. These are normally derived from the promise, so they live under
  * Advanced Controls for the cases where the user wants to override them by hand.
@@ -18,14 +27,15 @@ internal fun SessionTuningSection(
     settings: StudyWorldSettings,
     enabled: Boolean,
     onDurationSelected: (Int) -> Unit,
-    onLockThresholdSelected: (Int) -> Unit,
+    onLockThresholdSelected: (Int?) -> Unit,
     onCooldownSelected: (Int) -> Unit
 ) {
     MicroLabel(text = "Session tuning")
     Spacer(modifier = Modifier.height(6.dp))
     Text(
         text = if (enabled) {
-            "Understanding a promise overwrites duration and lock attempts."
+            "A promise's stated duration or lock count wins. Otherwise duration and cooldown " +
+                "use these saved values, while lock attempts use strictness unless you choose a custom threshold."
         } else {
             "Locked while a commitment is running."
         },
@@ -41,7 +51,7 @@ internal fun SessionTuningSection(
     )
     Spacer(modifier = Modifier.height(8.dp))
     OptionRow(
-        options = listOf(15, 30, 60),
+        options = sessionDurationChoices(settings.durationMinutes),
         selected = settings.durationMinutes,
         label = { "$it min" },
         onSelected = onDurationSelected,
@@ -56,9 +66,9 @@ internal fun SessionTuningSection(
     )
     Spacer(modifier = Modifier.height(8.dp))
     OptionRow(
-        options = listOf(3, 5, 10),
-        selected = settings.lockAttemptThreshold,
-        label = { "$it" },
+        options = listOf<Int?>(null, 3, 5, 10),
+        selected = settings.lockAttemptThreshold.takeIf { settings.lockAttemptThresholdCustomized },
+        label = { it?.toString() ?: "Auto" },
         onSelected = onLockThresholdSelected,
         enabled = enabled
     )

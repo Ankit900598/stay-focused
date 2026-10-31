@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,11 +50,13 @@ internal fun PromiseComposerSection(
     onVoicePromise: () -> Unit,
     voiceInputStatus: String? = null,
     understandingInProgress: Boolean = false,
-    compact: Boolean = false
+    compact: Boolean = false,
+    voiceRecording: Boolean = false,
+    voiceBusy: Boolean = false
 ) {
     val colors = MaterialTheme.colorScheme
     val canSend = promiseText.isNotBlank() && !understandingInProgress
-    val canVoice = !understandingInProgress
+    val canVoice = !understandingInProgress && (!voiceBusy || voiceRecording)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         if (!compact) {
@@ -90,8 +93,7 @@ internal fun PromiseComposerSection(
                             text = if (compact) {
                                 "Type a promise in any language…"
                             } else {
-                                "Tomorrow I have my OS exam. Keep me on one lecture " +
-                                    "playlist for 3 hours…"
+                                "Example: Keep me on one lecture playlist for 3 hours…"
                             },
                             style = MaterialTheme.typography.bodyLarge,
                             color = colors.onSurfaceVariant.copy(alpha = 0.7f)
@@ -151,11 +153,17 @@ internal fun PromiseComposerSection(
                         enabled = canVoice,
                         modifier = Modifier
                             .size(44.dp)
-                            .semantics { contentDescription = "Speak promise" }
+                            .semantics {
+                                contentDescription = if (voiceRecording) {
+                                    "Finish voice recording"
+                                } else {
+                                    "Speak promise"
+                                }
+                            }
                             .testTag("promise_composer_mic")
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Mic,
+                            imageVector = if (voiceRecording) Icons.Filled.Stop else Icons.Filled.Mic,
                             contentDescription = null,
                             tint = if (canVoice) {
                                 colors.onSurfaceVariant

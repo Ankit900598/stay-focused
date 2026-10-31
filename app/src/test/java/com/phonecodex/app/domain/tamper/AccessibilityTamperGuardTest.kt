@@ -51,7 +51,7 @@ class AccessibilityTamperGuardTest {
         assertTrue(match!!.matchedSignals.contains("phonecodex"))
         assertTrue(match.matchedSignals.contains("use phonecodex"))
         assertEquals(
-            TamperGuardMatch.PHONECODEX_CONTROLS_REASON,
+            TamperGuardMatch.USER_CONTROL_REASON,
             match.reason
         )
     }
@@ -87,5 +87,9 @@ class AccessibilityTamperGuardTest {
         assertNotNull(match)
         assertTrue(match!!.matchedSignals.contains("strlix"))
         assertTrue(match.matchedSignals.contains("use strlix"))
+        assertEquals(
+            TamperGuardMatch.USER_CONTROL_REASON,
+            match.reason
+        )
     }
 }

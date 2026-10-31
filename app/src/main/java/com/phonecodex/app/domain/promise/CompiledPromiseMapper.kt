@@ -8,6 +8,7 @@ import com.phonecodex.app.domain.model.ClarificationOption
 import com.phonecodex.app.domain.model.ContentRule
 import com.phonecodex.app.domain.model.ContentRuleAction
 import com.phonecodex.app.domain.model.FocusPromise
+import com.phonecodex.app.domain.model.LocalAppTargetSelectionCandidate
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.scope.ScopeAppliesToCopy
 import com.phonecodex.app.domain.scope.ScopeCanonicalizer
@@ -61,7 +62,10 @@ data class CompiledPromiseResponse(
     /** Raw top-level `scope` object; parsed + canonicalized by the mapper, never trusted as-is. */
     val scopeJson: String? = null,
     /** `meta.promptVersion` as the backend reported it (e.g. hosted `promise_compiler_v07`). */
-    val compilerPromptVersion: String? = null
+    val compilerPromptVersion: String? = null,
+    val localAppTargetSelection: LocalAppTargetSelectionCandidate? = null,
+    val lockAttemptThreshold: Int? = null,
+    val lockAttemptThresholdInvalid: Boolean = false
 )
 
 data class ClarificationOptionDto(
@@ -111,6 +115,11 @@ object CompiledPromiseResponseParser {
             val rawText = json.optString("rawText").orEmpty()
             val sessionDuration = json.optInt("sessionDurationMinutes", -1)
             if (sessionDuration <= 0) return null
+            val lockAttemptThreshold = if (json.isNull("lockAttemptThreshold")) {
+                null
+            } else {
+                json.optInt("lockAttemptThreshold", -1).takeIf { it in 1..100 } ?: return null
+            }
 
             CompiledPromiseResponse(
                 rawText = rawText,
@@ -131,6 +140,8 @@ object CompiledPromiseResponseParser {
                     .takeIf { it.isNotBlank() && it != "null" },
                 quotaBoundary = json.optString("quotaBoundary")
                     .takeIf { it.isNotBlank() && it != "null" },
+                lockAttemptThreshold = lockAttemptThreshold,
+                lockAttemptThresholdInvalid = json.optBoolean("lockAttemptThresholdInvalid", false),
                 scopePackages = stringList(json.optJSONArray("scopePackages")),
                 contentBrands = stringList(json.optJSONArray("contentBrands")),
                 surfaceScope = stringList(json.optJSONArray("surfaceScope")),
@@ -158,7 +169,10 @@ object CompiledPromiseResponseParser {
                 scopeJson = json.optJSONObject("scope")?.toString(),
                 compilerPromptVersion = json.optJSONObject("meta")?.optString("promptVersion")
                     ?.trim()
-                    ?.takeIf { it.isNotBlank() && it != "null" }
+                    ?.takeIf { it.isNotBlank() && it != "null" },
+                localAppTargetSelection = localAppTargetSelection(
+                    json.optJSONObject("localAppTargetSelection")
+                )
             )
         } catch (_: Exception) {
             null
@@ -228,6 +242,14 @@ object CompiledPromiseResponseParser {
             checkThis = stringList(obj.optJSONArray("checkThis")),
             safetyNotes = stringList(obj.optJSONArray("safetyNotes"))
         )
+    }
+
+    private fun localAppTargetSelection(obj: JSONObject?): LocalAppTargetSelectionCandidate? {
+        if (obj == null || obj.optString("kind").trim() != "WHOLE_APP_BLOCK") return null
+        val label = obj.optString("label").trim()
+        if (label.isBlank() || label.length > 64 || label.any(Char::isISOControl)) return null
+        if (Regex("""\b(?:com|org|net|io)\.[a-zA-Z0-9_.]+\b""").containsMatchIn(label)) return null
+        return LocalAppTargetSelectionCandidate(label)
     }
 
     private fun appRules(array: JSONArray?): List<CompiledAppRuleDto> {
@@ -335,6 +357,8 @@ object CompiledPromiseMapper {
             FocusPromise(
                 rawText = raw,
             sessionDurationMinutes = response.sessionDurationMinutes.coerceAtLeast(1),
+            lockAttemptThreshold = response.lockAttemptThreshold,
+            lockAttemptThresholdInvalid = response.lockAttemptThresholdInvalid,
             allowedKeywords = emptyList(),
             blockedKeywords = emptyList(),
             strictness = parseStrictness(response.strictness),
@@ -397,7 +421,8 @@ object CompiledPromiseMapper {
             enforcementScope = typedScope,
             unrepresentableAppScopes = appRulePlan.unrepresentableLabels,
             compilerPromptVersion = response.compilerPromptVersion,
-            legacyContractGap = legacyGap
+            legacyContractGap = legacyGap,
+            localAppTargetSelection = LocalAppTargetSelectionLaw.candidate(response, raw)
         )
         )
     }

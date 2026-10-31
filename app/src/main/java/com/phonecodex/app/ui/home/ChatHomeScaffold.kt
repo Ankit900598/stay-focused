@@ -49,12 +49,16 @@ internal fun ChatHomeScaffold(
     onUnderstandPromise: () -> Unit,
     onVoicePromise: () -> Unit,
     voiceInputStatus: String?,
+    voiceRecording: Boolean = false,
+    voiceBusy: Boolean = false,
     understandingInProgress: Boolean,
-    onOpenAdvanced: () -> Unit
+    onOpenAdvanced: () -> Unit,
+    understandingExtra: (@Composable () -> Unit)? = null,
+    todayInsight: (@Composable () -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val reviewing = understanding != null
-    val protectionMode = confirmationReviewProtectionMode(reviewing, protection.level)
+    val protectionMode = chatHomeProtectionMode(reviewing, protection.level)
     Column(
         modifier = Modifier
             .then(modifier)
@@ -66,7 +70,7 @@ internal fun ChatHomeScaffold(
     ) {
         ChatHomeHeader(protectionLevel = protection.level)
 
-        if (protectionMode != ConfirmationProtectionMode.HIDDEN) {
+        if (protectionMode != ChatHomeProtectionMode.HIDDEN) {
             Spacer(modifier = Modifier.height(16.dp))
             ProtectionReliabilityCard(
                 model = protection,
@@ -74,7 +78,8 @@ internal fun ChatHomeScaffold(
                 checkInProgress = checkInProgress,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
                 onRunProtectionCheck = onRunProtectionCheck,
-                compact = protectionMode == ConfirmationProtectionMode.COMPACT
+                compact = true,
+                allowDetailsToggle = !reviewing
             )
         }
 
@@ -84,12 +89,22 @@ internal fun ChatHomeScaffold(
                 .fillMaxWidth()
         ) {
             if (understanding == null) {
-                IdleGreeting(
-                    greeting = protection.idleGreeting,
+                Column(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 12.dp)
-                )
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = 18.dp, bottom = 12.dp)
+                ) {
+                    IdleGreeting(
+                        greeting = protection.idleGreeting,
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    if (todayInsight != null) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        todayInsight()
+                    }
+                }
             } else {
                 Column(
                     modifier = Modifier
@@ -103,7 +118,8 @@ internal fun ChatHomeScaffold(
                         onStartCommitment = onStartCommitment,
                         onEditPromise = onEditPromise,
                         onSelectClarificationOption = onSelectClarificationOption,
-                        onStrongerConfirmChange = onStrongerConfirmChange
+                        onStrongerConfirmChange = onStrongerConfirmChange,
+                        extraSection = understandingExtra
                     )
                 }
             }
@@ -117,13 +133,15 @@ internal fun ChatHomeScaffold(
                 onUnderstandPromise = onUnderstandPromise,
                 onVoicePromise = onVoicePromise,
                 voiceInputStatus = voiceInputStatus,
+                voiceRecording = voiceRecording,
+                voiceBusy = voiceBusy,
                 understandingInProgress = understandingInProgress,
                 compact = true
             )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-        QuietAction(text = "Advanced", onClick = onOpenAdvanced)
+        QuietAction(text = "Settings & controls", onClick = onOpenAdvanced)
     }
 }
 
@@ -145,7 +163,7 @@ private fun ChatHomeHeader(protectionLevel: ProtectionReliabilityLevel) {
         Spacer(modifier = Modifier.weight(1f))
         StatusPill(
             text = protectionStatusPillText(protectionLevel),
-            tone = if (isProtected) PillTone.POSITIVE else PillTone.ALERT
+            tone = protectionStatusPillTone(protectionLevel)
         )
     }
 }

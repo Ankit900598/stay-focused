@@ -540,7 +540,7 @@
         "description": "videos shorter than 30 min"
       }
     ],
-    "clarificationQuestion": "What should I cover for ‘Google video’? Videos inside Chrome/Google search, all video apps, or only YouTube?",
+    "clarificationQuestion": null,
     "cautionMessages": [
       "AI interpretation was treated as uncertain, so confirmation is required.",
       "“Google video” is ambiguous — pick Chrome, all video apps, or YouTube before Start.",

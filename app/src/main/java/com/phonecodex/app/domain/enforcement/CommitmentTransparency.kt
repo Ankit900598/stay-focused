@@ -20,8 +20,15 @@ data class LastDecisionSnapshot(
     val matchedSignals: List<String>,
     val updatedMillis: Long,
     val screenTextPreview: String? = null,
-    val nowMillis: Long = 0L
+    val nowMillis: Long = 0L,
+    val promiseContextStatus: DecisionPromiseContext? = null
 )
+
+enum class DecisionPromiseContext {
+    NONE,
+    CURRENT_SESSION,
+    DIFFERENT_SESSION
+}
 
 data class LastDecisionEngineering(
     val packageName: String?,
@@ -67,6 +74,12 @@ object CommitmentTransparency {
         val decision = snapshot.decision?.trim()?.uppercase().orEmpty()
         val hasDecision = decision.isNotEmpty() && snapshot.updatedMillis > 0L
         val isStale = hasDecision && now - snapshot.updatedMillis > STALE_AFTER_MS
+        val promiseContextStatus = snapshot.promiseContextStatus
+            ?: if (snapshot.promiseText.isNullOrBlank()) {
+                DecisionPromiseContext.NONE
+            } else {
+                DecisionPromiseContext.CURRENT_SESSION
+            }
         val sourceKind = sourceKind(snapshot.source, code)
         val emptyMessage = when {
             !hasDecision ->
@@ -77,8 +90,15 @@ object CommitmentTransparency {
             else -> null
         }
         val userPromise = sanitizeUserText(
-            snapshot.promiseText?.trim()?.takeIf { it.isNotEmpty() }
-                ?: if (hasDecision) "No active promise text stored." else "No promise yet."
+            when {
+                !hasDecision -> "No promise yet."
+                promiseContextStatus == DecisionPromiseContext.CURRENT_SESSION ->
+                    snapshot.promiseText?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: "Promise text is unavailable."
+                promiseContextStatus == DecisionPromiseContext.DIFFERENT_SESSION ->
+                    "A different or ended commitment was active; its text is not retained here."
+                else -> "No active promise at the time of this decision."
+            }
         )
         val userDecision = if (hasDecision) userDecisionLabel(decision) else "none"
         val userWhy = if (hasDecision) {
@@ -91,7 +111,11 @@ object CommitmentTransparency {
         } else {
             "No evidence yet."
         }
-        val userNext = if (hasDecision) userNext(decision) else "Start a promise, then open an app."
+        val userNext = if (hasDecision) {
+            userNext(decision, code, promiseContextStatus)
+        } else {
+            "Start a promise, then open an app."
+        }
         return LastDecisionExplanation(
             hasDecision = hasDecision,
             isStale = isStale,
@@ -120,7 +144,8 @@ object CommitmentTransparency {
 
     /**
      * Sanitized shareable report. Screen text is omitted unless [includeScreenPreview] is true,
-     * and even then it is truncated and labeled.
+     * and even then it is truncated and labeled. The application only keeps its live preview in
+     * process memory; callers should not persist a generated report containing that preview.
      */
     fun debugReport(
         snapshot: LastDecisionSnapshot,
@@ -169,7 +194,7 @@ object CommitmentTransparency {
                 appendLine(preview.ifBlank { "(empty)" })
             } else {
                 appendLine("Screen text: not included (private).")
-                appendLine("Engineering inspector may show a truncated preview on-device.")
+                appendLine("The on-device inspector may show a temporary preview for up to 10 minutes.")
             }
             snapshot.reason?.trim()?.takeIf { it.isNotEmpty() }?.let { rawReason ->
                 appendLine()
@@ -371,13 +396,27 @@ object CommitmentTransparency {
         else -> duration?.let { " (source: ${it.lowercase()})" }.orEmpty()
     }
 
-    private fun userNext(decision: String): String = when (decision) {
+    private fun userNext(
+        decision: String,
+        code: String?,
+        promiseContextStatus: DecisionPromiseContext
+    ): String = when {
+        promiseContextStatus == DecisionPromiseContext.DIFFERENT_SESSION ->
+            "This decision belongs to a different or ended commitment. Review the current promise before relying on it."
+        decision == "ALLOW" &&
+            code == EnforcementReasonCodes.EMERGENCY_ALLOW &&
+            promiseContextStatus == DecisionPromiseContext.NONE ->
+            "This app is always allowed. Start a promise to set commitment-specific rules."
+        decision == "ALLOW" && promiseContextStatus == DecisionPromiseContext.NONE ->
+            "No commitment was active for this decision. Start a promise to set commitment-specific rules."
+        else -> when (decision) {
         "ALLOW" -> "Nothing to do if this matches your promise. Keep going."
         "WARN" -> "Leave this screen, or continue if you meant to. Repeated warns can lock the session."
         "BLOCK" -> "Leave this app or open something your promise allows."
         "LOCK" -> "The session is locked. Calls and emergency apps still work. To end it, use End Commitment or emergency exit in Strlix."
         "WAIT" -> "Stay until the player clock is readable, or leave if this should not play."
         else -> "Open Strlix if the decision does not match your promise."
+        }
     }
 
     private fun sanitizeUserText(text: String): String {

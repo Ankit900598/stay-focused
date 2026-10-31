@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.phonecodex.app.domain.diagnostics.BackendConfig
 import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
+import com.phonecodex.app.domain.diagnostics.diagnosticErrorKind
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -26,7 +27,7 @@ class NetworkAiContentClassifier : ContentClassifier {
             )
             classifyFromBackend(request)
         } catch (err: Exception) {
-            Log.w(TAG, "Backend classify failed for ${request.packageName}: ${err.message}")
+            Log.w(TAG, "Backend classify failed for ${request.packageName}: ${diagnosticErrorKind(err)}")
             null
         } finally {
             StrictMode.setThreadPolicy(previousPolicy)

@@ -251,7 +251,7 @@ Renames from the brief, with reasons:
 | `SITE_OR_DOMAIN_ONLY` | `SITE_SCOPED` | shorter; a domain is a site pattern |
 | `UNKNOWN_NEEDS_CLARIFICATION` | `UNRESOLVED` | it is a state, not a request — and it must be the **default** |
 | — | `HOST_WITH_CATEGORY_EXEMPTIONS` | **new.** Required for "Chrome allowed except adult/movie/video sites" |
-| — | `PACKAGE_PINNED` | **new.** "block NetMirror", "lock this app" — user named a literal app |
+| — | `PACKAGE_PINNED` | **new.** "block NetMirror" — every package must map to a supported app name the user actually wrote |
 
 Preset expansions (`{B}` = identity parameter, `{S}` = site list):
 
@@ -630,8 +630,9 @@ its own independent LOCK law because it must also work with no session scope.
 2. `scope.version != 1`
 3. `scope.confidence < 0.60`
 4. `candidateScopes.size >= 2` and no option is `recommended`
-5. `scope.evidenceSpans` is empty while `kind != PACKAGE_PINNED`
-   *(the compiler cannot point at the user's words ⇒ it guessed)*
+5. For non-`PACKAGE_PINNED` scopes, `scope.evidenceSpans` is empty or non-verbatim. For
+   `PACKAGE_PINNED`, any package is unmapped or its supported app name is absent from the
+   user promise *(a package ID or model label alone is not evidence)*.
 6. `appliesToText` contains a package id (compiler contract breach)
 7. the kind is a permanent / Life-Rule scope and `requiresStrongerConfirmation` is unmet
 

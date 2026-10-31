@@ -183,14 +183,14 @@
       "allowed": [],
       "blocked": [],
       "time": "About 60 minutes",
-      "appliesTo": "YouTube Shorts only",
+      "appliesTo": "YouTube short videos only",
       "checkThis": [],
       "safetyNotes": [],
       "understoodSummary": "Review the allow and block lists below.",
       "allowedBullets": [],
       "blockedBullets": [],
       "timeWindowText": "About 60 minutes",
-      "appliesToText": "YouTube Shorts only",
+      "appliesToText": "YouTube short videos only",
       "hiddenInternalScope": []
     },
     "internalPolicy": {
@@ -233,9 +233,11 @@
     "allowedSummaries": [],
     "blockedSummaries": [],
     "conditionalSummaries": [
-      "Applies to: YouTube Shorts only"
+      "Applies to: YouTube short videos only"
     ],
-    "confirmationPreview": [],
+    "confirmationPreview": [
+      "Applies to: YouTube short videos only"
+    ],
     "interpretationNotes": [],
     "scopePackages": [
       "com.google.android.youtube"
@@ -245,7 +247,7 @@
     "surfaceScope": [],
     "contentScope": [],
     "contentRules": [],
-    "clarificationQuestion": "Did you mean all short-form video across short-video and reels-style apps, or only YouTube Shorts?",
+    "clarificationQuestion": null,
     "cautionMessages": [
       "AI interpretation was treated as uncertain, so confirmation is required.",
       "Using your choice: YouTube short videos only"

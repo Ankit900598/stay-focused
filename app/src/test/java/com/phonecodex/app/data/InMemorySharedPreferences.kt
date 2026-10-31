@@ -11,6 +11,7 @@ import android.content.SharedPreferences
 class InMemorySharedPreferences : SharedPreferences {
 
     private val values = linkedMapOf<String, Any>()
+    var commitSucceeds: Boolean = true
 
     fun snapshot(): Map<String, Any?> = values.mapValues { (_, v) -> if (v is Set<*>) v.toSet() else v }
 
@@ -58,6 +59,7 @@ class InMemorySharedPreferences : SharedPreferences {
         override fun clear() = apply { clearAll = true }
 
         override fun commit(): Boolean {
+            if (!commitSucceeds) return false
             if (clearAll) values.clear()
             pending.forEach { (key, value) -> if (value == null) values.remove(key) else values[key] = value }
             pending.clear()

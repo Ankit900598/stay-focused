@@ -2,7 +2,21 @@
 
 **Updated:** 2026-09-22 (Commitment Transparency: Last decision on Home/Advanced)
 
-**Hosted backend:** https://phonecodex-backend.azurewebsites.net in `phonecodex-dev`. POST routes require `X-Strlix-App-Secret`. Ladder: compiler `pc-lab-astra` (gpt-6-astra), classifier `pc-lab-terra` (gpt-5.6-terra) → luna/sol/strong. Vision env OFF. Localhost `:8787` still works when secret is empty. Runbook: `docs/azure-hosted-backend.md`. AI does not enforce.  
+> **Status note (2026-10-11):** The policy invariants below remain useful, but this is a historical snapshot. Its deployment, feature-flag, experiment, and phone-checklist details are not current. For observed repository/phone/Azure status and today's ordered work, read `CURRENT_STATUS.md` and the **Current Next Steps** at the top of `NEXT_TASKS.md`. Do not execute the dated checklist below without revalidation.
+
+> **Current promise-safety and privacy gates (2026-10-12):** the backend can emit `surface=study` / `contentType=study`, but Android has no reliable classifier to decide whether an on-screen video is genuinely study content. Strlix refuses to start any structured study-only rule rather than imply it can enforce it; exact playlist/channel/creator targeting is also unsupported until typed evidence exists. Accessibility now requires persisted, versioned in-app disclosure consent before screen inspection. The current local phoneTest build passes 1,144 Android unit tests, but Xiaomi has no Strlix install; neither change is phone-verified. See `CURRENT_STATUS.md`, `NEXT_TASKS.md`, and `docs/phone-observation-errors-2026-10-11.md` for the exact APK and install gate.
+
+> **Current Play-policy review gate (2026-10-12):** Accessibility's prominent disclosure and affirmative consent are present, and gesture injection is disabled. However, a live AI screen classification can still trigger a block overlay under a user-confirmed `AI_DECIDE` policy. Google's current policy distinguishes deterministic static human-defined automation from autonomous Accessibility decisions; Strlix's AI-classifier path requires expert policy review before Play distribution. This is unresolved, not a definitive violation determination. Do not claim `isAccessibilityTool` eligibility; it is not set in the service metadata.
+
+> **Current privacy documentation gap (2026-10-12):** no privacy-policy/Data Safety artifact or in-app link was found in this repository. The Accessibility disclosure refers to the “configured backend” but does not name the active AI provider or describe provider retention. Verify the external policy, actual routing, and retention terms before rewriting the disclosure; do not make unsupported retention promises.
+
+> **Current merged-manifest audit (2026-10-12):** phoneTest requests microphone, optional Usage Access, and `specialUse` foreground service in addition to Accessibility and Internet. Source says Azure voice uploads one user-selected short clip and Usage Access stays on-device; these flows are not phone-tested. The heartbeat FGS declaration and dependency-added biometric permissions need inclusion in Play Console's permission/service review.
+
+> **Current Gmail assistant auth status (2026-10-12):** the exact POST mail-assist routes now bypass the shared app-key middleware because release clients must not embed that key; they still require Google ID-token verification, per-user rate limits, explicit consent, and the feature kill switch. All backend smoke suites pass locally. Source enables the feature only when `STRLIX_MAIL_ASSIST_ENABLED=1`, but the live Azure flag was not checked. `gmail.readonly` OAuth verification and sensitive `gmail.send` verification remain gates; the current server-transmission design should plan for Google's restricted-scope security assessment, plus accurate privacy/Data Safety disclosures and verified Azure data-retention settings. No real account or phone test was performed.
+
+> **Current core API release-auth blocker (2026-10-12):** release builds must not embed a shared backend secret, but Android's promise/classifier/speech/dossier clients still send only that key and hosted POST routes require it. Only the two mail-assist routes currently use verified Google identity. Do not expose paid routes anonymously or ship the key; define and validate a user-bound/session or verified app-attestation contract for every core route before public release.
+
+**Historical hosted-backend snapshot (2026-09-22; not current availability/version):** https://phonecodex-backend.azurewebsites.net in `phonecodex-dev`. POST routes require `X-Strlix-App-Secret`. The model ladder, vision flag, and localhost configuration described here may have changed. Runbook: `docs/azure-hosted-backend.md`. AI does not enforce.
 **Audience:** Future Cursor / Codex sessions  
 **Rule:** Read this before shipping features. Prefer this file over chat memory.
 
@@ -60,17 +74,15 @@ Install already on Redmi (`installDebug` succeeded). Backend: `adb reverse tcp:8
 
 ## UX reliability notes (v0)
 
-### Portrait-only MainActivity (v0 choice)
+### MainActivity rotation and adaptive-window behavior
 
-`MainActivity` is locked to **portrait** via `android:screenOrientation="portrait"` in `AndroidManifest.xml`.
+`MainActivity` leaves orientation **unspecified** so Android follows the user's device rotation preference. `MainActivityOrientationTest` guards this contract. Strlix does not change the system-wide auto-rotate setting. This has emulator/source evidence only; Xiaomi behavior remains unverified until the official install gate is cleared.
 
-**Why:** Commitment composer + overlay debugging must not break on accidental rotation. Landscape responsive UI does not exist yet. This does **not** affect other apps.
-
-**Revisit when:** A real landscape layout for composer / confirmation exists.
+The app still declares `android:resizeableActivity="false"` and disables picture-in-picture, but those declarations do not prove that every OEM's freeform mode is prevented. For apps targeting API 36 or higher, Android 16 ignores orientation and resizability restrictions on displays with a smallest width of at least 600 dp; Strlix currently targets API 37. Adaptive layouts and large-screen verification remain required. See [Android 16 behavior changes](https://developer.android.com/about/versions/16/behavior-changes-16).
 
 ### Full-screen, not a floating panel (2026-09-20)
 
-`android:resizeableActivity="false"` on application + MainActivity. PIP off. Theme `windowIsFloating=false` with opaque background. This stops MIUI/Android freeform from opening Strlix as a broken mini window. Overlay enforcement windows are unchanged.
+`android:resizeableActivity="false"` on application + MainActivity, PIP off, and an opaque non-floating theme are intended to keep the ordinary activity presentation full-size. OEM-specific freeform behavior is not universally guaranteed, and Android 16 ignores resizability restrictions on large screens for this target SDK. Verify on each supported device class; do not claim this manifest alone prevents every floating-window mode. Overlay enforcement windows are unchanged.
 
 ### Reinstall setup truth (2026-09-20)
 
@@ -143,7 +155,7 @@ Promise Compiler (NL → CommitmentPolicy JSON)
 | Overlay enforcement | In app — own-package retain + away debounce + decision hold; still verify on device |
 | Surface detection | `SurfaceDetector` + `VideoPlatformRegistry` (YT, Chrome, NewPipe, IG, FB, TikTok, Snap) |
 | Media-length (clock B) | Local law on **active player only**; passive Home/Search/shelf/recs → `Surface Gate PASS passive video surface` (no AI WARN/BLOCK) |
-| Short-form daily quota | `ShortFormQuotaGate` — plays 1..N ALLOW across apps; N+1 BLOCK; adult excluded; day key `YYYY-MM-DD:short_form_video` (in-memory; TODO persist) |
+| Short-form daily quota | `ShortFormQuotaGate` — plays 1..N ALLOW across apps; N+1 BLOCK; adult excluded; day key `YYYY-MM-DD:short_form_video`; live service persists through `ShortFormQuotaStore` in SharedPreferences (`apply()` is asynchronous, so the newest unflushed state may be lost on abrupt process death) |
 | Surface activity | `SurfaceDetector` + `SurfaceEnforcementGate`: PASSIVE vs ACTIVE; AI cannot WARN/BLOCK after PASS |
 | Backend `/classify` + Azure | Working in lab; classify = `pc-lab-strong` (gpt-4.1), escalate = `pc-lab-best` (gpt-5.6-sol) |
 | Promise Compiler | Lab only — v04 general set + **v05 temporal clocks** (not product-ready) |
@@ -283,7 +295,7 @@ From product memory + CTO strategy — park here until the loop is stable:
 | **Guided Study Rail** | Allowed path inside distracting apps (lecture track, not free roam) |
 | **Exact YouTube playlist / channel enforcement** | Promise-scoped allow: only named channel/playlist |
 | **Natural-language Promise Compiler** | Text → CommitmentPolicy (v04 general + v05 temporal clocks lab); confirm-sheet must show five clocks; ship only behind PolicyEngine + item-length enforcement |
-| **Strict mode / tamper protection** | Harder exit, preventDisable, LOCKED — with emergency always open |
+| **Strict mode / revocation friction** | Optional, transparent, reversible friction for actions initiated inside Strlix; Android Settings must always let the device owner disable Accessibility or uninstall. Do not claim tamper-proof or `preventDisable` behavior. |
 | **Vision classifier** | Screenshot / frame when OCR lies; opt-in; never bank/OTP |
 | **Safe phone operator** | Agentic “do X on phone” — long-term only; Play + liability constrained |
 
@@ -315,9 +327,9 @@ When starting work:
 
 **Status (2026-09-28): P0, code shipped, phone proof pending.** A production phone run on 2026-09-28 showed a YouTube ad continuing in PiP after the Shorts quota block; the old media-pause key did not stop it and raised the volume panel.
 
-**What is in code now (`7db302a`):** `PictureInPictureContainmentLaw` + the service guard. When the existing escape law says the PiP package/surface is forbidden, Strlix requests `AUDIOFOCUS_GAIN` (USAGE_MEDIA) at most 3 times per PiP episode, verifies 1.5 s later with device-wide `AudioManager.isMusicActive()`, and logs `PIP_GUARD_ENTERED`, `MEDIA_CONTROL_REQUESTED`, `MEDIA_STOP_CONFIRMED` (only when `device_media_active=false`), `CONTROL_UNAVAILABLE`, `GUARD_EXITED`. No media keys, no force-stop, no new permission. Call/meeting audio modes are skipped.
+**What is in code now (2026-09-28 23:15, uncommitted, on top of `7db302a`):** fail-safe. `7db302a` requested `AUDIOFOCUS_GAIN` on block and in PiP; that is device-wide, so it could fade the user's allowed music/podcast, and it logged `MEDIA_STOP_CONFIRMED` from device-wide silence (also true for a muted PiP video). Both paths are removed. `PictureInPictureContainmentLaw` now acts only on playback **attributed to the guarded package**; with current grants nothing attributes playback, so the guard and the block overlay log `CONTROL_UNAVAILABLE reason=PLAYBACK_SOURCE_UNKNOWN device_wide_audio_active=… (not_attributed_to_pkg)` once, and interrupt nothing. The block overlay and the PiP episode tracking (`PIP_GUARD_ENTERED` / `GUARD_EXITED`) are unchanged. The event `GUARDED_PLAYER_REPORTED_NOT_PLAYING` exists only for a future attributed source and is never emitted today. Log-contract tests forbid audio focus, media keys, and any "stopped/paused" event.
 
-**Feasibility limits (why this is best-effort, not a guarantee):** there is no public API to stop or dismiss another app's PiP with current grants. A package-targeted `MediaController` needs notification-listener access (`MediaSessionManager.getActiveSessions`); a dismiss gesture needs a new Accessibility capability; `isMusicActive()` is device-wide and cannot name the package. Audio focus only works if the other player honours focus loss (Android 12+ fades out the focus holder). Any stronger control is a privacy decision for Ankit.
+**Feasibility limits (why this is best-effort, not a guarantee):** there is no public API to stop or dismiss another app's PiP with current grants. A package-targeted `MediaController` needs notification-listener access (`MediaSessionManager.getActiveSessions`); a dismiss gesture needs a new Accessibility capability; `isMusicActive()` is device-wide and cannot name the package. Audio focus fades whichever app holds focus (Android 12+), not the guarded package, so it is not used. `AudioManager.getActivePlaybackConfigurations()` anonymizes the player uid for non-system callers. Any package-targeted control is a privacy decision for Ankit.
 
 **Phone proof status:** not yet run on `7db302a` — on 2026-09-28 MIUI Security Center had disabled YouTube (`enabled=3`, 16:31:14, not by ADB), so the Shorts/PiP matrix could not execute. Until the ad case is reproducibly stopped on the phone, treat "YouTube ads may continue playing in PiP" as a known limitation.
 
@@ -383,7 +395,7 @@ Unit tests are green; phone verification is still required. Remaining risks:
 3. YouTube mobile web may hide total duration until controls expand → prolonged WAIT (good) or user thinks app is “broken.”
 4. Recommendation rows that use `time duration` phrasing (rare) could pollute current-player parse.
 5. Instagram Reels / TikTok without readable clocks may under-count quota or misclassify short vs long.
-6. Short-form quota is **in-memory** — process death resets count mid-day.
+6. Short-form quota persistence is best-effort: SharedPreferences `apply()` is asynchronous, so abrupt process death may lose the newest unflushed count; physical-device lifecycle persistence still needs verification.
 7. Cross-app quota dedupe keys may collide on similar clocks + empty titles.
 8. MIUI battery killers can pause Accessibility → silent non-enforcement.
 9. Overlay TYPE_ACCESSIBILITY may still flicker on some Xiaomi skins despite own-package retain.
@@ -392,7 +404,7 @@ Unit tests are green; phone verification is still required. Remaining risks:
 12. Messaging-thread vs DM-list classification is coarse — message-restrict promises not fully product-wired.
 13. Install/payment flow detection is phrase-based — Play Store browsing vs Install button races.
 14. Azure `/compile-promise` offline → local parser confirmation; category copy may be thinner offline.
-15. Voice path still uses on-device `RecognizerIntent` for fill — Azure `/transcribe-promise` not fully phone-wired.
+15. Azure voice promise entry is now wired behind an explicit per-clip choice and microphone permission; it uses 15-second in-memory PCM/WAV capture and the authenticated `/transcribe-promise` route, while the Android speech-recognizer option remains available. Client/server input caps and offline tests pass. **Not phone-verified**; no Azure inference was sent during implementation.
 16. Browser embeds / WebView players outside Chrome package may miss registry.
 17. Multi-window / split-screen package identity can confuse target tracking.
 18. Rapid swipe Shorts may generate duplicate or skipped counts under debounce.

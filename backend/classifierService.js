@@ -19,6 +19,25 @@ const { resolvePromptsDir } = require("./promptPaths");
 const PROMPT_VERSION = "v04";
 const PROMPT_PATH = path.join(resolvePromptsDir(), "classifier_v04.txt");
 const ESCALATION_CONFIDENCE_THRESHOLD = 0.75;
+const TEXT_CLASSIFIER_CATEGORIES = new Set([
+  "study_aligned",
+  "user_allowed_entertainment",
+  "limit_not_reached",
+  "limit_reached",
+  "adult_content",
+  "short_form_disallowed",
+  "strict_monk_mode",
+  "install_disallowed",
+  "tamper_attempt",
+  "ambiguous",
+  "safe_app",
+  "emergency_or_system",
+  "neutral_navigation",
+  "social_feed",
+  "gaming",
+  "shopping",
+  "install_page_productivity",
+]);
 const VISION_ADVISORY_CATEGORIES = new Set([
   "likely_short_form",
   "likely_long_form",
@@ -26,9 +45,16 @@ const VISION_ADVISORY_CATEGORIES = new Set([
   "unknown",
   "adult_signal",
 ]);
+function getTextClassifierCategories() {
+  return [...TEXT_CLASSIFIER_CATEGORIES].sort();
+}
+function getVisionAdvisoryCategories() {
+  return [...VISION_ADVISORY_CATEGORIES].sort();
+}
+
 const VISION_SYSTEM_ADDENDUM = [
   "If an image is provided, treat it as advisory counsel only.",
-  "reasonCategory MUST be one of: likely_short_form, likely_long_form, likely_movie, unknown, adult_signal.",
+  `reasonCategory MUST be one of: ${[...VISION_ADVISORY_CATEGORIES].join(", ")}.`,
   "Do not invent a numeric duration. Clock BLOCK/ALLOW is local phone law.",
   "Do not override emergency, settings, SMS, OTP, or banking screens.",
   "Blank/unknown OTT players with no readable timer → unknown or likely_movie/likely_short_form from visible UI only.",
@@ -97,7 +123,11 @@ function parseClassifierJson(raw) {
   return JSON.parse(jsonText);
 }
 
-function normalizeClassifierResult(parsed) {
+function normalizeClassifierResult(
+  parsed,
+  allowedReasonCategories = TEXT_CLASSIFIER_CATEGORIES,
+  invalidReasonCategory = "ambiguous"
+) {
   const decision = String(parsed.decision || "WARN").toUpperCase();
   const validDecisions = new Set(["ALLOW", "WARN", "BLOCK", "LOCK"]);
 
@@ -105,18 +135,21 @@ function normalizeClassifierResult(parsed) {
     throw new Error("Invalid decision from model");
   }
 
-  const confidence = Number(parsed.confidence);
-  if (!Number.isFinite(confidence)) {
+  const confidence = parsed.confidence;
+  if (typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     throw new Error("Invalid confidence from model");
   }
 
   const reason =
     typeof parsed.reason === "string" ? parsed.reason : "No reason provided.";
 
-  const reasonCategory =
+  const categoryCandidate =
     typeof parsed.reasonCategory === "string"
-      ? parsed.reasonCategory
+      ? parsed.reasonCategory.trim().toLowerCase()
       : "ambiguous";
+  const reasonCategory = allowedReasonCategories.has(categoryCandidate)
+    ? categoryCandidate
+    : invalidReasonCategory;
 
   const whatOnScreen =
     typeof parsed.whatOnScreen === "string"
@@ -126,10 +159,11 @@ function normalizeClassifierResult(parsed) {
   return { decision, confidence, reason, reasonCategory, whatOnScreen };
 }
 
-function shouldEscalate(decision, confidence, reasonCategory) {
+function shouldEscalate(confidence, reasonCategory) {
   return (
     confidence < ESCALATION_CONFIDENCE_THRESHOLD ||
-    (decision === "BLOCK" && reasonCategory === "ambiguous")
+    reasonCategory === "ambiguous" ||
+    reasonCategory === "unknown"
   );
 }
 
@@ -175,9 +209,7 @@ function logClassifyEvent({
       would_escalate: wouldEscalate,
       packageName,
       goalLength: goalSafe.length,
-      goalPreview: goalSafe.preview,
       screenTextLength: screenSafe.length,
-      screenTextPreview: screenSafe.preview,
     })
   );
 }
@@ -254,7 +286,7 @@ async function classifyActivity(body) {
       console.log(
         JSON.stringify({
           event: "vision_image_failed_closed",
-          message: visionCallErr.message,
+          upstreamStatus: typeof visionCallErr.status === "number" ? visionCallErr.status : null,
         })
       );
       usedImage = false;
@@ -293,15 +325,19 @@ async function classifyActivity(body) {
     throw err;
   }
 
-  const normalized = normalizeClassifierResult(parsed);
+  const normalized = normalizeClassifierResult(
+    parsed,
+    usedImage ? VISION_ADVISORY_CATEGORIES : TEXT_CLASSIFIER_CATEGORIES,
+    usedImage ? "unknown" : "ambiguous"
+  );
   if (usedImage && !VISION_ADVISORY_CATEGORIES.has(normalized.reasonCategory)) {
     normalized.reasonCategory = "unknown";
   }
   const wouldEscalate = shouldEscalate(
-    normalized.decision,
     normalized.confidence,
     normalized.reasonCategory
   );
+  let verificationIncomplete = wouldEscalate;
 
   logClassifyEvent({
     provider: provider.kind,
@@ -343,6 +379,10 @@ async function classifyActivity(body) {
       const escalatedParsed = parseClassifierJson(escalatedRaw);
       Object.assign(normalized, normalizeClassifierResult(escalatedParsed));
       deploymentUsed = escalated.deployment;
+      verificationIncomplete = shouldEscalate(
+        normalized.confidence,
+        normalized.reasonCategory
+      );
       console.log(
         JSON.stringify({
           event: "classify_escalation",
@@ -352,7 +392,7 @@ async function classifyActivity(body) {
           reason:
             normalized.confidence < ESCALATION_CONFIDENCE_THRESHOLD
               ? "low_confidence"
-              : "ambiguous_block",
+              : "uncertain_result",
         })
       );
     } catch (escalateErr) {
@@ -360,10 +400,15 @@ async function classifyActivity(body) {
         JSON.stringify({
           event: "classify_escalation_failed",
           targetDeployment: getBestDeployment(),
-          message: escalateErr.message,
+          upstreamStatus: typeof escalateErr.status === "number" ? escalateErr.status : null,
         })
       );
     }
+  }
+
+  if (verificationIncomplete) {
+    normalized.decision = "WARN";
+    normalized.reason = "Could not verify this screen safely";
   }
 
   return {
@@ -373,6 +418,7 @@ async function classifyActivity(body) {
     reasonCategory: normalized.reasonCategory,
     whatOnScreen: normalized.whatOnScreen || "",
     would_escalate: wouldEscalate,
+    verificationIncomplete,
     usedImage,
     imageRejected,
     meta: {
@@ -394,6 +440,8 @@ module.exports = {
   createClassifierClient,
   classifyActivity,
   parseClassifierJson,
+  getTextClassifierCategories,
+  getVisionAdvisoryCategories,
   redactForLog,
   extractImageBase64,
   isVisionExperimentEnabled,

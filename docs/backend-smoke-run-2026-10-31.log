@@ -1,0 +1,27 @@
+﻿EXCLUDED (long-running server, not a smoke): smoke_android_debug_e2e_server.js
+FAIL(1)  smoke_api_boundary.js    | 503 !== 400 |  |     at run (C:\Users\HP\strlix\backend\smoke_api_boundary.js:155:10) |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+PASS  smoke_app_auth.js  ASSERTIONS_PASSED=app_auth 
+PASS  smoke_app_dossier.js  smoke_app_dossier ok 
+PASS  smoke_app_surface_choices.js  smoke_app_surface_choices OK (314 assertions) 
+PASS  smoke_bearer_contract.js  smoke_bearer_contract: ok 
+PASS  smoke_clarification_choice_identity.js        "brands": "" |     } |   ] | } | ASSERTIONS_PASSED=140 
+PASS  smoke_classifier_confidence.js  {"event":"classify","provider":"azure","deployment":"pc-lab-terra","promptVersion":"v04","latencyMs":0,"decision":"BLOCK","reasonCategory":"short_form_disallowed","confidence":0.8,"would_escalate":false,"packageName":"com.example.video","goalLength":15,"screenTextLength":13} | ASSERTIONS_PASSED=classifier_contract 
+PASS  smoke_classifier_log_privacy.js  {"ok":true,"event":"smoke_classifier_log_privacy"} 
+FAIL(1)  smoke_firebase_admin_real_verify.js   FIREBASE_ADMIN_REAL_VERIFY_FAIL code=ERR_ASSERTION msg=STRLIX_FIREBASE_ID_TOKEN_FILE required
+PASS  smoke_firebase_admin_session.js  FIREBASE_ADMIN_SESSION_OK 
+FAIL(1)  smoke_firebase_table_integration.js   FIREBASE_TABLE_INTEGRATION_FAIL Error: Shared auth state is unavailable. Refusing to start. |     at C:\Users\HP\strlix\backend\tableAuthState.js:119:15 |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5) |     at async startLocalBackend (C:\Users\HP\strlix\backend\smoke_firebase_table_integration.js:117:3) |     at async main (C:\Users\HP\strlix\backend\smoke_firebase_table_integration.js:196:30)
+PASS  smoke_mail_assist.js  smoke_mail_assist: ALL PASS 
+PASS  smoke_model_routing.js  {"ok":true,"event":"smoke_model_routing","compiler":"pc-lab-astra","classifier":"pc-lab-terra","vision":"pc-lab-astra"} 
+PASS  smoke_phone_test_launcher.js  ASSERTIONS_PASSED=phone_test_launcher 
+PASS  smoke_promise_compiler_normalize.js  ASSERTIONS_PASSED=207 | {"ok":true,"event":"promise_compiler_normalize_smoke","promptVersion":"promise_compiler_v07","quotaBoundary":"allow_first_n","assertionsPassed":207,"keyExampleSessionMinutes":60,"liveExample":{"timeWindowKind":"calendar_day","sessionMinutes":1440,"scopePackages":6,"previewLines":12}} 
+PASS  smoke_promise_compiler_v08.js  ASSERTIONS_PASSED=77 | {"ok":true,"event":"promise_compiler_v08_smoke","assertionsPassed":77,"confidenceKeys":["CK-CLARIFY-START","CK-HIGH-AMBIG","CK-NO-PKG-LEAK","CK-GOOGLE-VIDEO","CK-SHORTS-QUOTA","CK-MEDIA-VS-SESSION","CK-NORMAL-EXCEPT","CK-PERMANENT-PORN","CK-EMERGENCY","CK-OPTION-MAP"]} 
+PASS  smoke_scope_contract_v1.js  ASSERTIONS_PASSED=114 
+PASS  smoke_scope_semantics_v1.js    SOCIAL_MESSAGING_ONLY            11 |   UNRESOLVED                       30 |   VIDEO_CLASS_ANY_HOST             9 |   TOTAL                             155 | ASSERTIONS_PASSED=681 
+PASS  smoke_scoped_app_block.js  smoke_scoped_app_block OK (114 assertions) 
+PASS  smoke_table_auth_state.js  TABLE_AUTH_STATE_OK 
+FAIL(1)  smoke_table_real_azure.js   -   3 |   ] |  |     at main (C:\Users\HP\strlix\backend\smoke_table_real_azure.js:102:10) |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+PASS  smoke_transcribe_promise.js  {"ok":true,"event":"smoke_transcribe_promise","checks":["mock","client_transcript","paid_operation_gate","audio_validation_400_413","missing_input_400","fast_parse","fast_fallback_log_privacy"]} 
+PASS  smoke_user_session_auth.js  USER_SESSION_AUTH_OK {"event":"user_auth_failed","code":"user_auth_invalid","path":"/classify"} | {"event":"user_auth_failed","code":"user_auth_invalid","path":"/classify"} | {"event":"user_auth_failed","code":"user_auth_invalid","path":"/classify"} | {"event":"user_auth_failed","code":"user_auth_expired","path":"/classify"} | {"event":"user_auth_failed","code":"user_auth_revoked","path":"/classify"}
+PASS  smoke_user_session_routes.js  USER_SESSION_ROUTES_OK 
+PASS  smoke_v09_clarification_scope.js  ASSERTIONS_PASSED=355 
+SMOKE_SUMMARY pass=21 fail=4 total_run=25 excluded=1

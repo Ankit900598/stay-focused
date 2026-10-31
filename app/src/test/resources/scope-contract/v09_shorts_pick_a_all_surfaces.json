@@ -316,7 +316,7 @@
         "description": "all short-form video"
       }
     ],
-    "clarificationQuestion": "Did you mean all short-form video across short-video and reels-style apps, or only YouTube Shorts?",
+    "clarificationQuestion": null,
     "cautionMessages": [
       "AI interpretation was treated as uncertain, so confirmation is required.",
       "Using your choice: Short videos everywhere"

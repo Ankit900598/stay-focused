@@ -71,7 +71,7 @@ def run_eval(compiler: Any, cases: list) -> tuple[list[dict[str, Any]], dict[str
     }
     field_match_counts: dict[str, int] = {field: 0 for field in POLICY_FIELDS}
 
-    for case in cases:
+    for case_index, case in enumerate(cases, start=1):
         started = time.perf_counter()
         if isinstance(compiler, PromiseBaselineCompiler):
             predicted = compiler.compile(case)
@@ -127,6 +127,7 @@ def run_eval(compiler: Any, cases: list) -> tuple[list[dict[str, Any]], dict[str
         dims = case.dimensions or {}
         rows.append(
             {
+                "caseIndex": case_index,
                 "id": case.id,
                 "cluster": case.cluster,
                 "clockClass": case.clock_class,
@@ -369,7 +370,10 @@ def main() -> int:
     if failures[:10]:
         print("\nSafety violations (first 10):")
         for row in failures[:10]:
-            print(f"- {row['id']}: {row['safetyViolation']} ({row['cluster']})")
+            print(
+                f"- caseIndex={row['caseIndex']} id={row['id']}: "
+                f"{row['safetyViolation']} ({row['cluster']})"
+            )
 
     return 0
 

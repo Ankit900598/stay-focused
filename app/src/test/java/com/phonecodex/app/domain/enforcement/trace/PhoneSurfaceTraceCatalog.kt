@@ -238,11 +238,65 @@ object PhoneSurfaceTraceCatalog {
         t(
             id = "max40_boundary_40_01_blocks",
             pkg = CHROME,
+            screen = "Hide player controls youtube.com Time duration 40 minutes, 1 second",
+            goal = MAX40_GOAL,
+            settings = max40Any(),
+            expected = setOf(TraceDecision.BLOCK),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX),
+            notes = "REGRESSION: one second over must not be floored to 40 minutes."
+        ),
+        t(
+            id = "max40_boundary_41_00_blocks",
+            pkg = CHROME,
             screen = "Hide player controls youtube.com Time duration 41 minutes",
             goal = MAX40_GOAL,
             settings = max40Any(),
             expected = setOf(TraceDecision.BLOCK),
             reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX)
+        ),
+        t(
+            id = "youtube_app_max40_boundary_40_00_allows",
+            pkg = YT,
+            screen = "Play Pause 00:00 / 40:00 Hide player controls",
+            goal = MAX40_GOAL,
+            settings = max40Any(),
+            expected = setOf(TraceDecision.ALLOW),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT),
+            surface = "LONG_FORM_PLAYER",
+            duration = "CURRENT_PLAYER"
+        ),
+        t(
+            id = "youtube_app_max40_boundary_40_01_blocks",
+            pkg = YT,
+            screen = "Play Pause 00:00 / 40:01 Hide player controls",
+            goal = MAX40_GOAL,
+            settings = max40Any(),
+            expected = setOf(TraceDecision.BLOCK),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX),
+            surface = "LONG_FORM_PLAYER",
+            duration = "CURRENT_PLAYER"
+        ),
+        t(
+            id = "newpipe_max40_boundary_40_00_allows",
+            pkg = NEWPIPE,
+            screen = "Play Pause 00:00 / 40:00 Hide player controls",
+            goal = MAX40_GOAL,
+            settings = max40Any(),
+            expected = setOf(TraceDecision.ALLOW),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT),
+            surface = "LONG_FORM_PLAYER",
+            duration = "CURRENT_PLAYER"
+        ),
+        t(
+            id = "newpipe_max40_boundary_40_01_blocks",
+            pkg = NEWPIPE,
+            screen = "Play Pause 00:00 / 40:01 Hide player controls",
+            goal = MAX40_GOAL,
+            settings = max40Any(),
+            expected = setOf(TraceDecision.BLOCK),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_BLOCK_OVER_MAX),
+            surface = "LONG_FORM_PLAYER",
+            duration = "CURRENT_PLAYER"
         ),
         t(
             id = "chrome_yt_embed_watch",
@@ -395,6 +449,48 @@ object PhoneSurfaceTraceCatalog {
             settings = min40Yt(),
             expected = setOf(TraceDecision.ALLOW),
             reasons = setOf(EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT)
+        ),
+        t(
+            id = "yt_app_spoken_progress_with_comments_allows_max40",
+            pkg = YT,
+            screen = "2 minutes 52 seconds of 17 minutes 4 seconds The essence of calculus " +
+                "@3blue1brown 3 lakh likes 1.1 crore views Subscribe " +
+                "Comments Add a comment Top comments",
+            goal = MAX40_GOAL,
+            settings = max40Any(),
+            expected = setOf(TraceDecision.ALLOW),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT),
+            surface = "ACTIVE_VIDEO_PLAYER",
+            duration = "CURRENT_PLAYER",
+            notes = "REGRESSION: playing native watch page used to be read as COMMENTS, skipping media-length policy"
+        ),
+        t(
+            id = "yt_app_spoken_clock_uses_total_not_position_min40",
+            pkg = YT,
+            screen = "2 minutes 52 seconds of 57 minutes 4 seconds The essence of calculus " +
+                "@3blue1brown 3 lakh likes 1.1 crore views Subscribe " +
+                "Comments Add a comment Top comments",
+            goal = MIN40_GOAL,
+            settings = min40Yt(),
+            expected = setOf(TraceDecision.ALLOW),
+            reasons = setOf(EnforcementReasonCodes.MEDIA_ALLOW_WITHIN_LIMIT),
+            surface = "LONG_FORM_PLAYER",
+            duration = "CURRENT_PLAYER",
+            notes = "REGRESSION: use the 57-minute total, not the 2-minute elapsed position"
+        ),
+        t(
+            id = "yt_app_comment_clock_with_watch_metadata_stays_passive",
+            pkg = YT,
+            screen = "The essence of calculus 3 lakh likes 1.1 crore views Subscribe " +
+                "Comments Add a comment Top comments Someone wrote " +
+                "2 minutes 52 seconds of 17 minutes 4 seconds",
+            goal = MIN40_GOAL,
+            settings = min40Yt(),
+            expected = setOf(TraceDecision.ALLOW),
+            reasons = setOf(EnforcementReasonCodes.SURFACE_PASS_PASSIVE),
+            forbidden = setOf(EnforcementReasonCodes.MEDIA_BLOCK_UNDER_MIN),
+            surface = "COMMENTS",
+            notes = "REGRESSION: comment prose that resembles a seekbar must not drive media policy"
         ),
         t(
             id = "yt_app_search_passive",

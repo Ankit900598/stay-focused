@@ -9,8 +9,12 @@ import com.phonecodex.app.domain.model.PermanentGuardrail
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.WorldMode
 
-internal fun openAccessibilitySettings(context: Context) {
+internal fun launchAccessibilitySettings(context: Context) {
     context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+}
+
+internal fun launchPrivacyPolicy(context: Context) {
+    PrivacyPolicyLink.launch(context)
 }
 
 internal fun defaultStudyWorld(): FocusWorld = FocusWorld(

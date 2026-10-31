@@ -6,11 +6,13 @@ These instructions apply to the whole `strlix` repo.
 
 Before making changes, read:
 
-1. `PROJECT_CONTEXT.md`
-2. `CURRENT_STATUS.md`
-3. `NEXT_TASKS.md`
-4. `docs/CURRENT_STATE.md` when touching Android/product behavior
-5. `docs/cto-strategy-phonecodex-ai.md` when touching AI/evals
+1. `README.md` (repo map + debug index)
+2. `PROJECT_CONTEXT.md`
+3. `CURRENT_STATUS.md`
+4. `NEXT_TASKS.md`
+5. `docs/CURRENT_STATE.md` when touching Android/product behavior
+6. `docs/cto-strategy-phonecodex-ai.md` when touching AI/evals
+7. `docs/README.md` for the living docs list; ignore `docs/archive/` unless hunting old evidence
 
 ## Product Identity
 

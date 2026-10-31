@@ -7,12 +7,16 @@ package com.phonecodex.app.domain.scope
  * never containing a package identifier. Adding a new preset kind means adding a copy
  * row here — a test asserts that every kind produces a non-empty package-free string.
  *
- * Package ID leaks are structurally impossible: this file has no access to raw package
- * strings from clauses; it only reads named identities.
+ * Package IDs are never rendered. `PACKAGE_PINNED` uses only the safe display labels
+ * whose packages passed the user-promise name check at the compiler boundary.
  */
 object ScopeAppliesToCopy {
 
     private val PACKAGE_ID_REGEX = Regex("""\b(?:com|org|net|io)\.[a-zA-Z0-9_.]+\b""")
+    private const val SOCIAL_ANY_OPTION_LABEL =
+        "Recognized social apps/sites only (Instagram, Facebook, Messenger, TikTok, Snapchat, WhatsApp)"
+    private const val SOCIAL_ANY_APPLIES_TO =
+        "recognized Instagram, Facebook, Messenger, TikTok, Snapchat, and WhatsApp apps; matching sites are supported for the first five only"
 
     fun forScope(scope: EnforcementScope?): String {
         if (scope == null) return "Not set yet — finish setting up this promise."
@@ -29,11 +33,19 @@ object ScopeAppliesToCopy {
             ScopeKind.VIDEO_CLASS_ANY_HOST -> "videos playing in any video app or browser — search and normal browsing stay open"
             ScopeKind.SHORT_FORM_ANY_HOST -> "short videos everywhere — Shorts, Reels, TikTok-style clips, and short videos in your browser"
             ScopeKind.APP_SHORT_FORM_ONLY -> "short videos in the ${identityLabel(identity)} app only — long videos and other apps stay untouched"
-            ScopeKind.SOCIAL_MESSAGING_ONLY -> "${identityLabel(identity)} — messages stay open, the rest is covered"
-            ScopeKind.SOCIAL_FEED_AND_REELS_ONLY -> "the ${identityLabel(identity)} feed and short videos — messaging stays open"
+            ScopeKind.SOCIAL_MESSAGING_ONLY -> if (identity == ScopeIdentity.SOCIAL_ANY) {
+                "Only $SOCIAL_ANY_APPLIES_TO: messages stay open; other screens in those apps are covered. Other apps and sites are outside this promise"
+            } else {
+                "${identityLabel(identity)} — messages stay open, the rest is covered"
+            }
+            ScopeKind.SOCIAL_FEED_AND_REELS_ONLY -> if (identity == ScopeIdentity.SOCIAL_ANY) {
+                "Feeds and short videos in $SOCIAL_ANY_APPLIES_TO are in scope; messages and other apps/sites stay outside this promise"
+            } else {
+                "the ${identityLabel(identity)} feed and short videos — messaging stays open"
+            }
             ScopeKind.SITE_SCOPED -> "specific sites in your browser only"
             ScopeKind.HOST_WITH_CATEGORY_EXEMPTIONS -> "adult, movie, and video pages in your browser — normal browsing stays open"
-            ScopeKind.PACKAGE_PINNED -> "specific apps you named"
+            ScopeKind.PACKAGE_PINNED -> packagePinnedCopy(scope.include.flatMap { it.packages })
             ScopeKind.UNRESOLVED -> "Not set yet — finish setting up this promise."
         }
         return sanitize(body)
@@ -45,7 +57,12 @@ object ScopeAppliesToCopy {
      */
     fun optionLabel(scope: EnforcementScope?): String? {
         if (scope == null || !scope.isEnforceable) return null
-        val name = identityLabel(identityOf(scope))
+        val identity = identityOf(scope)
+        val name = if (identity == ScopeIdentity.SOCIAL_ANY) {
+            SOCIAL_ANY_OPTION_LABEL
+        } else {
+            identityLabel(identity)
+        }
         return when (scope.kind) {
             ScopeKind.APP_ONLY -> "$name app only"
             ScopeKind.BROWSER_ONLY -> "$name in your browser only"
@@ -58,13 +75,34 @@ object ScopeAppliesToCopy {
             ScopeKind.SOCIAL_FEED_AND_REELS_ONLY -> "$name feed and short videos"
             ScopeKind.SITE_SCOPED -> "Specific sites in your browser"
             ScopeKind.HOST_WITH_CATEGORY_EXEMPTIONS -> "Adult, movie, and video pages in your browser"
-            ScopeKind.PACKAGE_PINNED -> "Specific apps you named"
+            ScopeKind.PACKAGE_PINNED -> packagePinnedOptionLabel(scope.include.flatMap { it.packages })
             ScopeKind.UNRESOLVED -> null
         }
     }
 
     private fun identityOf(scope: EnforcementScope): ScopeIdentity =
         scope.identity ?: scope.include.firstOrNull()?.identity ?: ScopeIdentity.ANY
+
+    private fun packagePinnedCopy(packages: List<String>): String {
+        val labels = ScopePackageMentionLaw.displayLabels(packages)
+        return when (labels.size) {
+            0 -> "specific apps you named"
+            1 -> "Only the ${labels.single()} app"
+            else -> "Only ${joinAppLabels(labels)}"
+        }
+    }
+
+    private fun packagePinnedOptionLabel(packages: List<String>): String {
+        val labels = ScopePackageMentionLaw.displayLabels(packages)
+        return if (labels.isEmpty()) "Specific apps you named" else "${joinAppLabels(labels)} only"
+    }
+
+    private fun joinAppLabels(labels: List<String>): String = when (labels.size) {
+        0 -> ""
+        1 -> labels.single()
+        2 -> "${labels[0]} and ${labels[1]}"
+        else -> "${labels.dropLast(1).joinToString(", ")}, and ${labels.last()}"
+    }
 
     /** Return `true` if the string is guaranteed free of `com.*`/`org.*`/etc. IDs. */
     fun containsPackageId(text: String): Boolean = PACKAGE_ID_REGEX.containsMatchIn(text)

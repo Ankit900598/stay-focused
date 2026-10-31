@@ -55,14 +55,14 @@ internal fun AppRulesSection(
     }
 
     Spacer(modifier = Modifier.height(8.dp))
-    Text(text = "Installed Apps", fontSize = 16.sp)
+    Text(text = "Launchable Apps", fontSize = 16.sp)
     Spacer(modifier = Modifier.height(8.dp))
     Button(
         onClick = onLoadInstalledApps,
         modifier = Modifier.fillMaxWidth(),
         enabled = !installedAppsLoading
     ) {
-        Text(if (installedAppsLoading) "Loading apps…" else "Load Installed Apps")
+        Text(if (installedAppsLoading) "Loading apps…" else "Load Launchable Apps")
     }
 
     if (installedApps.isNotEmpty()) {
@@ -70,7 +70,7 @@ internal fun AppRulesSection(
         OutlinedTextField(
             value = installedAppsSearch,
             onValueChange = onInstalledAppsSearchChange,
-            label = { Text("Search installed apps") },
+            label = { Text("Search launchable apps") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )

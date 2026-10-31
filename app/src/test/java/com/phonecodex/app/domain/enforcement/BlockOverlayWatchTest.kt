@@ -1,11 +1,27 @@
 package com.phonecodex.app.domain.enforcement
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BlockOverlayWatchTest {
+
+    @Test
+    fun overlayLifecycleLogOmitsPageIdentifiers() {
+        val privatePath = "url:example.com/private-account-token"
+        val watch = BlockOverlayWatch("com.android.chrome", privatePath, 0L)
+        val verdict = watch.observe("com.android.chrome", "com.android.chrome", "video:private-video-id", 30_000L)
+
+        assertEquals(privatePath, verdict.blockedPage)
+        assertEquals("video:private-video-id", verdict.currentPage)
+        val line = verdict.logLine("event")
+        assertTrue(line.contains("blockedPageKind=url"))
+        assertTrue(line.contains("currentPageKind=video"))
+        assertFalse(line.contains("private-account-token"))
+        assertFalse(line.contains("private-video-id"))
+    }
 
     private val chrome = "com.android.chrome"
     private val systemUi = "com.android.systemui"
@@ -101,11 +117,89 @@ class BlockOverlayWatchTest {
     }
 
     @Test
-    fun unknownBlockedPage_neverReevaluatesOnPageAlone() {
+    fun unknownBlockedPage_rechecksWhenPageIdentityBecomesKnown() {
         val watch = BlockOverlayWatch("com.google.android.youtube", null, 0L)
         val verdict = watch.observe("com.google.android.youtube", null, "video:xyz", 60_000L)
+        assertEquals(OverlayWatchAction.REEVALUATE_PAGE_CHANGED, verdict.action)
+        assertEquals("blocked_page_became_known", verdict.reason)
+    }
+
+    @Test
+    fun unknownNativePage_screenChangeTriggersPolicyReevaluationAfterHold() {
+        val watch = BlockOverlayWatch(
+            targetPackage = "com.google.android.youtube",
+            blockedPage = "surface:short_form_player",
+            shownAtMillis = 10_000L,
+            blockedScreenSignature = "shorts-player"
+        )
+
+        val beforeHold = watch.observe(
+            "com.google.android.youtube",
+            "com.google.android.youtube",
+            null,
+            11_499L,
+            "home-screen"
+        )
+        assertEquals(OverlayWatchAction.RETAIN, beforeHold.action)
+        assertEquals("page_change_hold", beforeHold.reason)
+
+        val afterHold = watch.observe(
+            "com.google.android.youtube",
+            "com.google.android.youtube",
+            null,
+            11_500L,
+            "home-screen"
+        )
+        assertEquals(OverlayWatchAction.REEVALUATE_PAGE_CHANGED, afterHold.action)
+        assertEquals("target_screen_changed", afterHold.reason)
+    }
+
+    @Test
+    fun sameKnownShortSurfaceRetainsEvenWhenPlayerTextChanges() {
+        val watch = BlockOverlayWatch(
+            targetPackage = "com.google.android.youtube",
+            blockedPage = "surface:short_form_player",
+            shownAtMillis = 0L,
+            blockedScreenSignature = "short-one"
+        )
+        val verdict = watch.observe(
+            "com.google.android.youtube",
+            "com.google.android.youtube",
+            "surface:short_form_player",
+            10_000L,
+            "short-two"
+        )
         assertEquals(OverlayWatchAction.RETAIN, verdict.action)
-        assertEquals("blocked_page_unknown", verdict.reason)
+        assertEquals("target_same_page", verdict.reason)
+    }
+
+    @Test
+    fun unknownPageWithoutChangedScreenEvidenceStillRetains() {
+        val watch = BlockOverlayWatch(
+            targetPackage = "com.google.android.youtube",
+            blockedPage = "surface:short_form_player",
+            shownAtMillis = 0L,
+            blockedScreenSignature = "shorts-player"
+        )
+        val verdict = watch.observe(
+            "com.google.android.youtube",
+            "com.google.android.youtube",
+            null,
+            60_000L,
+            "shorts-player"
+        )
+        assertEquals(OverlayWatchAction.RETAIN, verdict.action)
+        assertEquals("target_page_unknown", verdict.reason)
+    }
+
+    @Test
+    fun unknownNativeTargetRequestsThrottledScreenProbes() {
+        val watch = BlockOverlayWatch("com.google.android.youtube", null, 1_000L)
+        assertEquals(false, watch.shouldProbeTargetScreen(2_499L))
+        assertEquals(true, watch.shouldProbeTargetScreen(2_500L))
+        watch.recordTargetScreenProbe(2_500L)
+        assertEquals(false, watch.shouldProbeTargetScreen(3_999L))
+        assertEquals(true, watch.shouldProbeTargetScreen(4_000L))
     }
 
     @Test
@@ -146,5 +240,37 @@ class BlockOverlayWatchTest {
         )
         assertNull(OverlayLifecycleGate.pageIdentity(null, "TAP TO UNMUTE YouTube Home"))
         assertNull(OverlayLifecycleGate.pageIdentity("Search or type web address", ""))
+    }
+
+    @Test
+    fun nativeYoutubeSurfaceProvidesIdentityWithoutUrl() {
+        val blocked = OverlayLifecycleGate.pageIdentity(
+            urlBarText = null,
+            screenText = "Home Shorts Subscriptions Library",
+            packageName = "com.google.android.youtube"
+        )
+        val current = OverlayLifecycleGate.pageIdentity(
+            urlBarText = null,
+            screenText = "Shorts player Remix this short Pause like comment",
+            packageName = "com.google.android.youtube"
+        )
+        assertEquals("surface:home", blocked)
+        assertEquals("surface:short_form_player", current)
+    }
+
+    @Test
+    fun screenSignature_normalizesWhitespaceAndCase() {
+        assertEquals("youtube home shorts", OverlayLifecycleGate.screenSignature(" YouTube   Home\nShorts "))
+        assertNull(OverlayLifecycleGate.screenSignature("  \n "))
+    }
+
+    @Test
+    fun screenSignature_includesLaterCollectedScreenContent() {
+        val sharedPrefix = "Study page ".padEnd(301, 'x')
+
+        assertFalse(
+            OverlayLifecycleGate.screenSignature("${sharedPrefix}allowed lecture") ==
+                OverlayLifecycleGate.screenSignature("${sharedPrefix}blocked short")
+        )
     }
 }

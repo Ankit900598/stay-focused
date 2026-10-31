@@ -14,6 +14,17 @@ class CommitmentTeardown(
     private val addEvent: (String) -> Unit
 ) {
 
+    private var studyWorldSettingsStore: StudyWorldSettingsStore? = null
+
+    constructor(
+        sessionStore: SessionStore,
+        appRulesStore: AppRulesStore,
+        addEvent: (String) -> Unit,
+        studyWorldSettingsStore: StudyWorldSettingsStore
+    ) : this(sessionStore, appRulesStore, addEvent) {
+        this.studyWorldSettingsStore = studyWorldSettingsStore
+    }
+
     enum class Kind { EARLY_END, EMERGENCY_EXIT, EXPIRED }
 
     enum class Outcome { ENDED, ALREADY_ENDED }
@@ -38,12 +49,22 @@ class CommitmentTeardown(
             } else {
                 CommitmentRuleRestore.Outcome.SESSION_ACTIVE
             }
+            if (stored == null) {
+                studyWorldSettingsStore
+                    ?.restoreStaleCommitmentTuningDefaults(hasActiveSession = false)
+                    ?.eventMessage
+                    ?.let(addEvent)
+            }
             addEvent(line(kind, Outcome.ALREADY_ENDED, expectedSessionId, null, rules, detail))
             return Result(Outcome.ALREADY_ENDED, null, rules)
         }
         sessionStore.clearSession()
         val restore = appRulesStore.restoreCommitmentRules()
         restore.eventMessage?.let(addEvent)
+        studyWorldSettingsStore
+            ?.restoreCommitmentTuningDefaults()
+            ?.eventMessage
+            ?.let(addEvent)
         if (kind == Kind.EXPIRED) addEvent(SessionExpiryPolicy.EXPIRED_EVENT_MESSAGE)
         addEvent(line(kind, Outcome.ENDED, stored.id, stored, restore.outcome, detail))
         Result(Outcome.ENDED, stored, restore.outcome)

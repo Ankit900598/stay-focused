@@ -8,6 +8,19 @@ class AiConfidenceGate {
         if (classification.source != NETWORK_AI_SOURCE) {
             return classification
         }
+        if (!classification.confidence.isFinite() || classification.confidence !in 0.0..1.0) {
+            return classification.copy(
+                decision = DecisionType.WARN,
+                confidence = 0.0,
+                reason = "Classifier confidence invalid"
+            )
+        }
+        if (classification.verificationIncomplete) {
+            return classification.copy(
+                decision = DecisionType.WARN,
+                reason = "Could not verify this screen safely"
+            )
+        }
 
         return when (classification.decision) {
             DecisionType.BLOCK, DecisionType.LOCK -> {

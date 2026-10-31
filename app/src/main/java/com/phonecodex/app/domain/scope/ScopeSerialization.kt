@@ -12,6 +12,8 @@ import org.json.JSONObject
  * - Unknown `kind` string -> UNRESOLVED(UNKNOWN_KIND).
  * - `evidenceSpans` must all be verbatim substrings of the user promise (call
  *   [fromJsonWithUserPromise] to enforce this); otherwise UNRESOLVED(MISSING_EVIDENCE).
+ * - `PACKAGE_PINNED` targets must map to a supported app name actually present in the
+ *   promise; package syntax or model-provided labels alone are not evidence.
  * - Any `com.*` / `org.*` / `net.*` / `io.*` inside `appliesToText` ->
  *   UNRESOLVED(PACKAGE_LEAK_IN_APPLIES_TO). Package IDs are internal only.
  * - Malformed clause (unknown enum value, non-string field where a string was expected,
@@ -89,6 +91,13 @@ object ScopeSerialization {
             ?: return EnforcementScope.unresolved(UnresolvedReason.MALFORMED_CLAUSE, evidenceSpans)
         val exempt = readClauseList(obj, "exempt")
             ?: return EnforcementScope.unresolved(UnresolvedReason.MALFORMED_CLAUSE, evidenceSpans)
+
+        if (kind == ScopeKind.PACKAGE_PINNED && userPromise != null) {
+            val packages = include.flatMap { it.packages }.distinct()
+            if (packages.isEmpty() || packages.any { !ScopePackageMentionLaw.wasNamedIn(it, userPromise) }) {
+                return EnforcementScope.unresolved(UnresolvedReason.MISSING_EVIDENCE, evidenceSpans)
+            }
+        }
 
         val unresolvedReason = parseEnum<UnresolvedReason>(obj.optString("unresolvedReason", "").trim())
 

@@ -345,6 +345,14 @@ object SurfaceDetector {
             evidence += "player_controls_with_context"
             hit = true
         }
+        if (VideoDurationParser.hasSpokenPlayerProgressClock(normalized) &&
+            WATCH_PAGE_LIKES_REGEX.containsMatchIn(normalized) &&
+            normalized.contains(" views") &&
+            normalized.contains("subscribe")
+        ) {
+            evidence += "spoken_player_progress_with_watch_metadata"
+            hit = true
+        }
         // Mobile-web watch page while playing with controls hidden: muted-autoplay chip
         // plus the watch header's like/view counts. Comments alone must not win here.
         if (normalized.contains("tap to unmute") &&
@@ -771,5 +779,5 @@ object SurfaceDetector {
         Regex("""\b\d{1,2}:\d{2}(?::\d{2})?\b""")
 
     private val WATCH_PAGE_LIKES_REGEX =
-        Regex("""\b\d[\d.,]*\s*(?:k|m|b|thousand|million|billion)?\s+likes\b""")
+        Regex("""\b\d[\d.,]*\s*(?:k|m|b|lakh|crore|thousand|million|billion)?\s+likes\b""")
 }

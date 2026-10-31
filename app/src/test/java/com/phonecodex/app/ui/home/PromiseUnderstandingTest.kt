@@ -17,6 +17,11 @@ import com.phonecodex.app.domain.promise.PromiseClarificationLaw
 import com.phonecodex.app.domain.promise.PromiseCompilerException
 import com.phonecodex.app.domain.promise.PromiseContentRuleSupport
 import com.phonecodex.app.domain.promise.PromiseUnderstandingResolver
+import com.phonecodex.app.domain.scope.EnforcementScope
+import com.phonecodex.app.domain.scope.ScopeCanonicalizer
+import com.phonecodex.app.domain.scope.ScopeIdentity
+import com.phonecodex.app.domain.scope.ScopeKind
+import com.phonecodex.app.domain.scope.ScopeKindPresets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -27,6 +32,247 @@ import org.junit.Test
 class PromiseUnderstandingTest {
 
     private val parser = FocusPromiseParser()
+
+    @Test
+    fun unsafeSocialMessageException_hidesStartEvenWhenServerClaimsReady() {
+        val expansion = ScopeKindPresets.expand(ScopeKind.SOCIAL_MESSAGING_ONLY, ScopeIdentity.WHATSAPP)
+        val scope = ScopeCanonicalizer.canonicalize(
+            EnforcementScope(
+                version = EnforcementScope.CURRENT_VERSION,
+                kind = ScopeKind.SOCIAL_MESSAGING_ONLY,
+                identity = ScopeIdentity.WHATSAPP,
+                include = expansion.include,
+                exempt = expansion.exempt,
+                confidence = 0.9,
+                evidenceSpans = listOf("WhatsApp except messages")
+            )
+        )
+        val draft = FocusPromise(
+            rawText = "block WhatsApp except messages for one hour",
+            sessionDurationMinutes = 60,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = emptyList(),
+            canStartCommitment = true,
+            scopeContractV1 = true,
+            enforcementScope = scope
+        )
+
+        assertTrue(draft.needsClarification(strongerConfirmAcknowledged = true))
+        val ui = buildPromiseUnderstanding(draft, source = UnderstandingSource.PROMISE_COMPILER)
+        assertFalse(ui.canStart)
+        assertTrue(ui.clarificationQuestion.orEmpty().contains("can't reliably"))
+    }
+
+    @Test
+    fun unsupportedNamedPlaylistCannotStartEvenWhenCompilerClaimsReady() {
+        val parsed = parser.parse("Only Neso Academy playlist for 3 hours")
+        val backendRules = parsed.contentRules.map { rule ->
+            if (rule.contentType.equals("study", ignoreCase = true)) {
+                rule.copy(surface = "study")
+            } else {
+                rule
+            }
+        }
+        val draft = PromiseClarificationLaw.apply(
+            parsed.copy(contentRules = backendRules, canStartCommitment = true)
+        )
+
+        assertFalse(draft.canStartCommitment == true)
+        assertTrue(draft.needsClarification)
+        assertTrue(draft.clarificationQuestion.orEmpty().contains("can't reliably"))
+
+        val ui = buildPromiseUnderstanding(draft, source = UnderstandingSource.PROMISE_COMPILER)
+        assertFalse(ui.canStart)
+        assertTrue(ui.clarificationQuestion.orEmpty().contains("playlist", ignoreCase = true))
+    }
+
+    @Test
+    fun namedPlaylistPromiseWithoutStructuredTargetCannotStart() {
+        val identity = ScopeIdentity.YOUTUBE
+        val expansion = ScopeKindPresets.expand(ScopeKind.CONTENT_ANY_HOST, identity)
+        val scope = ScopeCanonicalizer.canonicalize(
+            EnforcementScope(
+                version = EnforcementScope.CURRENT_VERSION,
+                kind = ScopeKind.CONTENT_ANY_HOST,
+                identity = identity,
+                include = expansion.include,
+                confidence = 0.9,
+                evidenceSpans = listOf("Only Neso Academy playlist")
+            )
+        )
+        val draft = FocusPromise(
+            rawText = "Only Neso Academy playlist on YouTube for 3 hours",
+            sessionDurationMinutes = 180,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = listOf(
+                AppRule("com.google.android.youtube", "YouTube", AppRuleBehavior.AI_DECIDE)
+            ),
+            allowedSummaries = listOf("Neso Academy playlist only"),
+            canStartCommitment = true,
+            scopeContractV1 = true,
+            enforcementScope = scope
+        )
+
+        listOf("playlist", "channel", "creator", "series").forEach { surface ->
+            val ui = buildPromiseUnderstanding(
+                draft.copy(contentRules = draft.contentRules.map { it.copy(surface = surface) }),
+                source = UnderstandingSource.PROMISE_COMPILER
+            )
+
+            assertFalse("$surface surface must not silently start", ui.canStart)
+            assertTrue(
+                ui.clarificationQuestion.orEmpty(),
+                ui.clarificationQuestion.orEmpty().contains("playlist", ignoreCase = true)
+            )
+        }
+    }
+
+    @Test
+    fun structuredPlaylistSurfaceCannotStartWhenPromiseUsesHinglish() {
+        val identity = ScopeIdentity.YOUTUBE
+        val expansion = ScopeKindPresets.expand(ScopeKind.CONTENT_ANY_HOST, identity)
+        val scope = ScopeCanonicalizer.canonicalize(
+            EnforcementScope(
+                version = EnforcementScope.CURRENT_VERSION,
+                kind = ScopeKind.CONTENT_ANY_HOST,
+                identity = identity,
+                include = expansion.include,
+                confidence = 0.9,
+                evidenceSpans = listOf("Neso Academy se padhai")
+            )
+        )
+        val draft = FocusPromise(
+            rawText = "Kal exam hai, 3 hours sirf Neso Academy se padhai",
+            sessionDurationMinutes = 180,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = listOf(
+                AppRule("com.google.android.youtube", "YouTube", AppRuleBehavior.AI_DECIDE)
+            ),
+            contentRules = listOf(
+                ContentRule(
+                    appLabel = "YouTube",
+                    packageName = "com.google.android.youtube",
+                    surface = "playlist",
+                    contentType = "study",
+                    operator = null,
+                    value = null,
+                    unit = null,
+                    action = ContentRuleAction.AI_DECIDE
+                )
+            ),
+            allowedSummaries = listOf("Neso Academy study only"),
+            canStartCommitment = true,
+            scopeContractV1 = true,
+            enforcementScope = scope
+        )
+
+        val ui = buildPromiseUnderstanding(draft, source = UnderstandingSource.PROMISE_COMPILER)
+
+        assertFalse(ui.canStart)
+        assertTrue(ui.clarificationQuestion.orEmpty().contains("playlist", ignoreCase = true))
+    }
+
+    @Test
+    fun v09StudySurfaceForHinglishNamedSourceCannotStart() {
+        val identity = ScopeIdentity.YOUTUBE
+        val expansion = ScopeKindPresets.expand(ScopeKind.CONTENT_ANY_HOST, identity)
+        val scope = ScopeCanonicalizer.canonicalize(
+            EnforcementScope(
+                version = EnforcementScope.CURRENT_VERSION,
+                kind = ScopeKind.CONTENT_ANY_HOST,
+                identity = identity,
+                include = expansion.include,
+                confidence = 0.9,
+                evidenceSpans = listOf("Neso Academy se padhai")
+            )
+        )
+        val draft = FocusPromise(
+            rawText = "Kal exam hai, 3 hours sirf Neso Academy se padhai",
+            sessionDurationMinutes = 180,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = listOf(
+                AppRule("com.google.android.youtube", "YouTube", AppRuleBehavior.AI_DECIDE)
+            ),
+            contentRules = listOf(
+                ContentRule(
+                    appLabel = "YouTube",
+                    packageName = "com.google.android.youtube",
+                    surface = "study",
+                    contentType = "study",
+                    operator = null,
+                    value = null,
+                    unit = null,
+                    action = ContentRuleAction.ALLOW
+                )
+            ),
+            allowedSummaries = listOf("Neso Academy study only"),
+            canStartCommitment = true,
+            scopeContractV1 = true,
+            enforcementScope = scope
+        )
+
+        val gated = PromiseClarificationLaw.apply(draft)
+
+        assertFalse(gated.canStartCommitment == true)
+        assertTrue(gated.clarificationRequired)
+        assertTrue(gated.clarificationQuestion.orEmpty().contains("study", ignoreCase = true))
+
+        val ui = buildPromiseUnderstanding(gated, source = UnderstandingSource.PROMISE_COMPILER)
+
+        assertFalse(ui.canStart)
+        assertTrue(ui.clarificationQuestion.orEmpty().contains("study", ignoreCase = true))
+    }
+
+    @Test
+    fun shortsOnlyWithNegatedChannelDoesNotTriggerUnsupportedCollectionGate() {
+        val identity = ScopeIdentity.YOUTUBE
+        val expansion = ScopeKindPresets.expand(ScopeKind.APP_SHORT_FORM_ONLY, identity)
+        val scope = ScopeCanonicalizer.canonicalize(
+            EnforcementScope(
+                version = EnforcementScope.CURRENT_VERSION,
+                kind = ScopeKind.APP_SHORT_FORM_ONLY,
+                identity = identity,
+                include = expansion.include,
+                confidence = 0.9,
+                evidenceSpans = listOf("YouTube Shorts only")
+            )
+        )
+        val draft = FocusPromise(
+            rawText = "Only block YouTube Shorts, not the whole channel, for 1 hour",
+            sessionDurationMinutes = 60,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = listOf(
+                AppRule("com.google.android.youtube", "YouTube", AppRuleBehavior.AI_DECIDE)
+            ),
+            contentRules = listOf(
+                ContentRule(
+                    appLabel = "YouTube",
+                    packageName = "com.google.android.youtube",
+                    surface = "shorts",
+                    contentType = "short_form_video",
+                    operator = null,
+                    value = null,
+                    unit = null,
+                    action = ContentRuleAction.BLOCK
+                )
+            ),
+            canStartCommitment = true,
+            scopeContractV1 = true,
+            enforcementScope = scope
+        )
+
+        assertFalse(draft.appRuleScopeConflict)
+    }
 
     @Test
     fun clarificationBlocksStart() {
@@ -82,6 +328,41 @@ class PromiseUnderstandingTest {
         assertEquals("1 hour", ui.sessionTimeLabel)
         assertTrue(ui.blockedLabel.contains("YouTube"))
         assertTrue(ui.blockedLabel.contains("20"))
+    }
+
+    @Test
+    fun confirmationAlwaysShowsStructuredRulesEvenWhenCompilerSuppliesSummaries() {
+        val draft = FocusPromise(
+            rawText = "Block YouTube Shorts for the next hour",
+            sessionDurationMinutes = 60,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = listOf(
+                AppRule("com.google.android.youtube", "YouTube", AppRuleBehavior.AI_DECIDE)
+            ),
+            contentRules = listOf(
+                ContentRule(
+                    appLabel = "YouTube",
+                    packageName = "com.google.android.youtube",
+                    surface = "shorts",
+                    contentType = "short_form_video",
+                    operator = null,
+                    value = null,
+                    unit = null,
+                    action = ContentRuleAction.BLOCK
+                )
+            ),
+            allowedSummaries = listOf("Long lectures remain allowed"),
+            blockedSummaries = listOf("YouTube restrictions apply"),
+            conditionalSummaries = listOf("Live screen checks apply")
+        )
+
+        val ui = buildPromiseUnderstanding(draft, source = UnderstandingSource.PROMISE_COMPILER)
+
+        assertTrue(ui.blockedLabel, ui.blockedLabel.contains("short-form video"))
+        assertTrue(ui.blockedLabel, ui.blockedLabel.contains("BLOCK"))
+        assertTrue(ui.conditionalLabel.orEmpty(), ui.conditionalLabel.orEmpty().contains("YouTube judged live"))
     }
 
     @Test
@@ -656,11 +937,85 @@ class PromiseUnderstandingTest {
         assertEquals(
             60,
             PromiseUnderstandingResolver.reconcileSessionDurationMinutes(
-                rawText = text,
                 compiledMinutes = 30,
                 localMinutes = 60
             )
         )
+    }
+
+    @Test
+    fun savedDurationFallback_replacesCompilerDefaultWithoutStaleTimeCopy() {
+        val text = "Block YouTube videos longer than 30 minutes"
+        val compiled = CompiledPromiseResponse(
+            rawText = text,
+            sessionDurationMinutes = 60,
+            strictness = "STRICT",
+            allowedSummaries = emptyList(),
+            blockedSummaries = listOf("videos longer than 30 minutes"),
+            conditionalSummaries = emptyList(),
+            contentRules = emptyList(),
+            clarificationQuestion = null,
+            cautionMessages = listOf("Session duration was unclear, so I defaulted to 60 minutes."),
+            source = "azure_promise_compiler",
+            confidence = 0.8,
+            suggestedAppRules = emptyList(),
+            timeWindowKind = "session_fixed_default",
+            userFacingConfirmation = com.phonecodex.app.domain.promise.UserFacingConfirmationDto(
+                understood = "Block YouTube videos longer than 30 minutes for about an hour.",
+                allowed = emptyList(),
+                blocked = listOf("videos longer than 30 minutes"),
+                time = "About 1 hour (default — edit if wrong)",
+                appliesTo = "YouTube videos",
+                checkThis = emptyList(),
+                safetyNotes = emptyList()
+            )
+        )
+
+        val resolved = PromiseUnderstandingResolver.resolve(
+            text = text,
+            compiledResult = Result.success(compiled),
+            parser = parser,
+            fallbackDurationMinutes = 45
+        )
+        val ui = buildPromiseUnderstanding(resolved.draft, source = UnderstandingSource.PROMISE_COMPILER)
+
+        assertEquals(45, resolved.draft.sessionDurationMinutes)
+        assertEquals(45, ConfirmedPromiseBinder.bind(resolved.draft).durationMinutes)
+        assertNull(resolved.draft.userFacingTime)
+        assertTrue(ui.sessionTimeLabel.contains("45 minutes"))
+        assertTrue(resolved.draft.warnings.any { it.contains("saved default of 45 minutes") })
+        assertFalse(resolved.draft.warnings.any { it.contains("defaulted to 60 minutes", ignoreCase = true) })
+    }
+
+    @Test
+    fun explicitSessionDurationAndContentLengthRemainSeparateFromSavedFallback() {
+        val explicitSession = parser.parse(
+            "Allow videos longer than 30 minutes for 1 hour",
+            fallbackDurationMinutes = 45
+        )
+        val contentLengthOnly = parser.parse(
+            "Block videos longer than 30 minutes",
+            fallbackDurationMinutes = 45
+        )
+
+        assertEquals(60, explicitSession.sessionDurationMinutes)
+        assertTrue(explicitSession.sessionDurationWasExplicit)
+        assertEquals(45, contentLengthOnly.sessionDurationMinutes)
+        assertFalse(contentLengthOnly.sessionDurationWasExplicit)
+    }
+
+    @Test
+    fun offlineUnderstandingUsesSavedDurationFallback() {
+        val resolved = PromiseUnderstandingResolver.resolve(
+            text = "Block YouTube Shorts",
+            compiledResult = Result.failure(PromiseCompilerException("offline")),
+            parser = parser,
+            fallbackDurationMinutes = 45
+        )
+
+        assertFalse(resolved.fromCompiler)
+        assertEquals(45, resolved.draft.sessionDurationMinutes)
+        assertEquals(45, ConfirmedPromiseBinder.bind(resolved.draft).durationMinutes)
     }
 
     @Test
@@ -784,6 +1139,35 @@ class PromiseUnderstandingTest {
         val ui = buildPromiseUnderstanding(draft, source = UnderstandingSource.PROMISE_COMPILER)
         assertFalse(ui.canStart)
         assertEquals("Needs one clarification", ui.statusLabel)
+    }
+
+    @Test
+    fun vagueGreetingDoesNotInventAllowedOrBlockedRulesWhileClarificationIsPending() {
+        val draft = FocusPromise(
+            rawText = "hi",
+            sessionDurationMinutes = 0,
+            allowedKeywords = emptyList(),
+            blockedKeywords = emptyList(),
+            strictness = StrictnessLevel.STRICT,
+            suggestedAppRules = emptyList(),
+            understoodSummary = "I understood: you said hi. Tell me the commitment you want to set.",
+            clarificationQuestion = "What would you like to allow or limit?",
+            clarificationRequired = true,
+            canStartCommitment = false
+        )
+
+        val ui = buildPromiseUnderstanding(
+            draft = draft,
+            alwaysBlockedLabels = listOf("adult content"),
+            source = UnderstandingSource.PROMISE_COMPILER
+        )
+
+        assertFalse(ui.canStart)
+        assertEquals("Not decided until you clarify", ui.allowedLabel)
+        assertEquals("Not decided until you clarify", ui.blockedLabel)
+        assertEquals(listOf("adult content"), ui.alwaysOnLifeRules)
+        assertFalse(ui.userFacingTextBlob().contains("Whatever pulls you away"))
+        assertFalse(ui.userFacingTextBlob().contains("Anything that fits this promise"))
     }
 }
 

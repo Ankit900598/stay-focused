@@ -23,12 +23,15 @@ class PhoneSurfaceTraceReplayTest {
     }
 
     @Test
-    fun catalogIncludesTheThreePhoneRegressions() {
+    fun catalogIncludesRequiredPhoneRegressions() {
         val ids = PhoneSurfaceTraceCatalog.all().map { it.id }.toSet()
         assertTrue(ids.contains("chrome_yt_spoken_31m33_blocks_min40"))
         assertTrue(ids.contains("chrome_shorts_locked_never_unrelated"))
         assertTrue(ids.contains("scope_content_chrome_not_official_only"))
         assertTrue(ids.contains("scope_app_only_chrome_watch_out"))
+        assertTrue(ids.contains("yt_app_spoken_progress_with_comments_allows_max40"))
+        assertTrue(ids.contains("yt_app_spoken_clock_uses_total_not_position_min40"))
+        assertTrue(ids.contains("yt_app_comment_clock_with_watch_metadata_stays_passive"))
     }
 
     @Test

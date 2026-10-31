@@ -80,8 +80,6 @@ class ScopeSerializationTest {
 
     @Test
     fun packagePinnedTolerateMissingEvidence() {
-        // PACKAGE_PINNED is the one kind where the "user named a literal app" contract
-        // supplies its own evidence via the package list itself.
         val exp = ScopeKindPresets.expand(ScopeKind.PACKAGE_PINNED, packages = listOf("app.netmirror.newtv"))
         val scope = EnforcementScope(
             version = 1,
@@ -95,6 +93,78 @@ class ScopeSerializationTest {
         val obj = ScopeSerialization.toJson(scope)
         val parsed = ScopeSerialization.fromJsonWithUserPromise(obj.toString(), "block NetMirror app")
         assertEquals(ScopeKind.PACKAGE_PINNED, parsed.kind)
+    }
+
+    @Test
+    fun packagePinnedRejectsPackageNotNamedByPromise() {
+        val exp = ScopeKindPresets.expand(ScopeKind.PACKAGE_PINNED, packages = listOf("com.discord"))
+        val scope = EnforcementScope(
+            version = 1,
+            kind = ScopeKind.PACKAGE_PINNED,
+            identity = null,
+            include = exp.include,
+            confidence = 0.85,
+            appliesToText = "specific apps you named",
+            evidenceSpans = emptyList()
+        )
+
+        val unrelated = ScopeSerialization.fromJsonWithUserPromise(
+            ScopeSerialization.toJson(scope).toString(),
+            "Let me focus for one hour"
+        )
+        assertEquals(ScopeKind.UNRESOLVED, unrelated.kind)
+        assertEquals(UnresolvedReason.MISSING_EVIDENCE, unrelated.unresolvedReason)
+
+        val mismatch = ScopeSerialization.fromJsonWithUserPromise(
+            ScopeSerialization.toJson(scope).toString(),
+            "Block WhatsApp for one hour"
+        )
+        assertEquals(ScopeKind.UNRESOLVED, mismatch.kind)
+        assertEquals(UnresolvedReason.MISSING_EVIDENCE, mismatch.unresolvedReason)
+    }
+
+    @Test
+    fun packagePinnedAcceptsNamedDiscordInsideMultilingualPromise() {
+        val exp = ScopeKindPresets.expand(ScopeKind.PACKAGE_PINNED, packages = listOf("com.discord"))
+        val scope = EnforcementScope(
+            version = 1,
+            kind = ScopeKind.PACKAGE_PINNED,
+            identity = null,
+            include = exp.include,
+            confidence = 0.85,
+            appliesToText = "specific apps you named",
+            evidenceSpans = emptyList()
+        )
+
+        val parsed = ScopeSerialization.fromJsonWithUserPromise(
+            ScopeSerialization.toJson(scope).toString(),
+            "ब्लॉक Discord for one hour"
+        )
+        assertEquals(ScopeKind.PACKAGE_PINNED, parsed.kind)
+    }
+
+    @Test
+    fun packagePinnedRejectsUnmappedPackageEvenIfModelClaimsItsLabel() {
+        val exp = ScopeKindPresets.expand(
+            ScopeKind.PACKAGE_PINNED,
+            packages = listOf("com.vendor.unlisted")
+        )
+        val scope = EnforcementScope(
+            version = 1,
+            kind = ScopeKind.PACKAGE_PINNED,
+            identity = null,
+            include = exp.include,
+            confidence = 0.85,
+            appliesToText = "Unlisted App only",
+            evidenceSpans = emptyList()
+        )
+
+        val parsed = ScopeSerialization.fromJsonWithUserPromise(
+            ScopeSerialization.toJson(scope).toString(),
+            "Block Unlisted App for one hour"
+        )
+        assertEquals(ScopeKind.UNRESOLVED, parsed.kind)
+        assertEquals(UnresolvedReason.MISSING_EVIDENCE, parsed.unresolvedReason)
     }
 
     @Test

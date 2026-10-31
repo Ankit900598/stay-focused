@@ -94,6 +94,27 @@ class PermanentGuardrailEvaluatorTest {
         assertNull(match)
     }
 
+    @Test
+    fun disabledGuardrail_doesNotBlockPackageOrContent() {
+        val guardrail = pornGuardrail().copy(
+            enabled = false,
+            blockedPackages = setOf("com.android.chrome")
+        )
+
+        assertNull(evaluator.evaluate("com.android.chrome", "visit xvideos now", listOf(guardrail)))
+    }
+
+    @Test
+    fun expiredGuardrail_doesNotBlockPackageOrContent() {
+        val guardrail = pornGuardrail().copy(
+            blockedPackages = setOf("com.android.chrome"),
+            expiresAtMillis = 1_000L
+        )
+
+        assertNotNull(evaluator.evaluate("com.android.chrome", "visit xvideos now", listOf(guardrail), 999L))
+        assertNull(evaluator.evaluate("com.android.chrome", "visit xvideos now", listOf(guardrail), 1_000L))
+    }
+
     private fun pornGuardrail(): PermanentGuardrail {
         return PermanentGuardrail(
             id = "porn_guardrail",

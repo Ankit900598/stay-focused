@@ -13,7 +13,9 @@ data class FocusSession(
      * Strictness the user confirmed on the promise. Drives exit friction only;
      * PolicyEngine keeps using [strictness]. Null for sessions saved before this field.
      */
-    val promiseStrictness: StrictnessLevel? = null
+    val promiseStrictness: StrictnessLevel? = null,
+    /** Exact app/content rules shown on the confirmation preview for this session. */
+    val confirmedPolicy: ConfirmedSessionPolicy? = null
 ) {
     /**
      * What the user confirmed. Every user-facing friction reads this: exit friction, the

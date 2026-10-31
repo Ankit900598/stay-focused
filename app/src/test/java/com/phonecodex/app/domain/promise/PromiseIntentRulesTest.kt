@@ -217,8 +217,23 @@ class PromiseIntentRulesTest {
             )
         )
         assertTrue(PromiseIntentRules.namesYouTubeAppOnly("YouTube app only for 1 hour"))
+        assertTrue(
+            PromiseIntentRules.namesYouTubeAppOnly(
+                "Block the YouTube app for 30 minutes. YouTube Music is allowed."
+            )
+        )
+        assertTrue(
+            PromiseIntentRules.namesYouTubeMusicAllowed(
+                "Block the YouTube app for 30 minutes. YouTube Music is allowed."
+            )
+        )
         assertFalse(
             PromiseIntentRules.namesYouTubeContentBrand("YouTube app only for 1 hour")
+        )
+        assertFalse(
+            PromiseIntentRules.namesYouTubeContentBrand(
+                "Block the YouTube app for 30 minutes. YouTube Music is allowed."
+            )
         )
     }
 }

@@ -13,6 +13,10 @@ object SafeAppsCatalog {
         "com.android.mms",
         "com.google.android.apps.messaging",
         "com.android.settings",
+        "com.android.settings.intelligence",
+        "com.xiaomi.misettings",
+        "com.miui.securitycenter",
+        "com.miui.permcenter",
         "com.miui.home",
         "com.android.systemui"
     )
@@ -44,6 +48,10 @@ object SafeAppsCatalog {
         "com.openai.chatgpt" to "ChatGPT",
         "com.google.android.apps.messaging" to "Messages",
         "com.android.settings" to "Settings",
+        "com.android.settings.intelligence" to "Settings",
+        "com.xiaomi.misettings" to "Settings",
+        "com.miui.securitycenter" to "Security Center",
+        "com.miui.permcenter" to "Permission Center",
         "com.miui.home" to "Home",
         "com.android.systemui" to "System UI",
         "com.whatsapp" to "WhatsApp",

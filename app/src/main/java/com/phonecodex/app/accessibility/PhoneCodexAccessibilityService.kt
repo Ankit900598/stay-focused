@@ -4,8 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.PixelFormat
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
@@ -18,6 +16,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.util.concurrent.Executors
 import com.phonecodex.app.data.AppDossierStore
+import com.phonecodex.app.data.AccessibilityDisclosureConsentStore
 import com.phonecodex.app.data.ShortFormQuotaStore
 import com.phonecodex.app.data.AppRulesStore
 import com.phonecodex.app.data.CommitmentTeardown
@@ -30,11 +29,16 @@ import com.phonecodex.app.data.RuntimeDiagStore
 import com.phonecodex.app.data.SessionStore
 import com.phonecodex.app.data.SafeAppsStore
 import com.phonecodex.app.data.StudyWorldSettingsStore
+import com.phonecodex.app.domain.auth.BackendIdentityTokenProviders
 import com.phonecodex.app.domain.classifier.ClassifyRequestBuilder
 import com.phonecodex.app.domain.classifier.ContentClassification
 import com.phonecodex.app.domain.classifier.ContentClassifier
 import com.phonecodex.app.domain.classifier.AiConfidenceGate
+import com.phonecodex.app.domain.classifier.ClassifierBlockAuthority
+import com.phonecodex.app.domain.classifier.ConfirmedClassifierActionGate
 import com.phonecodex.app.domain.classifier.NetworkAiContentClassifier
+import com.phonecodex.app.domain.diagnostics.diagnosticErrorKind
+import com.phonecodex.app.domain.diagnostics.diagnosticTextMetadata
 import com.phonecodex.app.domain.model.AppRuleBehavior
 import com.phonecodex.app.domain.model.ContextSnapshot
 import com.phonecodex.app.domain.model.DecisionExplanation
@@ -43,6 +47,7 @@ import com.phonecodex.app.domain.model.FocusSession
 import com.phonecodex.app.domain.model.FocusWorld
 import com.phonecodex.app.domain.model.PolicyDecision
 import com.phonecodex.app.domain.model.SessionStatus
+import com.phonecodex.app.domain.model.StudyWorldSettings
 import com.phonecodex.app.domain.model.StrictnessLevel
 import com.phonecodex.app.domain.model.WorldMode
 import com.phonecodex.app.domain.policy.PolicyEngine
@@ -128,6 +133,9 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private val eventLogStore by lazy { EventLogStore(this) }
     private val debugStateStore by lazy { DebugStateStore(this) }
     private val runtimeDiagStore by lazy { RuntimeDiagStore(this) }
+    private val accessibilityDisclosureConsentStore by lazy {
+        AccessibilityDisclosureConsentStore(this)
+    }
     private val appRulesStore by lazy { AppRulesStore(this) }
     private val studyWorldSettingsStore by lazy { StudyWorldSettingsStore(this) }
     private val feedbackStore by lazy { FeedbackStore(this) }
@@ -166,8 +174,6 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private var pipRecentBlock: PictureInPictureEscapeLaw.RecentBlock? = null
     private val pipGuardRunnable = Runnable { enforcePictureInPictureGuard() }
     private var pipEpisode: PictureInPictureContainmentLaw.Episode? = null
-    private val pipVerifyRunnable = Runnable { verifyPictureInPictureStop() }
-    private var mediaStopFocusRequest: AudioFocusRequest? = null
     private var latestPackageName: String? = null
     private var latestScreenTextSignature: String? = null
     private var visibleWarningPackageName: String? = null
@@ -189,7 +195,16 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private var lastClassifiedPackage: String? = null
     private var lastClassifiedTextSignature: String? = null
     private var lastClassification: ContentClassification? = null
+    private var lastClassificationPolicyKey: CounselPolicyKey? = null
     private var lastClassificationTimeMillis: Long = 0L
+
+    private data class CounselPolicyKey(
+        val session: FocusSession,
+        val settings: StudyWorldSettings,
+        val appRule: AppRuleBehavior?,
+        val isSafePackage: Boolean,
+        val guardrailIds: Set<String>
+    )
     private var lastClassificationRequestTimeMillis: Long = 0L
     private var lastClassificationRequestPackage: String? = null
     private var classificationInFlight: Boolean = false
@@ -205,9 +220,12 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private var lastSafeAppLoggedTimeMillis: Long = 0L
     private var lastScopeCorruptLoggedPackage: String? = null
     private var lastScopeCorruptLoggedMillis: Long = 0L
+    private var lastAccessibilityControlsLoggedPackage: String? = null
+    private var lastAccessibilityControlsLoggedMillis: Long = 0L
     private var lastForegroundLoggedPackage: String? = null
     private var lastForegroundLoggedTimeMillis: Long = 0L
     private var latestExplanation: DecisionExplanation? = null
+    private var disclosureConsentAccepted = false
     private var lastVisionSkipPackage: String? = null
     private var lastVisionSkipAtMillis: Long = 0L
 
@@ -239,6 +257,19 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        BackendIdentityTokenProviders.installIfNeeded(applicationContext)
+        disclosureConsentAccepted = accessibilityDisclosureConsentStore.hasAcceptedCurrentDisclosure()
+        if (!disclosureConsentAccepted) {
+            runtimeDiagStore.setAccessibilityServiceAlive(false)
+            runtimeDiagStore.setOverlayActive(false)
+            Log.w(TAG_ACCESSIBILITY_LIFECYCLE, "not starting: current in-app disclosure consent missing")
+            disableSelf()
+            return
+        }
+        Log.i(
+            TAG_ACCESSIBILITY_LIFECYCLE,
+            "connected elapsed=${android.os.SystemClock.elapsedRealtime()}"
+        )
         runtimeDiagStore.setAccessibilityServiceAlive(true)
         runtimeDiagStore.recordHeartbeat(
             nowMillis = System.currentTimeMillis(),
@@ -254,7 +285,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
+        if (event == null || !disclosureConsentAccepted) return
         recordProtectionHeartbeat(event)
 
         when (event.eventType) {
@@ -309,11 +340,14 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        Log.w(
+            TAG_ACCESSIBILITY_LIFECYCLE,
+            "destroy elapsed=${android.os.SystemClock.elapsedRealtime()}"
+        )
         mainHandler.removeCallbacks(contentChangeDebounceRunnable)
         mainHandler.removeCallbacks(serviceLeaseHeartbeatRunnable)
         mainHandler.removeCallbacks(pipGuardRunnable)
-        mainHandler.removeCallbacks(pipVerifyRunnable)
-        abandonMediaStopFocus()
+        disclosureConsentAccepted = false
         hideWarningOverlay()
         hideBlockOverlay()
         runtimeDiagStore.setAccessibilityServiceAlive(false)
@@ -336,6 +370,11 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        if (!disclosureConsentAccepted) {
+            hideWarningOverlay()
+            hideBlockOverlay()
+            return
+        }
         // Only rebuild when we actually own an overlay right now — otherwise
         // rotation on a normal app must never spawn a spurious overlay.
         val blockTarget = activeOverlayTargetPackage
@@ -420,6 +459,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     }
 
     private fun inspectAndEvaluate(packageName: String) {
+        if (!disclosureConsentAccepted) return
         latestPackageName = packageName
 
         val screenText = collectScreenText(packageName)
@@ -433,7 +473,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 nowMillis = nowDebug
             )
         ) {
-            debugStateStore.recordPackageDetected(packageName, screenText)
+            debugStateStore.recordPackageDetected(packageName)
             lastDebugPackageWritten = packageName
             lastDebugPackageWrittenAtMillis = nowDebug
         }
@@ -444,9 +484,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             (storedSession.status == SessionStatus.ACTIVE ||
                 storedSession.status == SessionStatus.LOCKED)
         ) {
-            if (applyAccessibilityTamperGuard(packageName, screenText)) {
-                return
-            }
+            recordAccessibilityControlAccess(packageName, screenText)
         }
 
         // Overlay self-hide guard: must run BEFORE safe-app handling.
@@ -457,36 +495,55 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         }
 
         val settings = studyWorldSettingsStore.getSettings()
-        val lawSession = storedSession?.status?.takeIf {
-            it == SessionStatus.ACTIVE || it == SessionStatus.LOCKED
-        }
-        val lawGoal = storedSession?.goal.orEmpty()
-        val law = CommitmentPolicyEvaluator.evaluate(
-            CommitmentSnapshot(
-                packageName = packageName,
-                screenText = screenText,
-                sessionStatus = lawSession,
-                goal = lawGoal,
-                settings = settings,
-                storedAppRule = appRulesStore.getBehaviorForPackage(packageName),
-                isSafePackage = safeAppsStore.isSafePackage(packageName),
-                isSystemOverlayNoise = isSystemOverlayNoise(packageName),
-                guardrails = permanentGuardrailsStore.getEnabledGuardrails(),
-                storedDossier = if (CommitmentPolicyEvaluator.readsStoredDossier(packageName, lawGoal, lawSession)) {
-                    appDossierStore.get(packageName)
-                } else {
-                    null
-                }
-            ),
-            shortFormQuotaGate
-        )
+        val snapshot = currentLawSnapshot(packageName, screenText, storedSession, settings)
+        val law = evaluateCurrentLaw(snapshot)
         if (safeRootInActiveWindow()?.packageName?.toString() == packageName) {
             pipRecentBlock = PictureInPictureEscapeLaw.afterForegroundVerdict(pipRecentBlock, packageName, law.verdict)
         }
         if (applyLawDecision(law, packageName, screenText, storedSession)) return
         if (storedSession == null) return
-        runCounselTail(packageName, screenText, storedSession)
+        runCounselTail(packageName, screenText, storedSession, snapshot)
     }
+
+    private fun currentLawSnapshot(
+        packageName: String,
+        screenText: String,
+        storedSession: FocusSession?,
+        settings: StudyWorldSettings
+    ): CommitmentSnapshot {
+        val lawSession = storedSession?.status?.takeIf {
+            it == SessionStatus.ACTIVE || it == SessionStatus.LOCKED
+        }
+        val lawGoal = storedSession?.goal.orEmpty()
+        return CommitmentSnapshot(
+            packageName = packageName,
+            screenText = screenText,
+            sessionStatus = lawSession,
+            goal = lawGoal,
+            settings = settings,
+            storedAppRule = appRulesStore.getBehaviorForPackage(packageName),
+            isSafePackage = safeAppsStore.isSafePackage(packageName),
+            isSystemOverlayNoise = isSystemOverlayNoise(packageName),
+            guardrails = permanentGuardrailsStore.getEnabledGuardrails(),
+            storedDossier = if (CommitmentPolicyEvaluator.readsStoredDossier(packageName, lawGoal, lawSession)) {
+                appDossierStore.get(packageName)
+            } else {
+                null
+            }
+        )
+    }
+
+    private fun evaluateCurrentLaw(snapshot: CommitmentSnapshot): CommitmentDecision =
+        CommitmentPolicyEvaluator.evaluate(snapshot, shortFormQuotaGate)
+
+    private fun counselPolicyKey(snapshot: CommitmentSnapshot, session: FocusSession): CounselPolicyKey =
+        CounselPolicyKey(
+            session = session,
+            settings = snapshot.settings,
+            appRule = snapshot.storedAppRule,
+            isSafePackage = snapshot.isSafePackage,
+            guardrailIds = snapshot.guardrails.map { it.id }.toSet()
+        )
 
     /** Effects for a scope short-circuit decided by [CommitmentPolicyEvaluator]. */
     private fun applyScopeDecision(
@@ -606,7 +663,12 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
      * Advisory tail after the law returned CONTINUE: feedback memory, unknown-clone WARN,
      * then the backend classifier. None of these can override a law decision.
      */
-    private fun runCounselTail(packageName: String, screenText: String, storedSession: FocusSession) {
+    private fun runCounselTail(
+        packageName: String,
+        screenText: String,
+        storedSession: FocusSession,
+        snapshot: CommitmentSnapshot
+    ) {
         if (applyFeedbackMemoryRules(packageName, screenText)) {
             return
         }
@@ -615,8 +677,19 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             return
         }
 
+        val policyKey = counselPolicyKey(snapshot, storedSession)
         val signature = textSignature(screenText)
         val now = System.currentTimeMillis()
+        val reusableClassification = lastClassificationPolicyKey == policyKey &&
+            EnforcementEventGate.shouldUseCachedClassification(
+                packageName = packageName,
+                textSignature = signature,
+                lastPackage = lastClassifiedPackage,
+                lastSignature = lastClassifiedTextSignature,
+                lastClassifiedAtMillis = lastClassificationTimeMillis,
+                nowMillis = now,
+                cacheTtlMs = EnforcementEventGate.CLASSIFICATION_CACHE_TTL_MS
+            )
 
         if (
             EnforcementEventGate.shouldThrottleClassificationRequest(
@@ -630,7 +703,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         ) {
             // Do not storm the backend — re-apply last decision for this package if we have one.
             if (
-                packageName == lastClassifiedPackage &&
+                reusableClassification &&
                 lastClassification != null
             ) {
                 applyClassificationOrFallback(
@@ -648,17 +721,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             return
         }
 
-        if (
-            EnforcementEventGate.shouldUseCachedClassification(
-                packageName = packageName,
-                textSignature = signature,
-                lastPackage = lastClassifiedPackage,
-                lastSignature = lastClassifiedTextSignature,
-                lastClassifiedAtMillis = lastClassificationTimeMillis,
-                nowMillis = now,
-                cacheTtlMs = EnforcementEventGate.CLASSIFICATION_CACHE_TTL_MS
-            )
-        ) {
+        if (reusableClassification) {
             Log.d("PhoneCodexNetAI", "Using cached classification for $packageName")
             applyClassificationOrFallback(
                 packageName = packageName,
@@ -680,25 +743,42 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                 appLabel = resolveAppLabel(packageName),
                 screenText = screenText,
                 session = storedSession,
-                enabledGuardrailIds = permanentGuardrailsStore.getEnabledGuardrails().map { it.id }
+                enabledGuardrailIds = policyKey.guardrailIds.toList()
             )
             val classification = try {
                 contentClassifier.classify(classifyRequest)
             } catch (err: Exception) {
-                Log.w("PhoneCodexNetAI", "Classifier failed for $packageName: ${err.message}")
+                Log.w("PhoneCodexNetAI", "Classifier failed for $packageName: ${diagnosticErrorKind(err)}")
                 null
             }
 
             mainHandler.post {
                 try {
-                    if (!isCurrentPolicyEvaluation(packageName, screenText, storedSession)) {
+                    val currentSettings = studyWorldSettingsStore.getSettings()
+                    if (!isCurrentPolicyEvaluation(packageName, screenText, storedSession, currentSettings)) {
                         Log.d("PhoneCodexNetAI", "Discarded stale classifier result for $packageName")
+                        return@post
+                    }
+
+                    val currentSnapshot = currentLawSnapshot(
+                        packageName,
+                        screenText,
+                        storedSession,
+                        currentSettings
+                    )
+                    val currentLaw = evaluateCurrentLaw(currentSnapshot)
+                    if (currentLaw.verdict != LawVerdict.CONTINUE) {
+                        applyLawDecision(currentLaw, packageName, screenText, storedSession)
+                        return@post
+                    }
+                    if (counselPolicyKey(currentSnapshot, storedSession) != policyKey) {
                         return@post
                     }
 
                     lastClassifiedPackage = packageName
                     lastClassifiedTextSignature = signature
                     lastClassification = classification
+                    lastClassificationPolicyKey = policyKey
                     lastClassificationTimeMillis = System.currentTimeMillis()
 
                     applyClassificationOrFallback(
@@ -717,22 +797,26 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     private fun isCurrentPolicyEvaluation(
         packageName: String,
         screenText: String,
-        storedSession: FocusSession
+        storedSession: FocusSession,
+        settings: StudyWorldSettings
     ): Boolean {
+        if (!disclosureConsentAccepted) return false
         val currentSession = sessionStore.getStoredSession() ?: return false
+        if (currentSession != storedSession) return false
+        if (SessionExpiryPolicy.isExpired(
+                currentSession,
+                System.currentTimeMillis(),
+                settings.shortFormDailyQuotaLimit
+            )
+        ) {
+            return false
+        }
         return latestPackageName == packageName &&
-            latestScreenTextSignature == textSignature(screenText) &&
-            currentSession.id == storedSession.id &&
-            currentSession.goal == storedSession.goal &&
-            currentSession.status == storedSession.status
+            latestScreenTextSignature == textSignature(screenText)
     }
 
     private fun textSignature(text: String): String {
-        return text
-            .lowercase()
-            .take(300)
-            .trim()
-            .replace(Regex("\\s+"), " ")
+        return OverlayLifecycleGate.screenSignature(text).orEmpty()
     }
 
     /**
@@ -923,7 +1007,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
 
         Log.d(
             "PhoneCodexA11yText",
-            "Screen text for $packageName (${screenText.length} chars): ${screenText.take(180)}"
+            "Screen text for $packageName (${screenText.length} chars)"
         )
         lastLoggedA11yTextPackage = packageName
         lastLoggedA11yTextSignature = signature
@@ -1098,31 +1182,29 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         return true
     }
 
-    private fun applyAccessibilityTamperGuard(packageName: String, screenText: String): Boolean {
+    private fun recordAccessibilityControlAccess(packageName: String, screenText: String) {
         val match = accessibilityTamperGuard.evaluatePhoneCodexAccessibilityControls(
             packageName = packageName,
             screenText = screenText
-        ) ?: return false
+        ) ?: return
 
         hideBlockOverlay()
         hideWarningOverlay()
-        val explanation = DecisionExplanation(
-            decision = DecisionType.WARN.name,
-            reason = match.reason,
-            source = "Tamper Guard",
-            confidence = 1.0,
-            matchedSignals = match.matchedSignals
-        )
-        recordExplanation(packageName, screenText, explanation)
-        eventLogStore.addEvent(
-            "Tamper guard sent user home from PhoneCodex accessibility controls"
-        )
-        performGlobalAction(GLOBAL_ACTION_HOME)
-        Log.d(
-            "PhoneCodexDecision",
-            "Tamper guard forced HOME for $packageName signals=${match.matchedSignals}"
-        )
-        return true
+        val now = System.currentTimeMillis()
+        if (
+            packageName != lastAccessibilityControlsLoggedPackage ||
+            now - lastAccessibilityControlsLoggedMillis >= ACCESSIBILITY_CONTROLS_LOG_THROTTLE_MS
+        ) {
+            eventLogStore.addEvent(
+                "Android Accessibility controls opened; Strlix remains under user control"
+            )
+            Log.i(
+                "PhoneCodexDecision",
+                "ACCESSIBILITY_CONTROLS_OPEN package=$packageName signals=${match.matchedSignals}"
+            )
+            lastAccessibilityControlsLoggedPackage = packageName
+            lastAccessibilityControlsLoggedMillis = now
+        }
     }
 
     private fun applyPermanentGuardrail(
@@ -1205,7 +1287,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                         decision = DecisionType.ALLOW.name,
                         reason = "Allowed by app rule for $label",
                         source = "App Rule",
-                        confidence = 1.0
+                        confidence = 1.0,
+                        sessionId = sessionStore.getStoredSession()?.id
                     )
                     Log.d(
                         "PhoneCodexDecision",
@@ -1912,7 +1995,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         val classification = try {
             contentClassifier.classify(request)
         } catch (err: Exception) {
-            Log.w("PhoneCodexNetAI", "Vision classify failed for $packageName: ${err.message}")
+            Log.w("PhoneCodexNetAI", "Vision classify failed for $packageName: ${diagnosticErrorKind(err)}")
             null
         }
         mainHandler.post {
@@ -1945,6 +2028,18 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             logVisionSkipThrottled(packageName, "classify_null", localReasonCode)
             return
         }
+        val settings = studyWorldSettingsStore.getSettings()
+        if (!isCurrentPolicyEvaluation(packageName, screenText, storedSession, settings)) {
+            Log.d("PhoneCodexNetAI", "Discarded stale vision result for $packageName")
+            return
+        }
+        val currentLaw = evaluateCurrentLaw(
+            currentLawSnapshot(packageName, screenText, storedSession, settings)
+        )
+        if (currentLaw.verdict != LawVerdict.CONTINUE) {
+            applyLawDecision(currentLaw, packageName, screenText, storedSession)
+            return
+        }
         val merge = VisionCounselMerge.merge(
             localDecision = localDecision,
             localReasonCode = localReasonCode,
@@ -1952,28 +2047,69 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             vision = classification,
             backendUsedImage = classification.usedImage
         )
+        val actionGate = merge.classification?.let { mergedClassification ->
+            ConfirmedClassifierActionGate.evaluate(
+                classification = mergedClassification,
+                packageName = packageName,
+                surface = SurfaceDetector.detect(packageName, screenText).surface,
+                confirmedPolicy = storedSession.confirmedPolicy
+            )
+        }
+        val gatedMerge = if (actionGate == null) merge else merge.copy(
+            classification = actionGate.classification
+        )
+        if (actionGate?.authority == ClassifierBlockAuthority.NO_MATCHING_CONFIRMED_RULE) {
+            Log.i(
+                "PhoneCodexDecision",
+                EnforcementDecisionLog.format(
+                    packageName = packageName,
+                    surface = SurfaceDetector.detect(packageName, screenText).surface.name,
+                    rule = "Classifier authority",
+                    decision = "WARN",
+                    reasonCode = EnforcementReasonCodes.CLASSIFIER_BLOCK_NO_CONFIRMED_RULE,
+                    reason = ConfirmedClassifierActionGate.UNAUTHORIZED_BLOCK_REASON
+                )
+            )
+        } else if (actionGate?.authority == ClassifierBlockAuthority.MODEL_CANNOT_LOCK) {
+            Log.i(
+                "PhoneCodexDecision",
+                EnforcementDecisionLog.format(
+                    packageName = packageName,
+                    surface = SurfaceDetector.detect(packageName, screenText).surface.name,
+                    rule = "Classifier authority",
+                    decision = "WARN",
+                    reasonCode = EnforcementReasonCodes.CLASSIFIER_LOCK_NOT_AUTHORIZED,
+                    reason = ConfirmedClassifierActionGate.MODEL_LOCK_REASON
+                )
+            )
+        }
         Log.d(
             "PhoneCodexDecision",
             EnforcementDecisionLog.format(
                 packageName = packageName,
                 surface = SurfaceDetector.detect(packageName, screenText).surface.name,
                 rule = "VisionExperiment",
-                decision = if (merge.applyToOverlay) {
-                    merge.classification?.decision?.name ?: "WAIT"
+                decision = if (gatedMerge.applyToOverlay) {
+                    gatedMerge.classification?.decision?.name ?: "WAIT"
                 } else {
                     "WAIT"
                 },
-                reasonCode = merge.reasonCode,
+                reasonCode = if (actionGate?.authority == ClassifierBlockAuthority.NO_MATCHING_CONFIRMED_RULE) {
+                    EnforcementReasonCodes.CLASSIFIER_BLOCK_NO_CONFIRMED_RULE
+                } else {
+                    gatedMerge.reasonCode
+                },
                 reason = listOfNotNull(
-                    merge.detail,
-                    classification.whatOnScreen?.takeIf { it.isNotBlank() }?.let { "seen=$it" }
+                    gatedMerge.detail,
+                    classification.whatOnScreen?.takeIf { it.isNotBlank() }?.let {
+                        "seen=${diagnosticTextMetadata(it)}"
+                    }
                 ).joinToString(" ")
             )
         )
-        if (!merge.applyToOverlay) return
-        val gated = merge.classification ?: return
+        if (!gatedMerge.applyToOverlay) return
+        val gated = gatedMerge.classification ?: return
         // Re-check surface PASS on the latest tree so a Home swipe cannot be blocked by counsel.
-        val settings = studyWorldSettingsStore.getSettings()
         val surfaceGate = SurfaceEnforcementGate.evaluate(
             packageName = packageName,
             screenText = screenText,
@@ -2073,12 +2209,12 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         storedSession: FocusSession,
         classification: ContentClassification?
     ) {
-        if (!isCurrentPolicyEvaluation(packageName, screenText, storedSession)) {
+        val settings = studyWorldSettingsStore.getSettings()
+        if (!isCurrentPolicyEvaluation(packageName, screenText, storedSession, settings)) {
             Log.d("PhoneCodexNetAI", "Discarded stale classifier decision for $packageName")
             return
         }
 
-        val settings = studyWorldSettingsStore.getSettings()
         val structuredDetection = SurfaceDetector.detect(packageName, screenText)
         if (StructuredSurfaceGate.blocks(packageName, settings, structuredDetection)) {
             applyStructuredSurfaceBlock(packageName, screenText, structuredDetection)
@@ -2126,7 +2262,41 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             return
         }
 
-        val gatedClassification = classification?.let { aiConfidenceGate.apply(it) }
+        val confidenceGated = classification?.let { aiConfidenceGate.apply(it) }
+        val actionGate = confidenceGated?.let {
+            ConfirmedClassifierActionGate.evaluate(
+                classification = it,
+                packageName = packageName,
+                surface = structuredDetection.surface,
+                confirmedPolicy = storedSession.confirmedPolicy
+            )
+        }
+        if (actionGate?.authority == ClassifierBlockAuthority.NO_MATCHING_CONFIRMED_RULE) {
+            Log.i(
+                "PhoneCodexDecision",
+                EnforcementDecisionLog.format(
+                    packageName = packageName,
+                    surface = structuredDetection.surface.name,
+                    rule = "Classifier authority",
+                    decision = "WARN",
+                    reasonCode = EnforcementReasonCodes.CLASSIFIER_BLOCK_NO_CONFIRMED_RULE,
+                    reason = ConfirmedClassifierActionGate.UNAUTHORIZED_BLOCK_REASON
+                )
+            )
+        } else if (actionGate?.authority == ClassifierBlockAuthority.MODEL_CANNOT_LOCK) {
+            Log.i(
+                "PhoneCodexDecision",
+                EnforcementDecisionLog.format(
+                    packageName = packageName,
+                    surface = structuredDetection.surface.name,
+                    rule = "Classifier authority",
+                    decision = "WARN",
+                    reasonCode = EnforcementReasonCodes.CLASSIFIER_LOCK_NOT_AUTHORIZED,
+                    reason = ConfirmedClassifierActionGate.MODEL_LOCK_REASON
+                )
+            )
+        }
+        val gatedClassification = actionGate?.classification ?: confidenceGated
 
         if (gatedClassification != null) {
             recordDebugClassification(packageName, screenText, gatedClassification)
@@ -2146,7 +2316,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
                         rule = gatedClassification.source,
                         decision = "ALLOW",
                         reasonCode = EnforcementReasonCodes.AI_ALLOW,
-                        reason = gatedClassification.reason,
+                        reason = "Advisory classifier allowed this screen",
                         activity = "active"
                     )
                 )
@@ -2341,7 +2511,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             reasonCode = code,
             surface = surface ?: context?.surfaceFamily?.name,
             activity = context?.activityState?.name,
-            durationSource = context?.durationSource?.name
+            durationSource = context?.durationSource?.name,
+            sessionId = sessionStore.getStoredSession()?.id
         )
     }
 
@@ -2409,7 +2580,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             backendMeta = classification.backendMeta,
             surface = context.surfaceFamily.name,
             activity = context.activityState.name,
-            durationSource = context.durationSource.name
+            durationSource = context.durationSource.name,
+            sessionId = sessionStore.getStoredSession()?.id
         )
     }
 
@@ -2462,7 +2634,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         } else {
             sessionStore.getActiveSession()
         }
-        eventLogStore.addEvent("Blocked $packageName because ${explanation.reason}")
+        eventLogStore.addEvent("Blocked $packageName after policy evaluation")
         val lockAttemptThreshold = studyWorldSettingsStore.getSettings().lockAttemptThreshold
         if (updated != null && updated.attemptCount >= lockAttemptThreshold) {
             sessionStore.lockSession()
@@ -2550,7 +2722,12 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         val effective = rootPackage?.takeIf { it.isNotBlank() } ?: packageName
         val freshText = if (effective == packageName) screenText else ""
         val page = if (effective == target) currentPageIdentity(root, effective, freshText) else null
-        val verdict = watch.observe(packageName, rootPackage, page, now)
+        val screenSignature = if (effective == target) {
+            OverlayLifecycleGate.screenSignature(freshText)
+        } else {
+            null
+        }
+        val verdict = watch.observe(packageName, rootPackage, page, now, screenSignature)
         return applyOverlayWatchVerdict(
             verdict = verdict,
             source = "event",
@@ -2562,12 +2739,25 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         val watch = blockOverlayWatch ?: return
         val root = safeRootInActiveWindow() ?: return
         val rootPackage = root.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return
-        val page = if (rootPackage == watch.targetPackage) {
+        val now = System.currentTimeMillis()
+        var screenText = ""
+        var page = if (rootPackage == watch.targetPackage) {
             currentPageIdentity(root, rootPackage, "")
         } else {
             null
         }
-        val verdict = watch.observe(rootPackage, rootPackage, page, System.currentTimeMillis())
+        if (rootPackage == watch.targetPackage && page == null && watch.shouldProbeTargetScreen(now)) {
+            screenText = collectScreenText(rootPackage)
+            watch.recordTargetScreenProbe(now)
+            page = currentPageIdentity(root, rootPackage, screenText)
+        }
+        val verdict = watch.observe(
+            rootPackage,
+            rootPackage,
+            page,
+            now,
+            OverlayLifecycleGate.screenSignature(screenText)
+        )
         applyOverlayWatchVerdict(verdict = verdict, source = "watchdog", canContinueInline = false)
     }
 
@@ -2653,7 +2843,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         freshScreenText: String
     ): String? {
         val urlBar = root?.let { readBrowserUrlBar(it, packageName) }
-        return OverlayLifecycleGate.pageIdentity(urlBar, freshScreenText)
+        return OverlayLifecycleGate.pageIdentity(urlBar, freshScreenText, packageName)
     }
 
     private fun readBrowserUrlBar(root: AccessibilityNodeInfo, packageName: String): String? {
@@ -2682,11 +2872,13 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         }
 
     /**
-     * While a PiP window continues a block, asks the system to stop media and checks whether it did.
-     * Rechecks so playback resumed inside PiP is caught; control requests are bounded per episode.
+     * While a PiP window continues a block, tracks the episode and reports what control is possible.
+     * No package-attributed playback source exists under current grants, so nothing is interrupted;
+     * device-wide audio is logged only as context.
      */
     private fun enforcePictureInPictureGuard() {
         mainHandler.removeCallbacks(pipGuardRunnable)
+        if (!disclosureConsentAccepted) return
         val pipPackages = pictureInPicturePackages()
         if (pipPackages.isEmpty()) {
             endPictureInPictureEpisode()
@@ -2719,60 +2911,50 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             logPip(PictureInPictureContainmentLaw.Event.PIP_GUARD_ENTERED, "pkg=$guarded")
         }
         val audio = getSystemService(AUDIO_SERVICE) as? AudioManager
+        // No package-attributed player source is available with current grants.
+        val attribution = PictureInPictureContainmentLaw.attributionFrom(guardedPlayerPlaying = null)
         val step = PictureInPictureContainmentLaw.next(
             episode = episode,
-            mediaActive = audio?.isMusicActive == true,
-            callOrMeetingAudio = audio == null || isCallOrMeetingAudio(audio)
+            attribution = attribution,
+            callOrMeetingAudio = audio == null || isCallOrMeetingAudio(audio),
+            nowMillis = now
         )
         episode = when (step) {
             PictureInPictureContainmentLaw.Step.None -> episode
             is PictureInPictureContainmentLaw.Step.Report -> {
-                logPip(PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE, "pkg=$guarded reason=${step.reason}")
+                logPip(
+                    PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE,
+                    "pkg=$guarded source=pip_guard reason=${step.reason} ${deviceAudioContext(audio)}"
+                )
                 PictureInPictureContainmentLaw.afterReport(episode, step.reason)
             }
-            PictureInPictureContainmentLaw.Step.RequestControl -> {
-                val granted = audio != null && requestMediaStopFocus(audio)
-                val next = PictureInPictureContainmentLaw.afterRequest(episode, granted)
+            PictureInPictureContainmentLaw.Step.RequestControl,
+            PictureInPictureContainmentLaw.Step.Verify -> {
+                val reason = PictureInPictureContainmentLaw.Unavailable.NO_PACKAGE_TARGETED_CONTROL
                 logPip(
-                    PictureInPictureContainmentLaw.Event.MEDIA_CONTROL_REQUESTED,
-                    "pkg=$guarded control=audio_focus_gain attempt=${next.requests} granted=$granted"
+                    PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE,
+                    "pkg=$guarded source=pip_guard reason=$reason ${deviceAudioContext(audio)}"
                 )
-                if (granted) {
-                    mainHandler.postDelayed(pipVerifyRunnable, PictureInPictureContainmentLaw.VERIFY_DELAY_MILLIS)
-                } else {
-                    logPip(PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE, "pkg=$guarded reason=${next.unavailable}")
-                }
-                next
+                PictureInPictureContainmentLaw.afterReport(episode.copy(requestedAtMillis = null), reason)
             }
         }
         pipEpisode = episode
         mainHandler.postDelayed(pipGuardRunnable, PIP_GUARD_RECHECK_MS)
     }
 
-    private fun verifyPictureInPictureStop() {
-        val episode = pipEpisode ?: return abandonMediaStopFocus()
-        val audio = getSystemService(AUDIO_SERVICE) as? AudioManager
-        val mediaActive = audio?.isMusicActive != false
-        abandonMediaStopFocus()
-        val verified = PictureInPictureContainmentLaw.afterVerify(episode, mediaActive)
-        pipEpisode = verified
-        if (verified.stopConfirmed) {
-            logPip(PictureInPictureContainmentLaw.Event.MEDIA_STOP_CONFIRMED, "pkg=${episode.packageName} device_media_active=false attempt=${episode.requests}")
-        } else {
-            Log.d("PhoneCodexDecision", "PIP media still active after request pkg=${episode.packageName} attempt=${episode.requests}")
-        }
-    }
-
     private fun endPictureInPictureEpisode() {
         val episode = pipEpisode ?: return
-        mainHandler.removeCallbacks(pipVerifyRunnable)
-        abandonMediaStopFocus()
         pipEpisode = null
         logPip(
             PictureInPictureContainmentLaw.Event.GUARD_EXITED,
-            "pkg=${episode.packageName} requests=${episode.requests} stopConfirmed=${episode.stopConfirmed} unavailable=${episode.unavailable}"
+            "pkg=${episode.packageName} requests=${episode.requests} " +
+                "player_stop_observed=${episode.playerStopObserved} unavailable=${episode.unavailable}"
         )
     }
+
+    /** Device-wide and unattributed: says nothing about whether the guarded PiP video plays. */
+    private fun deviceAudioContext(audio: AudioManager?): String =
+        "device_wide_audio_active=${audio?.isMusicActive} (not_attributed_to_pkg)"
 
     private fun logPip(event: PictureInPictureContainmentLaw.Event, detail: String) {
         Log.d("PhoneCodexDecision", "${event.name} $detail")
@@ -2784,53 +2966,25 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             audio.mode == AudioManager.MODE_RINGTONE ||
             (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && audio.mode == AudioManager.MODE_CALL_SCREENING)
 
-    /** AUDIOFOCUS_GAIN: on Android 12+ the system fades out the media app holding focus. */
-    private fun requestMediaStopFocus(audio: AudioManager): Boolean {
-        abandonMediaStopFocus()
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                    .build()
-            )
-            .setOnAudioFocusChangeListener { }
-            .build()
-        val granted = try {
-            audio.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        } catch (_: RuntimeException) {
-            false
-        }
-        if (granted) mediaStopFocusRequest = request
-        return granted
-    }
-
-    private fun abandonMediaStopFocus() {
-        val request = mediaStopFocusRequest ?: return
-        mediaStopFocusRequest = null
-        (getSystemService(AUDIO_SERVICE) as? AudioManager)?.abandonAudioFocusRequest(request)
-    }
-
-    /** One bounded request when a video app is blocked, so Home does not carry playing media into PiP. */
-    private fun stopMediaOnBlock(packageName: String) {
-        if (mediaStopFocusRequest != null) return
-        val audio = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
-        if (!audio.isMusicActive || isCallOrMeetingAudio(audio)) return
-        val granted = requestMediaStopFocus(audio)
-        logPip(
-            PictureInPictureContainmentLaw.Event.MEDIA_CONTROL_REQUESTED,
-            "pkg=$packageName source=block_overlay control=audio_focus_gain granted=$granted"
+    /**
+     * A blocked video app's playback cannot be attributed under current grants, so no control is sent:
+     * a device-wide request would also fade allowed music, podcasts, or another app's media.
+     */
+    private fun reportMediaControlOnBlock(packageName: String) {
+        val audio = getSystemService(AUDIO_SERVICE) as? AudioManager
+        val episode = PictureInPictureContainmentLaw.start(packageName)
+        val step = PictureInPictureContainmentLaw.next(
+            episode = episode,
+            attribution = PictureInPictureContainmentLaw.attributionFrom(guardedPlayerPlaying = null),
+            callOrMeetingAudio = audio == null || isCallOrMeetingAudio(audio),
+            nowMillis = System.currentTimeMillis()
         )
-        if (!granted) return
-        mainHandler.postDelayed({
-            val stopped = (getSystemService(AUDIO_SERVICE) as? AudioManager)?.isMusicActive == false
-            if (pipEpisode == null) abandonMediaStopFocus()
-            if (stopped) {
-                logPip(PictureInPictureContainmentLaw.Event.MEDIA_STOP_CONFIRMED, "pkg=$packageName source=block_overlay device_media_active=false")
-            } else {
-                Log.d("PhoneCodexDecision", "Block media still active after request pkg=$packageName")
-            }
-        }, PictureInPictureContainmentLaw.VERIFY_DELAY_MILLIS)
+        val reason = (step as? PictureInPictureContainmentLaw.Step.Report)?.reason
+            ?: PictureInPictureContainmentLaw.Unavailable.NO_PACKAGE_TARGETED_CONTROL
+        logPip(
+            PictureInPictureContainmentLaw.Event.CONTROL_UNAVAILABLE,
+            "pkg=$packageName source=block_overlay reason=$reason ${deviceAudioContext(audio)}"
+        )
     }
 
     private fun isSystemOverlayNoise(packageName: String): Boolean {
@@ -2840,6 +2994,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
     }
 
     private fun showBlockOverlay(packageName: String, explanation: DecisionExplanation) {
+        if (!disclosureConsentAccepted) return
         if (currentOverlay != null) return
 
         hideWarningOverlay()
@@ -2888,9 +3043,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             activeOverlayTargetPackage = packageName
             lastBlockedPackage = packageName
             pipRecentBlock = PictureInPictureEscapeLaw.RecentBlock(packageName, System.currentTimeMillis())
-            // Home would otherwise shrink a still-playing video into a PiP window.
             if (VideoPlatformRegistry.isVideoOrStreamingPackage(packageName)) {
-                stopMediaOnBlock(packageName)
+                reportMediaControlOnBlock(packageName)
             }
             val root = safeRootInActiveWindow()
             val rootPackage = root?.packageName?.toString()
@@ -2902,7 +3056,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             blockOverlayWatch = BlockOverlayWatch(
                 targetPackage = packageName,
                 blockedPage = blockedPage,
-                shownAtMillis = System.currentTimeMillis()
+                shownAtMillis = System.currentTimeMillis(),
+                blockedScreenSignature = OverlayLifecycleGate.screenSignature(blockOverlayScreenText.orEmpty())
             )
             lastOverlayLifecycleLogKey = null
             mainHandler.removeCallbacks(blockOverlayWatchdog)
@@ -2911,7 +3066,8 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
             Log.d(
                 "PhoneCodexOverlay",
                 "Overlay shown kind=${model.kind} target=$packageName " +
-                    "root=${rootPackage ?: "none"} blockedPage=${blockedPage ?: "unknown"}"
+                    "root=${rootPackage ?: "none"} " +
+                    "blockedPageKind=${OverlayLifecycleGate.pageLogKind(blockedPage)}"
             )
         } catch (err: RuntimeException) {
             Log.e("PhoneCodexOverlay", "Failed to show block overlay", err)
@@ -2957,6 +3113,7 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
         signature: String,
         explanation: DecisionExplanation
     ) {
+        if (!disclosureConsentAccepted) return
         if (currentOverlay != null) return
         if (currentWarningOverlay != null && visibleWarningPackageName == packageName) {
             latestExplanation = explanation
@@ -3115,12 +3272,14 @@ class PhoneCodexAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val OWN_PACKAGE_NAME = OverlayLifecycleGate.OWN_PACKAGE
+        private const val TAG_ACCESSIBILITY_LIFECYCLE = "PhoneCodexA11yLifecycle"
         private const val MAX_TEXT_LENGTH = 3000
         private const val MAX_DEPTH = 50
         private const val WARNING_DISMISS_TTL_MS = 60000L
         private const val QUOTA_REMINDER_DISMISS_MS = 4_000L
         private const val SAFE_APP_LOG_THROTTLE_MS = 10_000L
         private const val SCOPE_CORRUPT_LOG_THROTTLE_MS = 60_000L
+        private const val ACCESSIBILITY_CONTROLS_LOG_THROTTLE_MS = 60_000L
         private const val FOREGROUND_LOG_THROTTLE_MS = 3_000L
         private const val BLOCK_OVERLAY_WATCH_INTERVAL_MS = 750L
         private const val PIP_GUARD_RECHECK_MS = 2_000L

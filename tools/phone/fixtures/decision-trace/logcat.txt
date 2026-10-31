@@ -1,0 +1,9 @@
+1791730427.219 24680 24680 D PhoneCodexDecision: pkg=com.google.android.youtube surface=SHORT_FORM_PLAYER activity=active rule=typed_scope durationSource=player_current_of_total count=2/5 scopeKind=APP_SHORT_FORM_ONLY decision=BLOCK code=STRUCTURED_SURFACE_BLOCK reason=PRIVATE_PROMISE_CONTENT evidence=https://private.example/evidence scopeClause=PRIVATE_SCOPE_TEXT
+1791730428.001 24680 24680 D PhoneCodexOverlay: OVERLAY_LIFECYCLE action=away_pending reason=left_to_launcher source=watch event=miui.home root=com.android.systemui effective=miui.home target=com.google.android.youtube elapsedMs=480 awayMs=11 blockedPage=https://private.example/page currentPage=PRIVATE_PAGE_TEXT
+1791730428.120 24680 24680 D PhoneCodexOverlay: Overlay shown kind=BLOCK target=com.google.android.youtube root=com.android.systemui blockedPage=PRIVATE_BLOCKED_PAGE
+1791730428.220 24680 24680 D PhoneCodexOverlay: Overlay hidden because allowed package=com.miui.home
+1791730428.331 24680 24680 D PhoneCodexNetAI: Backend decision=WARN confidence=0.7 reason=PRIVATE_CLASSIFIER_REASON url=https://private.example/classifier
+1791730428.551 24680 24680 D PhoneCodexDecision: ShortQuota pkg=com.google.android.youtube surface=SHORT_FORM_PLAYER count=2/5 counted=true action=COUNT durationSec=35 title=PRIVATE_VIDEO_TITLE reason=PRIVATE_QUOTA_REASON
+1791730428.700 24680 24680 D OtherTag: PRIVATE_UNRELATED_LOG_LINE
+1791730428.900 54321 54321 D PhoneCodexDecision: pkg=com.whatsapp surface=MESSAGING activity=active rule=typed_scope decision=BLOCK code=PRIVATE_DIFFERENT_PROCESS reason=PRIVATE_TEXT
+not-an-epoch 24680 24680 D PhoneCodexDecision: PRIVATE_MALFORMED_LINE

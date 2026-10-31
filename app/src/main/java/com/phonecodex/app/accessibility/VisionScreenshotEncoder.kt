@@ -21,6 +21,7 @@ object VisionScreenshotEncoder {
         buffer: HardwareBuffer,
         colorSpace: ColorSpace?
     ): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val hardware = Bitmap.wrapHardwareBuffer(buffer, colorSpace) ?: return null
         val software = hardware.copy(Bitmap.Config.ARGB_8888, false) ?: return null
         if (hardware !== software) {

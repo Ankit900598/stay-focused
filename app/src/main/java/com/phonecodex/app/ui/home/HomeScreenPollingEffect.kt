@@ -4,7 +4,6 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import com.phonecodex.app.accessibility.AccessibilityHealthChecker
 import com.phonecodex.app.data.CommitmentTeardown
 import com.phonecodex.app.data.ProtectionViolationStore
 import com.phonecodex.app.domain.model.SessionStatus
@@ -29,6 +28,10 @@ internal fun HomeScreenPollingEffect(state: HomeScreenState) {
         if (state.showAdvancedControls && state.showAdvancedEngineering) {
             state.loadAdvancedSnapshotIfNeeded()
         }
+    }
+
+    LaunchedEffect(state.isBootstrapped, state.showAdvancedControls) {
+        if (state.isBootstrapped) state.refreshAccessibilityStatus("home-layout")
     }
 
     LaunchedEffect(Unit) {
@@ -71,25 +74,8 @@ internal fun HomeAdvancedInspectorPollingEffect(
 }
 
 private suspend fun pollCoreHomeState(state: HomeScreenState) {
-    val coreSnapshot = withContext(Dispatchers.IO) {
-        Pair(
-            AccessibilityHealthChecker.isPhoneCodexAccessibilityEnabled(state.context),
-            state.runtimeDiagStore.getHeartbeat()
-        )
-    }
-    val accessibilityEnabled = coreSnapshot.first
-    val heartbeat = coreSnapshot.second
-    if (accessibilityEnabled != state.isAccessibilityEnabled) {
-        state.isAccessibilityEnabled = accessibilityEnabled
-    }
-    if (heartbeat.serviceAlive != state.isAccessibilityAlive) {
-        state.isAccessibilityAlive = heartbeat.serviceAlive
-    }
-    if (heartbeat.lastEventMillis != state.lastHeartbeatMillis) {
-        state.lastHeartbeatMillis = heartbeat.lastEventMillis
-        state.lastHeartbeatPackage = heartbeat.packageName
-        state.lastHeartbeatReason = heartbeat.reason
-    }
+    state.refreshAccessibilityStatus("poll")
+    val accessibilityEnabled = state.isAccessibilityEnabled
 
     val nowMillis = System.currentTimeMillis()
     if (state.nowMillis != nowMillis) {

@@ -231,12 +231,12 @@ object PromiseIntentRules {
         val hasStructured = structuredMaxBlockMinutes != null || structuredMinBlockMinutes != null
         if (!hasStructured && !hasMediaLengthLimit(goal)) return false
 
-        val videoMinutes = extractScreenVideoDurationMinutes(screenText) ?: return false
+        val videoSeconds = VideoDurationParser.extractPrimaryDurationSeconds(screenText) ?: return false
         val maxMinutes = structuredMaxBlockMinutes ?: extractGoalMaxVideoLimitMinutes(goal)
         val minMinutes = structuredMinBlockMinutes ?: extractGoalMinVideoLimitMinutes(goal)
 
-        if (maxMinutes != null && videoMinutes > maxMinutes) return true
-        if (minMinutes != null && videoMinutes < minMinutes) return true
+        if (maxMinutes != null && videoSeconds.toLong() > maxMinutes.toLong() * 60L) return true
+        if (minMinutes != null && videoSeconds.toLong() < minMinutes.toLong() * 60L) return true
         return false
     }
 
@@ -324,8 +324,8 @@ object PromiseIntentRules {
 
         // (B) State predicate after the alias.
         val postCue = Regex(
-            """\b""" + a + """\b\s+(?:is\s+|are\s+|will\s+be\s+|gets?\s+|)""" +
-                """(?:blocked|banned|forbidden|disabled|blacklisted|off|not\s+allowed)\b""",
+            """\b""" + a + """\b\s+(?:is\s+|are\s+|will\s+be\s+|gets?\s+|stays?\s+|remains?\s+|)""" +
+                """(?:blocked|banned|forbidden|disabled|blacklisted|off|not\s+allowed|closed|shut)\b""",
             RegexOption.IGNORE_CASE
         )
         if (postCue.containsMatchIn(normalized)) return true
@@ -574,8 +574,21 @@ object PromiseIntentRules {
     private val YOUTUBE_APP_ONLY_REGEX = Regex(
         """(?:youtube\s+app\s+only|only\s+(?:the\s+)?youtube\s+app|""" +
             """youtube\s+application\s+only|""" +
-            """limit(?:\s+\w+){0,8}\s+to\s+(?:the\s+)?youtube\s+app)"""
+            """limit(?:\s+\w+){0,8}\s+to\s+(?:the\s+)?youtube\s+app|""" +
+            """block(?:\s+\w+){0,2}\s+(?:the\s+)?youtube\s+app\b|""" +
+            """ban(?:\s+\w+){0,2}\s+(?:the\s+)?youtube\s+app\b)"""
     )
+
+    /** Companion app named in the same promise (e.g. "YouTube Music is allowed"). */
+    fun namesYouTubeMusicAllowed(goal: String): Boolean {
+        val normalized = goal.lowercase()
+        if (!normalized.contains("youtube music") && !normalized.contains("yt music")) return false
+        return normalized.contains("allowed") ||
+            normalized.contains("allow ") ||
+            normalized.contains("except") ||
+            normalized.contains("but keep") ||
+            normalized.contains("still available")
+    }
 
     private val SHORT_FORM_BLOCK_PHRASES = listOf(
         "no shorts",

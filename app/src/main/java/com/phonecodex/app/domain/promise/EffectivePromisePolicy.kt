@@ -1,11 +1,14 @@
 package com.phonecodex.app.domain.promise
 
 import com.phonecodex.app.domain.enforcement.VideoPlatformRegistry
+import com.phonecodex.app.domain.model.AppRule
 import com.phonecodex.app.domain.model.AppRuleBehavior
 import com.phonecodex.app.domain.model.ContentRule
 import com.phonecodex.app.domain.model.ContentRuleAction
 import com.phonecodex.app.domain.model.FocusPromise
+import com.phonecodex.app.domain.safeapps.SafeAppsCatalog
 import com.phonecodex.app.domain.scope.EnforcementScope
+import com.phonecodex.app.domain.scope.ScopeIdentity
 import com.phonecodex.app.domain.scope.ScopeKind
 
 /**
@@ -56,12 +59,26 @@ object EffectivePromisePolicy {
         Regex("""\b(except|but|besides|other than|apart from|excluding|outside)\b""")
     private val OTHER_SURFACE_SCOPE_WORD =
         Regex("""\b(feed|home|comments?|messages?|dms?|chats?|stor(?:y|ies)|search|live|long|explore|brows(?:e|ing)|music|subscriptions?|posts?|calls?)\b""")
+    // Free-text whole-app scopes ("Entire native app only"): a whole-app claim on the app itself
+    // and nothing that narrows, negates, or names another surface.
+    private val WHOLE_APP_FREE_TEXT = Regex("""\b(?:whole|entire|full|all of)\b(?:\s+[\w-]+){0,3}?\s+app\b""")
+    private val NEGATION_SCOPE_WORD = Regex("""\b(not|no|never|without|rather than|instead of)\b""")
 
     fun classifyAppScope(raw: String?): AppScope {
         val s = raw.orEmpty().trim().lowercase().replace(Regex("""\s+"""), " ")
         if (s in WHOLE_APP_SCOPES) return AppScope.WHOLE_APP
         if (s in SHORT_FORM_SCOPES) return AppScope.SHORT_FORM
-        if (!SHORT_FORM_SCOPE_WORD.containsMatchIn(s)) return AppScope.UNKNOWN
+        if (!SHORT_FORM_SCOPE_WORD.containsMatchIn(s)) {
+            return if (WHOLE_APP_FREE_TEXT.containsMatchIn(s) &&
+                !NEGATION_SCOPE_WORD.containsMatchIn(s) &&
+                !EXCLUSION_SCOPE_WORD.containsMatchIn(s) &&
+                !OTHER_SURFACE_SCOPE_WORD.containsMatchIn(s)
+            ) {
+                AppScope.WHOLE_APP
+            } else {
+                AppScope.UNKNOWN
+            }
+        }
         val rest = NEGATED_WHOLE_APP_SCOPE.replace(s, " ")
         return if (WHOLE_APP_SCOPE_CLAIM.containsMatchIn(rest) ||
             EXCLUSION_SCOPE_WORD.containsMatchIn(rest) ||
@@ -124,12 +141,40 @@ object EffectivePromisePolicy {
             .distinct()
     }
 
+    fun savedWholeAppRuleConflict(draft: FocusPromise, existingAppRules: List<AppRule>): String? {
+        val scope = draft.enforcementScope?.takeIf {
+            draft.scopeContractV1 && it.isEnforceable && it.kind == ScopeKind.APP_SHORT_FORM_ONLY
+        } ?: return null
+        val targetedPackages = scope.include.flatMap { it.packages }.toSet()
+        if (targetedPackages.isEmpty()) return null
+
+        val suggestedPackages = draft.suggestedAppRules.map { it.packageName }.toSet()
+        val savedWholeAppBlockRemains = existingAppRules.any { rule ->
+            rule.packageName in targetedPackages &&
+                rule.behavior == AppRuleBehavior.BLOCK &&
+                rule.packageName !in suggestedPackages
+        }
+        return if (savedWholeAppBlockRemains) SAVED_WHOLE_APP_BLOCK_CONFLICT else null
+    }
+
     /** Non-null when scope and actions contradict or an app scope cannot be enforced. */
     fun conflictReason(draft: FocusPromise): String? {
         if (draft.unrepresentableAppScopes.isNotEmpty()) return UNREPRESENTABLE_APP_SCOPE
+        if (hasUnsupportedCollectionTarget(draft)) {
+            return UNSUPPORTED_COLLECTION_TARGET
+        }
+        if (draft.contentRules.any { it.contentType.equals("study", ignoreCase = true) }) {
+            return UNSUPPORTED_STUDY_CONTENT
+        }
         val scope = draft.enforcementScope?.takeIf { draft.scopeContractV1 && it.isEnforceable }
         // No structured feed block exists, so the card would promise more than enforcement.
         if (scope?.kind == ScopeKind.SOCIAL_FEED_AND_REELS_ONLY) return FEED_SURFACE_UNSUPPORTED
+        if (scope?.kind == ScopeKind.SOCIAL_MESSAGING_ONLY &&
+            (scope.identity == ScopeIdentity.SOCIAL_ANY ||
+                scope.include.any { clause -> clause.packages.any(SafeAppsCatalog::isDefaultPackage) })
+        ) {
+            return SOCIAL_SAFE_APP_SURFACE_UNSUPPORTED
+        }
         if (scope != null && scopeMissesRestrictions(draft, scope)) return APP_SCOPE_MISSES_RULES
         val whole = wholeAppBlockPackages(draft)
         if (whole.isEmpty()) return null
@@ -173,15 +218,61 @@ object EffectivePromisePolicy {
             (rule.operator == null || rule.unit.equals("count", ignoreCase = true))
 
     fun conflictQuestion(draft: FocusPromise): String {
+        if (conflictReason(draft) == UNSUPPORTED_COLLECTION_TARGET) {
+            return "I can't reliably identify and enforce a specific playlist, channel, creator, or series yet. " +
+                "I won't start this promise because that target isn't supported on this phone."
+        }
+        if (conflictReason(draft) == UNSUPPORTED_STUDY_CONTENT) {
+            return "I can't reliably tell which videos count as study or restrict a specific playlist/channel yet. " +
+                "I won't start this study-only rule. Edit the promise to choose a rule Strlix can enforce."
+        }
+        if (conflictReason(draft) == SOCIAL_SAFE_APP_SURFACE_UNSUPPORTED) {
+            return "I can't reliably restrict these social screens while keeping messages open yet. Edit the promise or choose a whole-app rule."
+        }
         val label = draft.unrepresentableAppScopes.firstOrNull()
             ?: draft.suggestedAppRules.firstOrNull { it.behavior == AppRuleBehavior.BLOCK }?.label
             ?: "this app"
         return "Should I block all of $label, or only part of it (like its short videos)?"
     }
 
+    private fun hasUnsupportedCollectionTarget(draft: FocusPromise): Boolean {
+        if (draft.contentRules.any { rule ->
+                rule.surface.trim().lowercase() in UNSUPPORTED_COLLECTION_SURFACES
+            }
+        ) {
+            return true
+        }
+        if (!SPECIFIC_COLLECTION_INTENT.containsMatchIn(draft.rawText)) return false
+        val hasRelevantStructuredTarget = draft.contentRules.any { rule ->
+            rule.surface.equals("playlist", ignoreCase = true) ||
+                rule.contentType.equals("study", ignoreCase = true)
+        }
+        val hasBroadContentScope = draft.enforcementScope?.kind in setOf(
+            ScopeKind.CONTENT_ANY_HOST,
+            ScopeKind.VIDEO_CLASS_ANY_HOST
+        )
+        val hasVideoAppRule = draft.suggestedAppRules.any {
+            VideoPlatformRegistry.isVideoOrStreamingPackage(it.packageName)
+        }
+        return hasRelevantStructuredTarget || hasBroadContentScope || hasVideoAppRule
+    }
+
+    private val UNSUPPORTED_COLLECTION_SURFACES = setOf("playlist", "channel", "creator", "series")
+
+    private val SPECIFIC_COLLECTION_INTENT = Regex(
+        """\b(?:only|just|specific|particular|from|except|excluding|stay on|keep me on|follow)\b""" +
+            """(?:(?!\b(?:not|no|never|without|instead of)\b)[\s\S]){0,80}\b(?:playlist|channel|creator|series)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
     const val UNREPRESENTABLE_APP_SCOPE = "unrepresentable_app_scope"
     const val WHOLE_APP_BLOCK_VS_NARROW_SCOPE = "whole_app_block_vs_narrow_scope"
     const val WHOLE_APP_BLOCK_VS_CONTENT_ALLOW = "whole_app_block_vs_content_allow"
     const val FEED_SURFACE_UNSUPPORTED = "feed_surface_unsupported"
+    const val SOCIAL_SAFE_APP_SURFACE_UNSUPPORTED = "social_safe_app_surface_unsupported"
+    const val UNSUPPORTED_STUDY_CONTENT = "unsupported_study_content_category"
     const val APP_SCOPE_MISSES_RULES = "app_surface_choice_misses_rules"
+    const val UNSUPPORTED_COLLECTION_TARGET = "unsupported_media_collection_target"
+    const val SAVED_WHOLE_APP_BLOCK_CONFLICT =
+        "A saved whole-app block conflicts with this short-videos-only promise. Change that app rule to Auto-decide, then tap Understand again, or edit the promise."
 }

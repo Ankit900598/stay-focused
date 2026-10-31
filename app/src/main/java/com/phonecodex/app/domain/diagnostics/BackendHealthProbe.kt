@@ -105,7 +105,7 @@ object BackendHealthProbe {
             val kind = classifyFailure(BACKEND_BASE_URL, err)
             Log.w(
                 TAG,
-                "Test Backend: failed kind=$kind ${err.javaClass.simpleName}: ${err.message}"
+                "Test Backend: failed kind=$kind error=${diagnosticErrorKind(err)}"
             )
             BackendProbeResult.failure(
                 kind = kind,

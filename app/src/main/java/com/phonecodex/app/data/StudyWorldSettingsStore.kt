@@ -31,6 +31,10 @@ class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
                 KEY_BLOCK_ATTEMPT_COOLDOWN_MINUTES,
                 DEFAULT_BLOCK_ATTEMPT_COOLDOWN_MINUTES
             ),
+            lockAttemptThresholdCustomized = prefs.getBoolean(
+                KEY_LOCK_ATTEMPT_THRESHOLD_CUSTOMIZED,
+                false
+            ),
             maxVideoLengthBlockMinutes = maxVideoRaw.takeIf { it != SENTINEL_NONE },
             minVideoLengthBlockMinutes = minVideoRaw.takeIf { it != SENTINEL_NONE },
             shortFormDailyQuotaLimit = shortQuotaRaw.takeIf { it != SENTINEL_NONE },
@@ -66,9 +70,65 @@ class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
      * Individual setters still exist for advanced UI tweaks.
      */
     fun replaceSettings(settings: StudyWorldSettings) {
-        prefs.edit()
+        val editor = prefs.edit()
+        putSettings(editor, settings)
+        editor.commit()
+    }
+
+    /** Persist active promise settings and a recoverable copy of the user's session tunings. */
+    fun beginCommitment(settings: StudyWorldSettings): Boolean {
+        if (prefs.contains(KEY_COMMITMENT_TUNING_LEDGER)) return false
+        val current = getSettings()
+        val ledger = encodeTuningLedger(
+            durationMinutes = current.durationMinutes,
+            lockAttemptThreshold = current.lockAttemptThreshold,
+            lockAttemptThresholdCustomized = current.lockAttemptThresholdCustomized,
+            blockAttemptCooldownMinutes = current.blockAttemptCooldownMinutes
+        ) ?: return false
+        val editor = prefs.edit().putString(KEY_COMMITMENT_TUNING_LEDGER, ledger)
+        putSettings(editor, settings)
+        return editor.commit()
+    }
+
+    fun restoreCommitmentTuningDefaults(): CommitmentTuningRestore {
+        if (!prefs.contains(KEY_COMMITMENT_TUNING_LEDGER)) {
+            return CommitmentTuningRestore(CommitmentTuningRestore.Outcome.NO_LEDGER)
+        }
+        val snapshot = (prefs.all[KEY_COMMITMENT_TUNING_LEDGER] as? String)
+            ?.let(::decodeTuningLedger)
+            ?: return CommitmentTuningRestore(
+                CommitmentTuningRestore.Outcome.UNREADABLE_LEDGER,
+                UNREADABLE_TUNING_LEDGER_MESSAGE
+            )
+        val restored = prefs.edit()
+            .putInt(KEY_DURATION_MINUTES, snapshot.durationMinutes)
+            .putInt(KEY_LOCK_ATTEMPT_THRESHOLD, snapshot.lockAttemptThreshold)
+            .putBoolean(KEY_LOCK_ATTEMPT_THRESHOLD_CUSTOMIZED, snapshot.lockAttemptThresholdCustomized)
+            .putInt(KEY_BLOCK_ATTEMPT_COOLDOWN_MINUTES, snapshot.blockAttemptCooldownMinutes)
+            .remove(KEY_COMMITMENT_TUNING_LEDGER)
+            .commit()
+        return if (restored) {
+            CommitmentTuningRestore(CommitmentTuningRestore.Outcome.RESTORED)
+        } else {
+            CommitmentTuningRestore(
+                CommitmentTuningRestore.Outcome.WRITE_FAILED,
+                WRITE_FAILED_TUNING_RESTORE_MESSAGE
+            )
+        }
+    }
+
+    fun restoreStaleCommitmentTuningDefaults(hasActiveSession: Boolean): CommitmentTuningRestore {
+        if (hasActiveSession) {
+            return CommitmentTuningRestore(CommitmentTuningRestore.Outcome.ACTIVE_SESSION)
+        }
+        return restoreCommitmentTuningDefaults()
+    }
+
+    private fun putSettings(editor: SharedPreferences.Editor, settings: StudyWorldSettings) {
+        editor
             .putInt(KEY_DURATION_MINUTES, settings.durationMinutes.coerceAtLeast(1))
             .putInt(KEY_LOCK_ATTEMPT_THRESHOLD, settings.lockAttemptThreshold)
+            .putBoolean(KEY_LOCK_ATTEMPT_THRESHOLD_CUSTOMIZED, settings.lockAttemptThresholdCustomized)
             .putInt(KEY_BLOCK_ATTEMPT_COOLDOWN_MINUTES, settings.blockAttemptCooldownMinutes)
             .putInt(
                 KEY_MAX_VIDEO_LENGTH_BLOCK_MINUTES,
@@ -98,7 +158,6 @@ class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
             .putStringSet(KEY_BLOCKED_SURFACES, BlockedSurfaceCodec.encode(settings.blockedSurfaces))
             .putString(KEY_COMPILER_PROMPT_VERSION, settings.compilerPromptVersion)
             // Vision experiment is a debug flag, not a promise clock. Do not wipe it here.
-            .commit()
     }
 
     private fun readTypedScope(): StoredScopeCodec.Decoded {
@@ -123,9 +182,11 @@ class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
             .apply()
     }
 
-    fun setLockAttemptThreshold(threshold: Int) {
+    fun setLockAttemptThreshold(threshold: Int?) {
+        require(threshold == null || threshold in LOCK_ATTEMPT_THRESHOLD_CHOICES)
         prefs.edit()
-            .putInt(KEY_LOCK_ATTEMPT_THRESHOLD, threshold)
+            .putInt(KEY_LOCK_ATTEMPT_THRESHOLD, threshold ?: DEFAULT_LOCK_ATTEMPT_THRESHOLD)
+            .putBoolean(KEY_LOCK_ATTEMPT_THRESHOLD_CUSTOMIZED, threshold != null)
             .apply()
     }
 
@@ -186,7 +247,9 @@ class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
         private const val PREFS_NAME = "phonecodex_study_world_settings"
         private const val KEY_DURATION_MINUTES = "duration_minutes"
         private const val KEY_LOCK_ATTEMPT_THRESHOLD = "lock_attempt_threshold"
+        private const val KEY_LOCK_ATTEMPT_THRESHOLD_CUSTOMIZED = "lock_attempt_threshold_customized"
         private const val KEY_BLOCK_ATTEMPT_COOLDOWN_MINUTES = "block_attempt_cooldown_minutes"
+        private const val KEY_COMMITMENT_TUNING_LEDGER = "commitment_tuning_ledger_v1"
         private const val KEY_MAX_VIDEO_LENGTH_BLOCK_MINUTES = "max_video_length_block_minutes"
         private const val KEY_MIN_VIDEO_LENGTH_BLOCK_MINUTES = "min_video_length_block_minutes"
         private const val KEY_SHORT_FORM_DAILY_QUOTA = "short_form_daily_quota"
@@ -206,5 +269,56 @@ class StudyWorldSettingsStore(private val prefs: SharedPreferences) {
         const val DEFAULT_BLOCK_ATTEMPT_COOLDOWN_MINUTES = 2
         const val TIME_WINDOW_CALENDAR_DAY = "calendar_day"
         const val TIME_WINDOW_SESSION_FIXED = "session_fixed"
+
+        private const val TUNING_LEDGER_VERSION = "session-tuning-v1"
+        private const val UNREADABLE_TUNING_LEDGER_MESSAGE =
+            "COMMITMENT_SETTINGS_RESTORE failed: saved tuning ledger is unreadable; retained for diagnosis"
+        private const val WRITE_FAILED_TUNING_RESTORE_MESSAGE =
+            "COMMITMENT_SETTINGS_RESTORE failed: durable restore did not complete; retry on next app open"
+        private val LOCK_ATTEMPT_THRESHOLD_CHOICES = setOf(3, 5, 10)
+
+        private data class TuningSnapshot(
+            val durationMinutes: Int,
+            val lockAttemptThreshold: Int,
+            val lockAttemptThresholdCustomized: Boolean,
+            val blockAttemptCooldownMinutes: Int
+        )
+
+        private fun encodeTuningLedger(
+            durationMinutes: Int,
+            lockAttemptThreshold: Int,
+            lockAttemptThresholdCustomized: Boolean,
+            blockAttemptCooldownMinutes: Int
+        ): String? {
+            if (durationMinutes !in 1..525_600 ||
+                lockAttemptThreshold !in 1..100 ||
+                blockAttemptCooldownMinutes !in 1..60
+            ) return null
+            return listOf(
+                TUNING_LEDGER_VERSION,
+                durationMinutes,
+                lockAttemptThreshold,
+                if (lockAttemptThresholdCustomized) 1 else 0,
+                blockAttemptCooldownMinutes
+            ).joinToString("|")
+        }
+
+        private fun decodeTuningLedger(raw: String): TuningSnapshot? {
+            val fields = raw.split('|')
+            if (fields.size != 5 || fields[0] != TUNING_LEDGER_VERSION) return null
+            val duration = fields[1].toIntOrNull() ?: return null
+            val threshold = fields[2].toIntOrNull() ?: return null
+            val customized = fields[3].toIntOrNull()?.takeIf { it == 0 || it == 1 } ?: return null
+            val cooldown = fields[4].toIntOrNull() ?: return null
+            if (duration !in 1..525_600 || threshold !in 1..100 || cooldown !in 1..60) return null
+            return TuningSnapshot(duration, threshold, customized == 1, cooldown)
+        }
     }
+}
+
+data class CommitmentTuningRestore(
+    val outcome: Outcome,
+    val eventMessage: String? = null
+) {
+    enum class Outcome { RESTORED, NO_LEDGER, ACTIVE_SESSION, UNREADABLE_LEDGER, WRITE_FAILED }
 }

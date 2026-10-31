@@ -17,26 +17,86 @@ const {
 } = require("./promiseCompilerService");
 const {
   getSpeechHealth,
+  willCallPaidSpeechProvider,
   transcribePromise,
 } = require("./speechTranscriptionService");
 const { researchApp } = require("./appDossierService");
 
 const {
+  acceptedKeys,
   appAuthMiddleware,
   assertHostedAppSecretConfigured,
   isHostedRuntime,
 } = require("./appAuth");
+const { chargePaidCall, paidRouteGuard, userRouteGuard } = require("./rateLimit");
+const { configuredAudiences, requireGoogleUser } = require("./googleIdentity");
+const mailAssist = require("./mailAssistService");
+
+const MAX_PROMISE_CHARS = 4000;
+const MAX_SCREEN_TEXT_CHARS = 20000;
+const MAX_GOAL_CHARS = 4000;
 
 assertHostedAppSecretConfigured();
 
 const PORT = Number(process.env.PORT) || 8787;
 const app = express();
 
+// Auth runs before body parsing so unauthenticated callers cannot force large parses.
+// STRLIX_USER_SESSION_AUTH defaults off. The phone-test path is the branch below.
+const sessionAuthEnabled = process.env.STRLIX_USER_SESSION_AUTH === "1";
+let sessionAuthReady = Promise.resolve();
+if (!sessionAuthEnabled) {
+  app.use(appAuthMiddleware);
+  // Delegated mail AI is off unless STRLIX_MAIL_ASSIST_ENABLED=1; checked before spend counters.
+  app.use("/mail", (req, res, next) => {
+    if (!mailAssist.isMailAssistEnabled()) return res.status(404).json({ error: "not_found" });
+    return next();
+  });
+  // This pre-parse guard is only a per-app/IP request throttle and kill switch; it does not
+  // consume the daily paid-operation budget. Run it before Google JWT work to bound bad-token floods.
+  app.use(paidRouteGuard);
+  // Verify the Google user before JSON parsing and before any route-level paid-operation charge.
+  app.use("/mail", (req, res, next) => {
+    if (req.method !== "POST" || !["/summarize", "/draft-reply"].includes(req.path)) return next();
+    return requireGoogleUser(req, res, () => userRouteGuard(req, res, next));
+  });
+} else {
+  sessionAuthReady = require("./sessionRouteAuth").mountPaidSessionAuth(app, {
+    mailAssist,
+    requireGoogleUser,
+    userRouteGuard,
+  });
+}
 // Voice uploads need a larger JSON body; other routes stay lean via separate parsers.
 app.use("/transcribe-promise", express.json({ limit: "6mb" }));
 app.use("/classify", express.json({ limit: "400kb" }));
 app.use(express.json({ limit: "100kb" }));
-app.use(appAuthMiddleware);
+
+async function paidChargeAllows(res) {
+  const charged = chargePaidCall(res);
+  if (charged && typeof charged.then === "function") return charged;
+  return charged;
+}
+
+function logRouteError(event, err, status) {
+  console.error(
+    JSON.stringify({
+      event,
+      statusCode: status,
+      upstreamStatus: typeof (err && err.status) === "number" ? err.status : null,
+    })
+  );
+}
+
+// 4xx messages are our own validation strings; 5xx never echo detail or raw upstream output.
+function sendRouteError(res, err, { event, fallback, extra = {} }) {
+  const status = Number.isInteger(err && err.statusCode) ? err.statusCode : 500;
+  logRouteError(event, err, status);
+  if (status < 500) {
+    return res.status(status).json({ ...extra, error: err.message, detail: err.message });
+  }
+  return res.status(status).json({ ...extra, error: fallback });
+}
 
 const classifierProvider = getClassifierProvider();
 if (classifierProvider) {
@@ -112,28 +172,29 @@ app.get("/health", (_req, res) => {
       speech: getSpeechHealth().model,
     },
     hosted: isHostedRuntime(),
-    appSecretRequired: isHostedRuntime() || Boolean(process.env.STRLIX_BACKEND_APP_SECRET),
+    appSecretRequired: isHostedRuntime() || acceptedKeys().length > 0,
+    userSessionAuth: sessionAuthEnabled,
     visionDefault: "off",
     appDossier: true,
+    mailAssist: {
+      enabled: mailAssist.isMailAssistEnabled(),
+      userAuthConfigured: configuredAudiences().length > 0,
+    },
   });
 });
 
 app.post("/research-app", async (req, res) => {
   try {
+    if (!String((req.body || {}).packageName || "").trim()) {
+      return res.status(400).json({ error: "packageName must be a non-empty string" });
+    }
+    if (getClassifierProvider() && !(await paidChargeAllows(res))) return;
     const result = await researchApp(req.body || {});
     return res.json(result);
   } catch (err) {
-    const status = err.statusCode || 500;
-    console.error(
-      JSON.stringify({
-        event: "research_app_error",
-        message: err.message,
-        statusCode: status,
-      })
-    );
-    return res.status(status).json({
-      error: status === 400 ? err.message : "App research failed",
-      detail: err.message,
+    return sendRouteError(res, err, {
+      event: "research_app_error",
+      fallback: "App research failed",
     });
   }
 });
@@ -152,28 +213,17 @@ app.post("/classify", async (req, res) => {
         error: "packageName, screenText, and goal must be strings",
       });
     }
+    if (screenText.length > MAX_SCREEN_TEXT_CHARS || goal.length > MAX_GOAL_CHARS) {
+      return res.status(400).json({ error: "input_too_long" });
+    }
+    if (getClassifierProvider() && !(await paidChargeAllows(res))) return;
 
     const result = await classifyActivity(body);
     return res.json(result);
   } catch (err) {
-    if (err.statusCode === 502 && err.raw) {
-      return res.status(502).json({
-        error: err.message,
-        raw: err.raw,
-      });
-    }
-
-    console.error(
-      JSON.stringify({
-        event: "classify_error",
-        message: err.message,
-      })
-    );
-
-    const status = err.statusCode || 500;
-    return res.status(status).json({
-      error: status === 500 ? "Classification failed" : err.message,
-      detail: err.message,
+    return sendRouteError(res, err, {
+      event: "classify_error",
+      fallback: "Classification failed",
     });
   }
 });
@@ -210,6 +260,9 @@ app.post("/compile-promise", async (req, res) => {
         error: "promise must be a non-empty string",
       });
     }
+    if (promise.length > MAX_PROMISE_CHARS) {
+      return res.status(400).json({ error: "promise_too_long" });
+    }
 
     if (!getPromiseCompilerProvider()) {
       return res.status(503).json({
@@ -217,6 +270,7 @@ app.post("/compile-promise", async (req, res) => {
           "Promise compiler unavailable: set AZURE_OPENAI_* env vars or OPENAI_API_KEY",
       });
     }
+    if (!(await paidChargeAllows(res))) return;
 
     const result = await compilePromise(promise, {
       selectedClarificationOptionId,
@@ -226,26 +280,9 @@ app.post("/compile-promise", async (req, res) => {
     });
     return res.json(result);
   } catch (err) {
-    if (err.statusCode === 502 && err.raw) {
-      return res.status(502).json({
-        error: err.message,
-        raw: err.raw,
-      });
-    }
-
-    console.error(
-      JSON.stringify({
-        event: "compile_promise_error",
-        message: err.message,
-        statusCode: err.statusCode || 500,
-      })
-    );
-
-    const status = err.statusCode || 500;
-    return res.status(status).json({
-      error:
-        status === 500 ? "Promise compilation failed" : err.message,
-      detail: err.message,
+    return sendRouteError(res, err, {
+      event: "compile_promise_error",
+      fallback: "Promise compilation failed",
     });
   }
 });
@@ -258,13 +295,14 @@ app.post("/transcribe-promise", async (req, res) => {
   try {
     const body = req.body || {};
     const started = Date.now();
+    if (willCallPaidSpeechProvider(body) && !(await paidChargeAllows(res))) return;
     const result = await transcribePromise(body);
 
     console.log(
       JSON.stringify({
         event: "transcribe_promise_ok",
         provider: result.provider,
-        language: result.language,
+        languageChars: typeof result.language === "string" ? result.language.length : 0,
         latencyMs: result.latencyMs,
         transcriptChars: result.transcript ? result.transcript.length : 0,
         confidence: result.confidence,
@@ -274,25 +312,11 @@ app.post("/transcribe-promise", async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    console.error(
-      JSON.stringify({
-        event: "transcribe_promise_error",
-        message: err.message,
-        statusCode: err.statusCode || 500,
-      })
-    );
-
-    const status = err.statusCode || 500;
-    const payload = {
-      ok: false,
-      error:
-        status === 500 ? "Promise transcription failed" : err.message,
-      detail: err.message,
-    };
-    if (status === 502 && err.raw) {
-      payload.raw = err.raw;
-    }
-    return res.status(status).json(payload);
+    return sendRouteError(res, err, {
+      event: "transcribe_promise_error",
+      fallback: "Promise transcription failed",
+      extra: { ok: false },
+    });
   }
 });
 
@@ -306,6 +330,10 @@ app.post("/draft-focus-promise", async (req, res) => {
       });
     }
 
+    if (promise.length > MAX_PROMISE_CHARS) {
+      return res.status(400).json({ error: "promise_too_long" });
+    }
+
     const trimmedPromise = promise.trim();
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -315,8 +343,9 @@ app.post("/draft-focus-promise", async (req, res) => {
         })
       );
     }
+    if (!(await paidChargeAllows(res))) return;
 
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, maxRetries: 1 });
 
     const systemPrompt = [
       "You are PhoneCodex focus promise drafter.",
@@ -365,7 +394,7 @@ app.post("/draft-focus-promise", async (req, res) => {
         parsed = JSON.parse(raw);
       }
     } catch (err) {
-      console.error("draft-focus-promise model failed:", err.message);
+      logRouteError("draft_focus_promise_model_error", err, 200);
     }
 
     if (!parsed || typeof parsed !== "object") {
@@ -378,7 +407,7 @@ app.post("/draft-focus-promise", async (req, res) => {
 
     return res.json(normalizeDraftFocusPromise(parsed, trimmedPromise));
   } catch (err) {
-    console.error("draft-focus-promise failed:", err.message);
+    logRouteError("draft_focus_promise_error", err, 200);
     const promise = typeof req.body?.promise === "string" ? req.body.promise.trim() : "";
     return res.json(
       normalizeDraftFocusPromise(createKeywordFallbackDraft(promise), promise, {
@@ -388,9 +417,102 @@ app.post("/draft-focus-promise", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`PhoneCodex backend listening on http://localhost:${PORT}`);
+// Delegated mail AI: one user-selected message per call, per-user Google identity,
+// explicit consent, no content in logs.
+app.post("/mail/summarize", async (req, res) => {
+  try {
+    const input = mailAssist.validateMailRequest(req.body);
+    if (!getClassifierProvider()) return res.status(503).json({ error: "mail_assist_unavailable" });
+    if (!(await paidChargeAllows(res))) return;
+    const started = Date.now();
+    const { summary, deployment } = await mailAssist.summarizeMail(input);
+    console.log(
+      JSON.stringify({
+        event: "mail_summarize",
+        user: req.googleUser.userKey,
+        deployment,
+        bodyChars: input.bodyText.length,
+        flagged: summary.containsInstructionsToAssistant,
+        latencyMs: Date.now() - started,
+      })
+    );
+    return res.json(summary);
+  } catch (err) {
+    return sendRouteError(res, err, { event: "mail_summarize_error", fallback: "Mail summary failed" });
+  }
 });
+
+app.post("/mail/draft-reply", async (req, res) => {
+  try {
+    const input = mailAssist.validateMailRequest(req.body, { withNote: true });
+    if (!getClassifierProvider()) return res.status(503).json({ error: "mail_assist_unavailable" });
+    if (!(await paidChargeAllows(res))) return;
+    const started = Date.now();
+    const { draft, deployment } = await mailAssist.draftMailReply(input);
+    console.log(
+      JSON.stringify({
+        event: "mail_draft_reply",
+        user: req.googleUser.userKey,
+        deployment,
+        bodyChars: input.bodyText.length,
+        noteChars: input.note.length,
+        latencyMs: Date.now() - started,
+      })
+    );
+    return res.json(draft);
+  } catch (err) {
+    return sendRouteError(res, err, { event: "mail_draft_reply_error", fallback: "Mail draft failed" });
+  }
+});
+
+// Body-parser failures (malformed/oversized/unsupported) and any other thrown error.
+// Express's default handler would return an HTML stack trace and log the body snippet.
+app.use((err, _req, res, _next) => {
+  const status = Number.isInteger(err && err.status) && err.status >= 400 && err.status < 600
+    ? err.status
+    : 500;
+  let error = "internal_error";
+  if (err && err.type === "entity.parse.failed") error = "invalid_json";
+  else if (err && err.type === "entity.too.large") error = "payload_too_large";
+  else if (status < 500) error = "invalid_request";
+  console.error(
+    JSON.stringify({
+      event: "request_error",
+      statusCode: status,
+      type: ["entity.parse.failed", "entity.too.large"].includes(err && err.type) ? err.type : null,
+    })
+  );
+  if (res.headersSent) return res.end();
+  return res.status(status).json({ error });
+});
+
+function startListening() {
+  // Local dev holds real provider keys and may be auth-open: loopback only
+  // (adb reverse still works). Hosted containers must bind all interfaces.
+  if (isHostedRuntime()) {
+    app.listen(PORT, () => {
+      console.log(`PhoneCodex backend listening on port ${PORT}`);
+    });
+  } else {
+    app.listen(PORT, "127.0.0.1", () => {
+      console.log(`PhoneCodex backend listening on http://127.0.0.1:${PORT}`);
+    });
+  }
+}
+
+function refuseSharedAuth(err) {
+  console.error(err && err.message ? err.message : err);
+  process.exit(1);
+}
+
+if (process.env.STRLIX_SERVER_NO_LISTEN !== "1") {
+  if (sessionAuthEnabled) sessionAuthReady.then(startListening).catch(refuseSharedAuth);
+  else startListening();
+} else if (sessionAuthEnabled) {
+  sessionAuthReady.catch(refuseSharedAuth);
+}
+
+module.exports = { app, sessionAuthReady };
 
 const VALID_STRICTNESS = new Set(["SOFT", "SMART", "STRICT", "LOCKED"]);
 const VALID_BEHAVIORS = new Set(["ALLOW", "WARN", "BLOCK", "AI_DECIDE"]);

@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.phonecodex.app.domain.model.FocusSession
 import com.phonecodex.app.domain.model.SessionStatus
 import com.phonecodex.app.domain.model.StrictnessLevel
+import com.phonecodex.app.domain.session.ConfirmedSessionPolicyCodec
 
 class SessionStore(private val prefs: SharedPreferences) {
 
@@ -13,7 +14,7 @@ class SessionStore(private val prefs: SharedPreferences) {
     )
 
     fun saveActiveSession(session: FocusSession) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_ID, session.id)
             .putString(KEY_WORLD_ID, session.worldId)
             .putString(KEY_GOAL, session.goal)
@@ -23,7 +24,13 @@ class SessionStore(private val prefs: SharedPreferences) {
             .putInt(KEY_ATTEMPT_COUNT, session.attemptCount)
             .putString(KEY_STRICTNESS, session.strictness.name)
             .putString(KEY_PROMISE_STRICTNESS, session.promiseStrictness?.name)
-            .apply()
+        val encodedPolicy = session.confirmedPolicy?.let(ConfirmedSessionPolicyCodec::encode)
+        if (encodedPolicy == null) {
+            editor.remove(KEY_CONFIRMED_POLICY)
+        } else {
+            editor.putString(KEY_CONFIRMED_POLICY, encodedPolicy)
+        }
+        editor.apply()
     }
 
     /** Synchronous so a process death right after an exit cannot bring the session back. */
@@ -61,7 +68,10 @@ class SessionStore(private val prefs: SharedPreferences) {
             attemptCount = prefs.getInt(KEY_ATTEMPT_COUNT, 0),
             strictness = strictness,
             promiseStrictness = prefs.getString(KEY_PROMISE_STRICTNESS, null)
-                ?.let { name -> runCatching { StrictnessLevel.valueOf(name) }.getOrNull() }
+                ?.let { name -> runCatching { StrictnessLevel.valueOf(name) }.getOrNull() },
+            confirmedPolicy = ConfirmedSessionPolicyCodec.decode(
+                prefs.all[KEY_CONFIRMED_POLICY] as? String
+            )
         )
     }
 
@@ -95,5 +105,6 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_ATTEMPT_COUNT = "attemptCount"
         private const val KEY_STRICTNESS = "strictness"
         private const val KEY_PROMISE_STRICTNESS = "promiseStrictness"
+        private const val KEY_CONFIRMED_POLICY = "confirmedPolicyV1"
     }
 }

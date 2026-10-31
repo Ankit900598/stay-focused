@@ -20,7 +20,8 @@ import java.util.Locale
 internal fun saveFeedback(
     feedbackStore: FeedbackStore,
     debugState: DebugState,
-    correctedDecision: String
+    correctedDecision: String,
+    includePrivateContext: Boolean = false
 ) {
     val originalDecision = debugState.lastDecision.orEmpty()
     if (originalDecision.isBlank() || debugState.lastPackageName.isNullOrBlank()) return
@@ -29,10 +30,14 @@ internal fun saveFeedback(
         FeedbackEntry(
             timestampMillis = System.currentTimeMillis(),
             packageName = debugState.lastPackageName,
-            screenTextPreview = debugState.lastScreenTextPreview.orEmpty(),
+            screenTextPreview = if (includePrivateContext) {
+                debugState.lastScreenTextPreview.orEmpty()
+            } else {
+                ""
+            },
             originalDecision = originalDecision,
             correctedDecision = correctedDecision,
-            reason = debugState.lastReason.orEmpty()
+            reason = if (includePrivateContext) debugState.lastReason.orEmpty() else ""
         )
     )
 }
@@ -65,7 +70,8 @@ internal fun DecisionDebugPanel(
     val displayPackage = debugState.lastPackageName?.ifBlank { null } ?: "—"
     val displayDecision = debugState.lastDecision?.ifBlank { null } ?: "—"
     val displayReason = debugState.lastReason?.ifBlank { null } ?: "—"
-    val displayScreenText = debugState.lastScreenTextPreview?.ifBlank { null } ?: "—"
+    val displayScreenText = debugState.lastScreenTextPreview?.ifBlank { null }
+        ?: "No recent preview; private text is transient"
     val displayTimestamp = formatDebugTimestamp(debugState.lastUpdatedMillis)
     val displaySignals = if (debugState.lastMatchedSignals.isEmpty()) {
         "—"
@@ -87,7 +93,7 @@ internal fun DecisionDebugPanel(
 
     InspectorField(label = "Current app", value = displayPackage)
     InspectorField(
-        label = "Screen text preview (truncated, private — not copied by default)",
+        label = "Screen text preview (in memory up to 10 minutes; may be private)",
         value = displayScreenText
     )
     InspectorField(label = "Promise / goal", value = displayPromise)
@@ -204,7 +210,8 @@ internal fun StrictZoneRecoverySection(policy: RecoveryPolicy) {
     Spacer(modifier = Modifier.height(6.dp))
     Text(
         text = "Hard commitments need humane exits: mistake window, cooldown, trusted admin, " +
-            "emergency override, and an optional break fee later.",
+            "emergency override, and an optional break fee later. These are fixed product " +
+            "defaults — not Advanced Controls overrides (no editable binders yet).",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )

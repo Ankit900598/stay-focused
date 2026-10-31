@@ -27,11 +27,15 @@ internal fun ProtectionReliabilityCard(
     checkInProgress: Boolean,
     onOpenAccessibilitySettings: () -> Unit,
     onRunProtectionCheck: () -> Unit,
-    compact: Boolean = false
+    compact: Boolean = false,
+    allowDetailsToggle: Boolean = false
 ) {
-    var detailsOpen by remember(model.level) { mutableStateOf(model.detailsExpandedByDefault) }
+    var detailsOpen by remember(model.level, compact) {
+        mutableStateOf(model.detailsExpandedByDefault && !compact)
+    }
     val colors = MaterialTheme.colorScheme
     val headlineColor = when (model.level) {
+        ProtectionReliabilityLevel.CHECKING -> colors.onSurfaceVariant
         ProtectionReliabilityLevel.PROTECTED -> colors.primary
         ProtectionReliabilityLevel.NEEDS_SETUP -> colors.error
         ProtectionReliabilityLevel.NOT_PROTECTING -> colors.error
@@ -39,7 +43,8 @@ internal fun ProtectionReliabilityCard(
 
     CalmCard(
         modifier = Modifier.testTag("protection_reliability_card"),
-        highlighted = model.level != ProtectionReliabilityLevel.PROTECTED
+        highlighted = model.level != ProtectionReliabilityLevel.PROTECTED &&
+            model.level != ProtectionReliabilityLevel.CHECKING
     ) {
         MicroLabel(text = "Protection status")
         Spacer(modifier = Modifier.height(8.dp))
@@ -53,22 +58,12 @@ internal fun ProtectionReliabilityCard(
             color = headlineColor,
             modifier = Modifier.testTag("protection_reliability_headline")
         )
-        if (!compact) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = model.summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
-        }
-        if (model.nothingEnforced) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Nothing is enforced.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.error
-            )
-        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = model.summary,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
         if (!compact && !lastCheckSummary.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -78,27 +73,27 @@ internal fun ProtectionReliabilityCard(
             )
         }
         if (model.primaryAction == ProtectionPrimaryAction.OPEN_ACCESSIBILITY) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(if (compact) 10.dp else 16.dp))
             PrimaryAction(
                 text = model.primaryActionLabel ?: ProtectionReliabilityGate.ACTION_TURN_ON,
                 onClick = onOpenAccessibilitySettings,
                 modifier = Modifier.testTag("protection_reliability_primary")
             )
         }
-        if (!compact) {
+        if (!compact || allowDetailsToggle) {
             Spacer(modifier = Modifier.height(10.dp))
             QuietAction(
                 text = if (detailsOpen) "Hide details" else "Details",
                 onClick = { detailsOpen = !detailsOpen }
             )
         }
-        if (!compact && detailsOpen) {
+        if (detailsOpen) {
             Spacer(modifier = Modifier.height(12.dp))
             SummaryRow(label = "Accessibility", value = model.accessibilityLine)
             Spacer(modifier = Modifier.height(8.dp))
             SummaryRow(label = "Commitment", value = model.commitmentLine)
             Spacer(modifier = Modifier.height(8.dp))
-            SummaryRow(label = "Life rule", value = model.guardrailLine)
+            SummaryRow(label = "Safety guardrail", value = model.guardrailLine)
             Spacer(modifier = Modifier.height(8.dp))
             SummaryRow(label = "Backend", value = model.backendLine)
             Spacer(modifier = Modifier.height(8.dp))
@@ -148,16 +143,17 @@ internal fun ProtectionSetupCard(onOpenAccessibilitySettings: () -> Unit) {
 @Composable
 internal fun ProtectionHealthDetails(
     isAccessibilityEnabled: Boolean,
+    isAccessibilityAlive: Boolean,
     violationCount: Int,
     lastViolationReason: String?,
     onOpenAccessibilitySettings: () -> Unit,
     onClearViolations: () -> Unit
 ) {
-    MicroLabel(text = "Protection status")
+    MicroLabel(text = "Accessibility service health")
     Spacer(modifier = Modifier.height(10.dp))
     SummaryRow(
         label = "Service",
-        value = if (isAccessibilityEnabled) "Connected" else "Disconnected"
+        value = accessibilityServiceHealthText(isAccessibilityEnabled, isAccessibilityAlive)
     )
     Spacer(modifier = Modifier.height(8.dp))
     SummaryRow(label = "Violations", value = violationCount.toString())
@@ -178,4 +174,10 @@ internal fun ProtectionHealthDetails(
         onClick = onClearViolations,
         enabled = violationCount > 0
     )
+}
+
+internal fun accessibilityServiceHealthText(enabled: Boolean, alive: Boolean): String = when {
+    !enabled -> "Disabled"
+    alive -> "Connected"
+    else -> "Enabled, not responding"
 }

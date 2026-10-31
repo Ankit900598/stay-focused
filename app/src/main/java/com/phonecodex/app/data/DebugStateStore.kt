@@ -1,7 +1,12 @@
 package com.phonecodex.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.phonecodex.app.domain.classifier.ClassificationBackendMeta
+import java.util.WeakHashMap
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 data class DebugState(
     val lastPackageName: String?,
@@ -21,21 +26,33 @@ data class DebugState(
     val lastReasonCode: String? = null,
     val lastSurface: String? = null,
     val lastActivity: String? = null,
-    val lastDurationSource: String? = null
+    val lastDurationSource: String? = null,
+    val lastDetectedPackageName: String? = null,
+    val lastDetectedScreenTextPreview: String? = null,
+    val lastDetectionUpdatedMillis: Long = 0L,
+    val lastSessionId: String? = null
 )
 
-class DebugStateStore(context: Context) {
+class DebugStateStore(private val prefs: SharedPreferences) {
 
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
 
-    fun recordPackageDetected(packageName: String, screenText: String) {
+    init {
+        migrateDecisionContextIfNeeded()
         prefs.edit()
-            .putString(KEY_LAST_PACKAGE_NAME, packageName)
-            .putString(KEY_LAST_SCREEN_TEXT_PREVIEW, preview(screenText))
-            .putLong(KEY_LAST_UPDATED_MILLIS, System.currentTimeMillis())
+            .remove(KEY_LAST_SCREEN_TEXT_PREVIEW)
+            .remove(KEY_LAST_DETECTED_SCREEN_TEXT_PREVIEW)
+            .remove(KEY_LAST_REASON)
+            .apply()
+    }
+
+    fun recordPackageDetected(packageName: String) {
+        prefs.edit()
+            .putString(KEY_LAST_DETECTED_PACKAGE_NAME, packageName)
+            .remove(KEY_LAST_DETECTED_SCREEN_TEXT_PREVIEW)
+            .putLong(KEY_LAST_DETECTION_UPDATED_MILLIS, System.currentTimeMillis())
             .apply()
     }
 
@@ -53,17 +70,23 @@ class DebugStateStore(context: Context) {
         reasonCode: String? = null,
         surface: String? = null,
         activity: String? = null,
-        durationSource: String? = null
+        durationSource: String? = null,
+        sessionId: String? = null
     ) {
+        val nowMillis = System.currentTimeMillis()
+        DecisionPrivateContextCache.record(prefs, preview(screenText), reason)
         prefs.edit()
             .putString(KEY_LAST_PACKAGE_NAME, packageName)
-            .putString(KEY_LAST_SCREEN_TEXT_PREVIEW, preview(screenText))
+            .putString(KEY_LAST_DETECTED_PACKAGE_NAME, packageName)
+            .remove(KEY_LAST_SCREEN_TEXT_PREVIEW)
+            .remove(KEY_LAST_DETECTED_SCREEN_TEXT_PREVIEW)
+            .putLong(KEY_LAST_DETECTION_UPDATED_MILLIS, nowMillis)
             .putString(KEY_LAST_DECISION, decision)
-            .putString(KEY_LAST_REASON, reason)
+            .remove(KEY_LAST_REASON)
             .putString(KEY_LAST_SOURCE, source)
             .putString(KEY_LAST_CONFIDENCE, confidence.toString())
             .putString(KEY_LAST_MATCHED_SIGNALS, encodeMatchedSignals(matchedSignals))
-            .putLong(KEY_LAST_UPDATED_MILLIS, System.currentTimeMillis())
+            .putLong(KEY_LAST_UPDATED_MILLIS, nowMillis)
             .apply {
                 if (reasonCategory != null) {
                     putString(KEY_LAST_REASON_CATEGORY, reasonCategory)
@@ -94,11 +117,13 @@ class DebugStateStore(context: Context) {
                 putOptionalString(KEY_LAST_SURFACE, surface)
                 putOptionalString(KEY_LAST_ACTIVITY, activity)
                 putOptionalString(KEY_LAST_DURATION_SOURCE, durationSource)
+                putOptionalString(KEY_LAST_SESSION_ID, sessionId)
             }
             .apply()
     }
 
     fun getDebugState(): DebugState {
+        val privateContext = DecisionPrivateContextCache.get(prefs)
         val confidenceRaw = prefs.getString(KEY_LAST_CONFIDENCE, null)
         val confidence = confidenceRaw?.toDoubleOrNull()
         val wouldEscalate = if (prefs.contains(KEY_LAST_WOULD_ESCALATE)) {
@@ -114,9 +139,9 @@ class DebugStateStore(context: Context) {
 
         return DebugState(
             lastPackageName = prefs.getString(KEY_LAST_PACKAGE_NAME, null),
-            lastScreenTextPreview = prefs.getString(KEY_LAST_SCREEN_TEXT_PREVIEW, null),
+            lastScreenTextPreview = privateContext?.screenTextPreview,
             lastDecision = prefs.getString(KEY_LAST_DECISION, null),
-            lastReason = prefs.getString(KEY_LAST_REASON, null),
+            lastReason = privateContext?.reason,
             lastSource = prefs.getString(KEY_LAST_SOURCE, null),
             lastConfidence = confidence,
             lastMatchedSignals = decodeMatchedSignals(
@@ -132,8 +157,43 @@ class DebugStateStore(context: Context) {
             lastReasonCode = prefs.getString(KEY_LAST_REASON_CODE, null),
             lastSurface = prefs.getString(KEY_LAST_SURFACE, null),
             lastActivity = prefs.getString(KEY_LAST_ACTIVITY, null),
-            lastDurationSource = prefs.getString(KEY_LAST_DURATION_SOURCE, null)
+            lastDurationSource = prefs.getString(KEY_LAST_DURATION_SOURCE, null),
+            lastDetectedPackageName = prefs.getString(KEY_LAST_DETECTED_PACKAGE_NAME, null),
+            lastDetectedScreenTextPreview = null,
+            lastDetectionUpdatedMillis = prefs.getLong(KEY_LAST_DETECTION_UPDATED_MILLIS, 0L),
+            lastSessionId = prefs.getString(KEY_LAST_SESSION_ID, null)
         )
+    }
+
+    private fun migrateDecisionContextIfNeeded() {
+        val version = runCatching {
+            prefs.getInt(KEY_DECISION_CONTEXT_VERSION, 0)
+        }.getOrDefault(0)
+        if (version >= DECISION_CONTEXT_VERSION) return
+
+        prefs.edit()
+            .remove(KEY_LAST_PACKAGE_NAME)
+            .remove(KEY_LAST_SCREEN_TEXT_PREVIEW)
+            .remove(KEY_LAST_DETECTED_SCREEN_TEXT_PREVIEW)
+            .remove(KEY_LAST_DECISION)
+            .remove(KEY_LAST_REASON)
+            .remove(KEY_LAST_SOURCE)
+            .remove(KEY_LAST_CONFIDENCE)
+            .remove(KEY_LAST_MATCHED_SIGNALS)
+            .remove(KEY_LAST_UPDATED_MILLIS)
+            .remove(KEY_LAST_REASON_CATEGORY)
+            .remove(KEY_LAST_WOULD_ESCALATE)
+            .remove(KEY_LAST_BACKEND_PROVIDER)
+            .remove(KEY_LAST_BACKEND_DEPLOYMENT)
+            .remove(KEY_LAST_BACKEND_PROMPT_VERSION)
+            .remove(KEY_LAST_BACKEND_LATENCY_MS)
+            .remove(KEY_LAST_REASON_CODE)
+            .remove(KEY_LAST_SURFACE)
+            .remove(KEY_LAST_ACTIVITY)
+            .remove(KEY_LAST_DURATION_SOURCE)
+            .remove(KEY_LAST_SESSION_ID)
+            .putInt(KEY_DECISION_CONTEXT_VERSION, DECISION_CONTEXT_VERSION)
+            .apply()
     }
 
     private fun android.content.SharedPreferences.Editor.putOptionalString(
@@ -159,8 +219,13 @@ class DebugStateStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "phonecodex_debug_state"
         private const val PREVIEW_LENGTH = 300
+        private const val DECISION_CONTEXT_VERSION = 2
+        private const val KEY_DECISION_CONTEXT_VERSION = "decisionContextVersion"
         private const val KEY_LAST_PACKAGE_NAME = "lastPackageName"
         private const val KEY_LAST_SCREEN_TEXT_PREVIEW = "lastScreenTextPreview"
+        private const val KEY_LAST_DETECTED_PACKAGE_NAME = "lastDetectedPackageName"
+        private const val KEY_LAST_DETECTED_SCREEN_TEXT_PREVIEW = "lastDetectedScreenTextPreview"
+        private const val KEY_LAST_DETECTION_UPDATED_MILLIS = "lastDetectionUpdatedMillis"
         private const val KEY_LAST_DECISION = "lastDecision"
         private const val KEY_LAST_REASON = "lastReason"
         private const val KEY_LAST_SOURCE = "lastSource"
@@ -177,6 +242,71 @@ class DebugStateStore(context: Context) {
         private const val KEY_LAST_SURFACE = "lastSurface"
         private const val KEY_LAST_ACTIVITY = "lastActivity"
         private const val KEY_LAST_DURATION_SOURCE = "lastDurationSource"
+        private const val KEY_LAST_SESSION_ID = "lastSessionId"
         private const val MATCHED_SIGNAL_SEPARATOR = "\u001E"
     }
+}
+
+internal data class DecisionPrivateContext(
+    val screenTextPreview: String?,
+    val reason: String?,
+    val recordedAtMillis: Long,
+    val generation: Long
+)
+
+internal object DecisionPrivateContextCache {
+    private val contextByPreferences = WeakHashMap<SharedPreferences, DecisionPrivateContext>()
+    private val cleanupByPreferences = WeakHashMap<SharedPreferences, ScheduledFuture<*>>()
+    private val cleanupExecutor = ScheduledThreadPoolExecutor(1) { runnable ->
+        Thread(runnable, "strlix-private-context-expiry").apply { isDaemon = true }
+    }.apply { removeOnCancelPolicy = true }
+    private var nextGeneration = 0L
+
+    fun record(
+        prefs: SharedPreferences,
+        screenTextPreview: String,
+        reason: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ) {
+        synchronized(contextByPreferences) {
+            cleanupByPreferences.remove(prefs)?.cancel(false)
+            val generation = ++nextGeneration
+            contextByPreferences[prefs] = DecisionPrivateContext(
+                screenTextPreview = screenTextPreview.takeIf { it.isNotBlank() },
+                reason = reason.take(MAX_PRIVATE_CONTEXT_LENGTH).takeIf { it.isNotBlank() },
+                recordedAtMillis = nowMillis,
+                generation = generation
+            )
+            cleanupByPreferences[prefs] = cleanupExecutor.schedule(
+                {
+                    synchronized(contextByPreferences) {
+                        if (contextByPreferences[prefs]?.generation == generation) {
+                            contextByPreferences.remove(prefs)
+                            cleanupByPreferences.remove(prefs)
+                        }
+                    }
+                },
+                PRIVATE_CONTEXT_RETENTION_MILLIS,
+                TimeUnit.MILLISECONDS
+            )
+        }
+    }
+
+    fun get(
+        prefs: SharedPreferences,
+        nowMillis: Long = System.currentTimeMillis()
+    ): DecisionPrivateContext? = synchronized(contextByPreferences) {
+        val cached = contextByPreferences[prefs] ?: return@synchronized null
+        val ageMillis = nowMillis - cached.recordedAtMillis
+        if (ageMillis !in 0..PRIVATE_CONTEXT_RETENTION_MILLIS) {
+            contextByPreferences.remove(prefs)
+            cleanupByPreferences.remove(prefs)?.cancel(false)
+            null
+        } else {
+            cached
+        }
+    }
+
+    internal const val PRIVATE_CONTEXT_RETENTION_MILLIS = 10 * 60 * 1000L
+    private const val MAX_PRIVATE_CONTEXT_LENGTH = 300
 }

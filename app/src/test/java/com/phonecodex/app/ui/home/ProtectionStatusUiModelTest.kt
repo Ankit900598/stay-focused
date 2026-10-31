@@ -75,6 +75,41 @@ class ProtectionStatusUiModelTest {
     }
 
     @Test
+    fun accessibilityServiceHealth_distinguishesDisabledAndEnabledButUnresponsive() {
+        assertEquals("Disabled", accessibilityServiceHealthText(enabled = false, alive = false))
+        assertEquals(
+            "Enabled, not responding",
+            accessibilityServiceHealthText(enabled = true, alive = false)
+        )
+        assertEquals("Connected", accessibilityServiceHealthText(enabled = true, alive = true))
+        assertEquals("Disabled", accessibilityServiceHealthText(enabled = false, alive = true))
+    }
+
+    @Test
+    fun bootstrapPending_usesNeutralStatusAndNoTurnOnOrReconnectPrompt() {
+        val model = ProtectionReliabilityGate.evaluate(
+            ProtectionReliabilityInput(
+                accessibilityEnabled = false,
+                accessibilityAlive = false,
+                lastEventMillis = 0L,
+                lastEventPackage = null,
+                lastEventReason = null,
+                hasActiveCommitment = false,
+                permanentGuardrailOn = false,
+                backendKind = BackendProbeKind.IDLE,
+                nowMillis = now,
+                statusInitialized = false
+            )
+        )
+
+        assertEquals(ProtectionReliabilityLevel.CHECKING, model.level)
+        assertEquals("Checking", protectionStatusPillText(model.level))
+        assertEquals(ProtectionPrimaryAction.NONE, model.primaryAction)
+        assertEquals(ProtectionReliabilityGate.GREETING_CHECKING, model.idleGreeting)
+        assertFalse(model.detailsExpandedByDefault)
+    }
+
+    @Test
     fun homeList_showsProtectionStatusBeforeComposer() {
         val items = buildHomeListItems(
             hasStoredSession = false,

@@ -194,4 +194,58 @@ class CompilerContractVersionTest {
         assertTrue(audit, "strictness=SOFT lockThreshold=${stored.lockAttemptThreshold}" in audit)
         assertNotNull(stored)
     }
+
+    @Test
+    fun explicitCompilerLockThreshold_isShownAndBoundInsteadOfStrictnessDefault() {
+        val response = JSONObject(legacyResponse("Block Instagram and lock after 6 attempts", listOf(
+            Triple(VideoPlatformRegistry.INSTAGRAM, "BLOCK", "")
+        )))
+            .put("lockAttemptThreshold", 6)
+            .toString()
+        val draft = draft(response)
+
+        assertEquals(6, draft.lockAttemptThreshold)
+        assertEquals(6, understanding(draft).lockAttemptThreshold)
+        assertEquals(6, ConfirmedPromiseBinder.bind(draft).lockAttemptThreshold)
+    }
+
+    @Test
+    fun invalidCompilerLockThreshold_keepsStartClosedWithActionableCopy() {
+        val response = JSONObject(legacyResponse("Block Instagram and lock after 101 attempts", listOf(
+            Triple(VideoPlatformRegistry.INSTAGRAM, "BLOCK", "")
+        )))
+            .put("lockAttemptThresholdInvalid", true)
+            .put("clarificationRequired", true)
+            .put("canStartCommitment", false)
+            .toString()
+        val draft = draft(response)
+        val ui = understanding(draft)
+
+        assertTrue(draft.lockAttemptThresholdInvalid)
+        assertFalse(ui.canStart)
+        assertTrue(ui.clarificationQuestion.orEmpty().contains("1 to 100"))
+    }
+
+    @Test
+    fun customSavedLockThresholdAndCooldown_overrideAutomaticStrictnessFallback() {
+        val saved = StudyWorldSettings(
+            durationMinutes = 45,
+            lockAttemptThreshold = 5,
+            blockAttemptCooldownMinutes = 5,
+            lockAttemptThresholdCustomized = true
+        )
+        val draft = draft(legacyResponse("Block Instagram for 1 hour", listOf(
+            Triple(VideoPlatformRegistry.INSTAGRAM, "BLOCK", "")
+        )))
+        val ui = buildPromiseUnderstanding(
+            draft,
+            source = UnderstandingSource.PROMISE_COMPILER,
+            fallbackLockAttemptThreshold = saved.lockAttemptThreshold
+        )
+        val bound = ConfirmedPromiseBinder.bind(draft, saved)
+
+        assertEquals(5, ui.lockAttemptThreshold)
+        assertEquals(5, bound.lockAttemptThreshold)
+        assertEquals(5, bound.blockAttemptCooldownMinutes)
+    }
 }

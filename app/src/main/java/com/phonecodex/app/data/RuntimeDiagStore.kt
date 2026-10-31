@@ -93,6 +93,19 @@ class RuntimeDiagStore(context: Context) {
         )
     }
 
+    fun serviceLeaseDiagnostics(): String {
+        val nowElapsedMillis = SystemClock.elapsedRealtime()
+        val lastLeaseElapsedMillis = prefs.getLong(KEY_A11Y_LEASE_ELAPSED_MS, 0L)
+        val leaseAgeMillis = if (lastLeaseElapsedMillis > 0L) {
+            nowElapsedMillis - lastLeaseElapsedMillis
+        } else {
+            null
+        }
+        return "rawAlive=${prefs.getBoolean(KEY_A11Y_ALIVE, false)} " +
+            "leaseAgeMs=$leaseAgeMillis leaseElapsedMs=$lastLeaseElapsedMillis " +
+            "nowElapsedMs=$nowElapsedMillis"
+    }
+
     fun setOverlayActive(active: Boolean) {
         prefs.edit().putBoolean(KEY_OVERLAY_ACTIVE, active).apply()
     }

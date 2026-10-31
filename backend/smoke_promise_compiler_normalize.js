@@ -124,6 +124,36 @@ function assertNoPackageLeak(dto, label) {
   );
 }
 
+const explicitAttemptLimit = normalizeCompiledPromise(
+  basePolicy({
+    strikePolicy: {
+      warnBeforeLock: 0,
+      strikesBeforeLock: 4,
+      resetPeriod: "session",
+    },
+  }),
+  "Block YouTube Shorts and lock after 4 attempts"
+);
+eq(explicitAttemptLimit.lockAttemptThreshold, 4, "explicit strike count reaches normalized DTO");
+const unspecifiedAttemptLimit = normalizeCompiledPromise(
+  basePolicy(),
+  "Block YouTube Shorts for 1 hour"
+);
+eq(unspecifiedAttemptLimit.lockAttemptThreshold, null, "unspecified strike count leaves strictness fallback intact");
+const outOfRangeAttemptLimit = normalizeCompiledPromise(
+  basePolicy({
+    strikePolicy: {
+      warnBeforeLock: 0,
+      strikesBeforeLock: 101,
+      resetPeriod: "session",
+    },
+  }),
+  "Block YouTube Shorts for 1 hour"
+);
+eq(outOfRangeAttemptLimit.lockAttemptThreshold, null, "out-of-range strike count is not enforced");
+eq(outOfRangeAttemptLimit.lockAttemptThresholdInvalid, true, "out-of-range strike count is surfaced as invalid");
+eq(outOfRangeAttemptLimit.canStartCommitment, false, "out-of-range strike count closes Start");
+
 // ========== Duration / clocks helpers ==========
 eq(
   durationToSessionMinutes({ kind: "fixed", value: 3, unit: "hours" }).minutes,

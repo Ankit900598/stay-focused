@@ -26,7 +26,7 @@ internal fun PermanentCommitmentsSection(
     guardrails: List<PermanentGuardrail>,
     onToggleEnabled: (PermanentGuardrail, Boolean) -> Unit
 ) {
-    MicroLabel(text = "Permanent Commitments")
+    MicroLabel(text = "Permanent safety rules")
     Spacer(modifier = Modifier.height(6.dp))
     Text(
         text = "These stay on between sessions, with no timer.",

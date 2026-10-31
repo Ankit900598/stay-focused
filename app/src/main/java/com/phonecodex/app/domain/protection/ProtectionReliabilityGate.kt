@@ -4,6 +4,7 @@ import com.phonecodex.app.domain.diagnostics.BackendHealthProbe
 import com.phonecodex.app.domain.diagnostics.BackendProbeKind
 
 enum class ProtectionReliabilityLevel {
+    CHECKING,
     PROTECTED,
     NOT_PROTECTING,
     NEEDS_SETUP
@@ -27,7 +28,8 @@ data class ProtectionReliabilityInput(
     val backendLoopback: Boolean = true,
     val nowMillis: Long,
     /** Active commitment whose saved typed scope is unreadable (SCOPE_PERSISTENCE_CORRUPT). */
-    val commitmentScopeUnverified: Boolean = false
+    val commitmentScopeUnverified: Boolean = false,
+    val statusInitialized: Boolean = true
 )
 
 data class ProtectionReliabilityUiModel(
@@ -60,23 +62,26 @@ object ProtectionReliabilityGate {
     const val HEADLINE_PROTECTED = "Protected"
     const val HEADLINE_NOT_PROTECTING = "Not protecting"
     const val HEADLINE_NEEDS_SETUP = "Needs setup"
+    const val HEADLINE_CHECKING = "Checking protection…"
     const val NOTHING_ENFORCED = "Nothing is enforced."
     const val ADB_REVERSE = "adb reverse tcp:8787 tcp:8787"
     const val ACTION_TURN_ON = "Turn on Accessibility"
     const val ACTION_RECONNECT = "Reconnect Accessibility"
     const val SUMMARY_NEEDS_SETUP =
         "After install or update, Accessibility is off. You are not protected until you turn it on."
+    const val SUMMARY_CHECKING = "Checking whether phone protection is connected."
     const val GREETING_NEEDS_SETUP =
         "Turn on Accessibility first. You are not protected yet."
+    const val GREETING_CHECKING = "Checking phone protection…"
     const val GREETING_NOT_PROTECTING = "Strlix is not protecting this phone."
     const val GREETING_READY = "Ready to keep a promise?"
     const val SUMMARY_ACCESSIBILITY_NOT_CONNECTED =
-        "PhoneCodex Accessibility is enabled but not connected. Phone rules are not being enforced."
+        "Strlix Accessibility is enabled but not connected. Phone rules are not being enforced."
     const val SUMMARY_COMMITMENT_ACTIVE = "Your active commitment is being enforced."
     const val SUMMARY_COMMITMENT_AND_GUARDRAIL_ACTIVE =
-        "Your active commitment and permanent life rules are being enforced."
+        "Your active commitment and permanent guardrails are being enforced."
     const val SUMMARY_GUARDRAIL_ONLY_ACTIVE =
-        "A permanent life rule is active. No timed commitment is running."
+        "A permanent safety guardrail is active. No timed commitment is running."
     const val COMMITMENT_SCOPE_UNVERIFIED = "Active, scope unverified (SCOPE_PERSISTENCE_CORRUPT)"
     const val SUMMARY_SCOPE_UNVERIFIED =
         "This commitment's saved scope could not be read, so Strlix is not enforcing it. " +
@@ -86,10 +91,12 @@ object ProtectionReliabilityGate {
         val ageMs = AccessibilityHeartbeatLaw.ageMs(input.nowMillis, input.lastEventMillis)
         val loopAlive = input.accessibilityEnabled && input.accessibilityAlive
         val hasLaw = input.hasActiveCommitment || input.permanentGuardrailOn
-        val nothingEnforced = loopAlive && !hasLaw
-        val scopeUnverified = input.hasActiveCommitment && input.commitmentScopeUnverified
+        val nothingEnforced = input.statusInitialized && loopAlive && !hasLaw
+        val scopeUnverified = input.statusInitialized &&
+            input.hasActiveCommitment && input.commitmentScopeUnverified
 
         val level = when {
+            !input.statusInitialized -> ProtectionReliabilityLevel.CHECKING
             !input.accessibilityEnabled -> ProtectionReliabilityLevel.NEEDS_SETUP
             !loopAlive -> ProtectionReliabilityLevel.NOT_PROTECTING
             !hasLaw -> ProtectionReliabilityLevel.NOT_PROTECTING
@@ -98,12 +105,14 @@ object ProtectionReliabilityGate {
         }
 
         val headline = when (level) {
+            ProtectionReliabilityLevel.CHECKING -> HEADLINE_CHECKING
             ProtectionReliabilityLevel.PROTECTED -> HEADLINE_PROTECTED
             ProtectionReliabilityLevel.NOT_PROTECTING -> HEADLINE_NOT_PROTECTING
             ProtectionReliabilityLevel.NEEDS_SETUP -> HEADLINE_NEEDS_SETUP
         }
 
         val summary = when {
+            !input.statusInitialized -> SUMMARY_CHECKING
             !input.accessibilityEnabled -> SUMMARY_NEEDS_SETUP
             !loopAlive ->
                 SUMMARY_ACCESSIBILITY_NOT_CONNECTED
@@ -116,33 +125,45 @@ object ProtectionReliabilityGate {
             else -> SUMMARY_GUARDRAIL_ONLY_ACTIVE
         }
         val idleGreeting = when (level) {
+            ProtectionReliabilityLevel.CHECKING -> GREETING_CHECKING
             ProtectionReliabilityLevel.NEEDS_SETUP -> GREETING_NEEDS_SETUP
             ProtectionReliabilityLevel.NOT_PROTECTING -> GREETING_NOT_PROTECTING
             ProtectionReliabilityLevel.PROTECTED -> GREETING_READY
         }
 
         val accessibilityLine = when {
+            !input.statusInitialized -> "Checking"
             !input.accessibilityEnabled -> "Off"
             loopAlive -> "Alive"
             else -> "Enabled but not alive"
         }
         val commitmentLine = when {
+            !input.statusInitialized -> "Checking"
             scopeUnverified -> COMMITMENT_SCOPE_UNVERIFIED
             input.hasActiveCommitment -> "Active"
             else -> "None"
         }
-        val guardrailLine = if (input.permanentGuardrailOn) "On" else "Off"
+        val guardrailLine = when {
+            !input.statusInitialized -> "Checking"
+            input.permanentGuardrailOn -> "On"
+            else -> "Off"
+        }
         val backendLine = backendLine(input.backendKind)
-        val lastEventLine = AccessibilityHeartbeatLaw.formatAge(ageMs)
+        val lastEventLine = if (input.statusInitialized) {
+            AccessibilityHeartbeatLaw.formatAge(ageMs)
+        } else {
+            "Checking"
+        }
 
-        val needsAccessibilityAction =
-            !input.accessibilityEnabled || (input.accessibilityEnabled && !loopAlive)
+        val needsAccessibilityAction = input.statusInitialized &&
+            (!input.accessibilityEnabled || (input.accessibilityEnabled && !loopAlive))
         val primaryAction = if (needsAccessibilityAction) {
             ProtectionPrimaryAction.OPEN_ACCESSIBILITY
         } else {
             ProtectionPrimaryAction.NONE
         }
         val primaryActionLabel = when {
+            !input.statusInitialized -> null
             !input.accessibilityEnabled -> ACTION_TURN_ON
             !loopAlive -> ACTION_RECONNECT
             else -> null
@@ -175,7 +196,8 @@ object ProtectionReliabilityGate {
             showAdbReverseHint = showAdb,
             adbReverseHint = if (showAdb) ADB_REVERSE else "",
             checkLogLine = checkLogLine,
-            detailsExpandedByDefault = level != ProtectionReliabilityLevel.PROTECTED,
+            detailsExpandedByDefault = level != ProtectionReliabilityLevel.PROTECTED &&
+                level != ProtectionReliabilityLevel.CHECKING,
             idleGreeting = idleGreeting
         )
     }

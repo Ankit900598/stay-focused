@@ -1,0 +1,2 @@
+List of devices attached
+TRACEFIXTURE01	device

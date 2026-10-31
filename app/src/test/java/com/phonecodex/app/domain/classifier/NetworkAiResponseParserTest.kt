@@ -76,6 +76,80 @@ class NetworkAiResponseParserTest {
     }
 
     @Test
+    fun parse_invalidConfidence_returnsNullBeforeItCanAuthorizeABlock() {
+        for (confidence in listOf("2", "-0.01", "\"0.9\"", "null")) {
+            val raw = """{"decision":"BLOCK","confidence":$confidence,"reason":"model guess"}"""
+            assertNull(NetworkAiResponseParser.parse(raw))
+        }
+    }
+
+    @Test
+    fun parse_verificationIncomplete_isRetainedAsAuthoritativeGateMetadata() {
+        val parsed = NetworkAiResponseParser.parse(
+            """{"decision":"WARN","confidence":0.2,"verificationIncomplete":true}"""
+        )
+
+        assertNotNull(parsed)
+        assertTrue(parsed!!.verificationIncomplete)
+    }
+
+    @Test
+    fun parse_andGate_incompleteBackendVerificationCannotBecomeAllowOrBlock() {
+        val cases = listOf(
+            """{"decision":"WARN","confidence":0.4,"verificationIncomplete":true}""",
+            """{"decision":"BLOCK","confidence":0.95,"verificationIncomplete":true}"""
+        )
+
+        cases.forEach { raw ->
+            val parsed = NetworkAiResponseParser.parse(raw)
+            assertNotNull(parsed)
+
+            val gated = AiConfidenceGate().apply(parsed!!)
+
+            assertEquals(DecisionType.WARN, gated.decision)
+            assertEquals("Could not verify this screen safely", gated.reason)
+        }
+    }
+
+    @Test
+    fun parse_unknownTextCategoryCannotPreserveConfidentBlock() {
+        val parsed = NetworkAiResponseParser.parse(
+            """{"decision":"BLOCK","confidence":0.99,"reason":"model guess","reasonCategory":"shortformdisallowed"}"""
+        )
+
+        assertNotNull(parsed)
+        assertEquals(DecisionType.WARN, parsed!!.decision)
+        assertEquals("ambiguous", parsed.reasonCategory)
+        assertTrue(parsed.verificationIncomplete)
+        assertTrue(parsed.wouldEscalate)
+    }
+
+    @Test
+    fun parse_unknownVisionCategoryCannotPreserveConfidentBlock() {
+        val parsed = NetworkAiResponseParser.parse(
+            """{"decision":"BLOCK","confidence":0.99,"reason":"model guess","reasonCategory":"adult_content","usedImage":true}"""
+        )
+
+        assertNotNull(parsed)
+        assertEquals(DecisionType.WARN, parsed!!.decision)
+        assertEquals("unknown", parsed.reasonCategory)
+        assertTrue(parsed.verificationIncomplete)
+        assertTrue(parsed.wouldEscalate)
+    }
+
+    @Test
+    fun parse_missingCategoryCannotPreserveConfidentBlock() {
+        val parsed = NetworkAiResponseParser.parse(
+            """{"decision":"BLOCK","confidence":0.99,"reason":"model guess"}"""
+        )
+
+        assertNotNull(parsed)
+        assertEquals(DecisionType.WARN, parsed!!.decision)
+        assertEquals("ambiguous", parsed.reasonCategory)
+        assertTrue(parsed.verificationIncomplete)
+    }
+
+    @Test
     fun buildRequestBody_includesOptionalFields() {
         val classifier = NetworkAiContentClassifier()
         val request = ClassificationRequest(

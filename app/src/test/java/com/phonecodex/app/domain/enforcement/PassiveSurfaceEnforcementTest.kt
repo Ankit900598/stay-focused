@@ -2,6 +2,7 @@ package com.phonecodex.app.domain.enforcement
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.phonecodex.app.domain.promise.PromiseIntentRules
@@ -110,6 +111,49 @@ class PassiveSurfaceEnforcementTest {
             "Comments Add a comment Top comments View replies",
             max40Promise
         )
+    }
+
+    @Test
+    fun youtubeWatchPage_commentsAndSpokenPlayerClock_isActivePlayer() {
+        val screenText =
+            "2 minutes 52 seconds of 17 minutes 4 seconds The essence of calculus " +
+                "@3blue1brown 3 lakh likes 1.1 crore views Subscribe " +
+                "Comments Add a comment Top comments"
+        val detection = SurfaceDetector.detect(VideoPlatformRegistry.YOUTUBE, screenText)
+        assertEquals(SurfaceDetectionResult.ACTIVE_VIDEO_PLAYER, detection.surface)
+        assertTrue(detection.isActivePlayer)
+        assertEquals(17 * 60 + 4, detection.durationSeconds)
+        assertEquals(
+            MediaLengthLocalDecision.ALLOW,
+            MediaLengthEnforcement.decide(
+                packageName = VideoPlatformRegistry.YOUTUBE,
+                goal = max40Promise,
+                screenText = screenText,
+                structuredMaxBlockMinutes = 40
+            )
+        )
+    }
+
+    @Test
+    fun commentsWithSpokenProgressButNoWatchMetadata_remainPassive() {
+        val screenText =
+            "Comments Add a comment Top comments " +
+                "Someone wrote 2 minutes 52 seconds of 17 minutes 4 seconds"
+        val detection = SurfaceDetector.detect(VideoPlatformRegistry.YOUTUBE, screenText)
+        assertEquals(SurfaceDetectionResult.COMMENTS, detection.surface)
+        assertFalse(detection.isActivePlayer)
+    }
+
+    @Test
+    fun commentClockWithWatchMetadata_remainsPassive() {
+        val screenText =
+            "The essence of calculus 3 lakh likes 1.1 crore views Subscribe " +
+                "Comments Add a comment Top comments Someone wrote " +
+                "2 minutes 52 seconds of 17 minutes 4 seconds"
+        val detection = SurfaceDetector.detect(VideoPlatformRegistry.YOUTUBE, screenText)
+        assertEquals(SurfaceDetectionResult.COMMENTS, detection.surface)
+        assertFalse(detection.isActivePlayer)
+        assertNull(detection.durationSeconds)
     }
 
     @Test

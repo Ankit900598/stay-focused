@@ -67,11 +67,20 @@ object PromiseClarificationLaw {
             return draft.copy(clarificationRequired = true, canStartCommitment = false)
         }
         if (draft.appRuleScopeConflict) {
+            val conflict = EffectivePromisePolicy.conflictReason(draft)
             return draft.copy(
                 clarificationRequired = true,
                 canStartCommitment = false,
-                clarificationQuestion = draft.clarificationQuestion?.takeIf { it.isNotBlank() }
-                    ?: EffectivePromisePolicy.conflictQuestion(draft)
+                clarificationQuestion = if (
+                    conflict == EffectivePromisePolicy.SOCIAL_SAFE_APP_SURFACE_UNSUPPORTED ||
+                    conflict == EffectivePromisePolicy.UNSUPPORTED_COLLECTION_TARGET ||
+                    conflict == EffectivePromisePolicy.UNSUPPORTED_STUDY_CONTENT
+                ) {
+                    EffectivePromisePolicy.conflictQuestion(draft)
+                } else {
+                    draft.clarificationQuestion?.takeIf { it.isNotBlank() }
+                        ?: EffectivePromisePolicy.conflictQuestion(draft)
+                }
             )
         }
         val working = injectCompoundIfNeeded(draft, selected)

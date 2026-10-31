@@ -287,4 +287,33 @@ class AppSurfaceChoiceFixtureTest {
         assertEquals(EffectivePromisePolicy.FEED_SURFACE_UNSUPPORTED, EffectivePromisePolicy.conflictReason(draft))
         assertEquals(false, PromiseClarificationLaw.apply(draft).canStartCommitment)
     }
+
+    @Test
+    fun socialExceptMessages_withDefaultSafeApp_cannotPromiseUnenforcedBlock() {
+        val base = load("app_surface_ig_pick_a").draft
+        for (identity in listOf(ScopeIdentity.WHATSAPP, ScopeIdentity.SOCIAL_ANY)) {
+            val expansion = ScopeKindPresets.expand(ScopeKind.SOCIAL_MESSAGING_ONLY, identity)
+            val scope = ScopeCanonicalizer.canonicalize(
+                EnforcementScope(
+                    version = EnforcementScope.CURRENT_VERSION,
+                    kind = ScopeKind.SOCIAL_MESSAGING_ONLY,
+                    identity = identity,
+                    include = expansion.include,
+                    exempt = expansion.exempt,
+                    confidence = 0.9,
+                    evidenceSpans = listOf("messages stay open")
+                )
+            )
+            assertTrue("$identity scope must be valid", scope.isEnforceable)
+            val draft = base.copy(enforcementScope = scope)
+            assertEquals(
+                "$identity must not be startable on an unenforced surface",
+                EffectivePromisePolicy.SOCIAL_SAFE_APP_SURFACE_UNSUPPORTED,
+                EffectivePromisePolicy.conflictReason(draft)
+            )
+            val gated = PromiseClarificationLaw.apply(draft)
+            assertFalse(gated.canStartCommitment == true)
+            assertTrue(gated.clarificationQuestion.orEmpty().contains("can't reliably"))
+        }
+    }
 }

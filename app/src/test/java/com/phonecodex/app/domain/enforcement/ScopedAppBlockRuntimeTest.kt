@@ -154,6 +154,16 @@ class ScopedAppBlockRuntimeTest {
     }
 
     @Test
+    fun typedShortsScope_savedWholeAppBlockStillBlocksHomeAndLongPlayer() {
+        val (goal, settings) = shortsOnly()
+        for ((name, text) in listOf("home" to home, "long player" to longPlayer)) {
+            val result = eval(goal, settings, AppRuleBehavior.BLOCK, text)
+            assertEquals("$name preserves the saved whole-app rule", DecisionType.BLOCK, result.decision)
+            assertEquals(EnforcementReasonCodes.APP_RULE_BLOCK, result.reasonCode)
+        }
+    }
+
+    @Test
     fun appOnlyWholeApp_blocksHomeLongAndShorts() {
         val goal = "block youtube for one hour"
         val appOnly = ScopeCanonicalizer.canonicalize(

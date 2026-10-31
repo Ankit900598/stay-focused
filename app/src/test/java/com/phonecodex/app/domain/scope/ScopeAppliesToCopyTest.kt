@@ -70,6 +70,36 @@ class ScopeAppliesToCopyTest {
         assertFalse("leak: '$copy'", ScopeAppliesToCopy.containsPackageId(copy))
     }
 
+    @Test
+    fun packagePinnedCopyNamesTheVerifiedAppsWithoutLeakingIds() {
+        val scope = buildScope(
+            ScopeKind.PACKAGE_PINNED,
+            ScopeIdentity.ANY,
+            packages = listOf("com.whatsapp", "com.discord")
+        )
+
+        assertEquals("Only WhatsApp and Discord", ScopeAppliesToCopy.forScope(scope))
+        assertEquals("WhatsApp and Discord only", ScopeAppliesToCopy.optionLabel(scope))
+        assertFalse(ScopeAppliesToCopy.containsPackageId(ScopeAppliesToCopy.forScope(scope)))
+    }
+
+    @Test
+    fun socialAnyCopyNamesItsFiniteRecognizedSetAndExcludesOtherApps() {
+        val messaging = buildScope(ScopeKind.SOCIAL_MESSAGING_ONLY, ScopeIdentity.SOCIAL_ANY)
+        val feed = buildScope(ScopeKind.SOCIAL_FEED_AND_REELS_ONLY, ScopeIdentity.SOCIAL_ANY)
+        val expectedServices = listOf("Instagram", "Facebook", "Messenger", "TikTok", "Snapchat", "WhatsApp")
+
+        for (service in expectedServices) {
+            assertTrue(service, ScopeAppliesToCopy.forScope(messaging).contains(service))
+            assertTrue(service, ScopeAppliesToCopy.forScope(feed).contains(service))
+            assertTrue(service, ScopeAppliesToCopy.optionLabel(messaging)?.contains(service) == true)
+            assertTrue(service, ScopeAppliesToCopy.optionLabel(feed)?.contains(service) == true)
+        }
+        assertTrue(ScopeAppliesToCopy.forScope(messaging).contains("Other apps and sites are outside"))
+        assertTrue(ScopeAppliesToCopy.forScope(feed).contains("other apps/sites stay outside"))
+        assertTrue(ScopeAppliesToCopy.forScope(messaging).contains("first five only"))
+    }
+
     private fun buildScope(
         kind: ScopeKind,
         identity: ScopeIdentity,

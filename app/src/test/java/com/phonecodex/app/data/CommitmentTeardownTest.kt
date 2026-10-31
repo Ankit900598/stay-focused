@@ -29,10 +29,12 @@ class CommitmentTeardownTest {
 
     private val sessionPrefs = InMemorySharedPreferences()
     private val rulePrefs = InMemorySharedPreferences()
+    private val tuningPrefs = InMemorySharedPreferences()
     private val events = mutableListOf<String>()
     private val sessionStore = SessionStore(sessionPrefs)
     private val appRules = AppRulesStore(rulePrefs)
-    private val teardown = CommitmentTeardown(sessionStore, appRules) { events += it }
+    private val tuningStore = StudyWorldSettingsStore(tuningPrefs)
+    private val teardown = CommitmentTeardown(sessionStore, appRules, { events += it }, tuningStore)
     private val ig = "com.instagram.android"
 
     private fun session(
@@ -127,7 +129,12 @@ class CommitmentTeardownTest {
         startWithInstagramBlock()
         // Process died after the session was cleared but before rules were restored.
         sessionStore.clearSession()
-        val recreated = CommitmentTeardown(SessionStore(sessionPrefs), AppRulesStore(rulePrefs)) { events += it }
+        val recreated = CommitmentTeardown(
+            SessionStore(sessionPrefs),
+            AppRulesStore(rulePrefs),
+            { events += it },
+            StudyWorldSettingsStore(tuningPrefs)
+        )
 
         val r = recreated.end(CommitmentTeardown.Kind.EARLY_END, "session-1")
 
@@ -135,6 +142,23 @@ class CommitmentTeardownTest {
         assertEquals(Rules.RESTORED, r.rules)
         assertFalse(AppRulesStore(rulePrefs).hasCommitmentLedger())
         assertNull(SessionStore(sessionPrefs).getStoredSession())
+    }
+
+    @Test
+    fun endingCommitment_restoresSavedSessionTuning() {
+        tuningStore.setDurationMinutes(45)
+        tuningStore.setBlockAttemptCooldownMinutes(5)
+        assertTrue(tuningStore.beginCommitment(tuningStore.getSettings().copy(
+            durationMinutes = 15,
+            blockAttemptCooldownMinutes = 1
+        )))
+        sessionStore.saveActiveSession(session())
+
+        teardown.end(CommitmentTeardown.Kind.EARLY_END, "session-1")
+
+        assertEquals(45, tuningStore.getSettings().durationMinutes)
+        assertEquals(5, tuningStore.getSettings().blockAttemptCooldownMinutes)
+        assertFalse(tuningPrefs.contains("commitment_tuning_ledger_v1"))
     }
 
     @Test

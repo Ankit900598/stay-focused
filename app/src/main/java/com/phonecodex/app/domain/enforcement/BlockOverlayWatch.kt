@@ -23,7 +23,8 @@ data class OverlayWatchVerdict(
         "OVERLAY_LIFECYCLE action=${action.name.lowercase()} reason=$reason source=$source " +
             "event=$eventPackage root=${rootPackage ?: "none"} effective=$effectivePackage " +
             "target=$targetPackage elapsedMs=$elapsedMs awayMs=$awayMs " +
-            "blockedPage=${blockedPage ?: "unknown"} currentPage=${currentPage ?: "unknown"}"
+            "blockedPageKind=${OverlayLifecycleGate.pageLogKind(blockedPage)} " +
+            "currentPageKind=${OverlayLifecycleGate.pageLogKind(currentPage)}"
 }
 
 /**
@@ -38,16 +39,30 @@ class BlockOverlayWatch(
     private val blockedPage: String?,
     private val shownAtMillis: Long,
     private val awayDebounceMs: Long = OverlayLifecycleGate.AWAY_DEBOUNCE_MS,
-    private val pageChangeHoldMs: Long = OverlayLifecycleGate.DECISION_HOLD_MS
+    private val pageChangeHoldMs: Long = OverlayLifecycleGate.DECISION_HOLD_MS,
+    private val blockedScreenSignature: String? = null,
+    private val screenProbeIntervalMs: Long = SCREEN_PROBE_INTERVAL_MS
 ) {
     private var awayCandidate: String? = null
     private var awaySinceMillis = 0L
+    private var lastScreenProbeAtMillis = Long.MIN_VALUE
+
+    fun shouldProbeTargetScreen(nowMillis: Long): Boolean {
+        if (nowMillis - shownAtMillis < pageChangeHoldMs) return false
+        return lastScreenProbeAtMillis == Long.MIN_VALUE ||
+            nowMillis - lastScreenProbeAtMillis >= screenProbeIntervalMs
+    }
+
+    fun recordTargetScreenProbe(nowMillis: Long) {
+        lastScreenProbeAtMillis = nowMillis
+    }
 
     fun observe(
         eventPackage: String,
         rootPackage: String?,
         currentPage: String?,
-        nowMillis: Long
+        nowMillis: Long,
+        currentScreenSignature: String? = null
     ): OverlayWatchVerdict {
         val root = rootPackage?.takeIf { it.isNotBlank() }
         val effective = root ?: eventPackage
@@ -74,10 +89,25 @@ class BlockOverlayWatch(
 
         if (effective == targetPackage) {
             resetAway()
+            if (currentPage != null && blockedPage != null && currentPage == blockedPage) {
+                return verdict(OverlayWatchAction.RETAIN, "target_same_page")
+            }
+            if (elapsed < pageChangeHoldMs) return verdict(OverlayWatchAction.RETAIN, "page_change_hold")
+            if (currentPage != null && blockedPage != null) {
+                return verdict(OverlayWatchAction.REEVALUATE_PAGE_CHANGED, "target_page_changed")
+            }
+            if (blockedPage != null &&
+                blockedScreenSignature != null &&
+                currentScreenSignature != null &&
+                currentScreenSignature != blockedScreenSignature
+            ) {
+                return verdict(OverlayWatchAction.REEVALUATE_PAGE_CHANGED, "target_screen_changed")
+            }
+            if (currentPage != null && blockedPage == null) {
+                return verdict(OverlayWatchAction.REEVALUATE_PAGE_CHANGED, "blocked_page_became_known")
+            }
             if (currentPage == null) return verdict(OverlayWatchAction.RETAIN, "target_page_unknown")
             if (blockedPage == null) return verdict(OverlayWatchAction.RETAIN, "blocked_page_unknown")
-            if (currentPage == blockedPage) return verdict(OverlayWatchAction.RETAIN, "target_same_page")
-            if (elapsed < pageChangeHoldMs) return verdict(OverlayWatchAction.RETAIN, "page_change_hold")
             return verdict(OverlayWatchAction.REEVALUATE_PAGE_CHANGED, "target_page_changed")
         }
 
@@ -101,5 +131,9 @@ class BlockOverlayWatch(
     private fun resetAway() {
         awayCandidate = null
         awaySinceMillis = 0L
+    }
+
+    private companion object {
+        const val SCREEN_PROBE_INTERVAL_MS = 1_500L
     }
 }

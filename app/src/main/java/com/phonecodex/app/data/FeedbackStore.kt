@@ -1,14 +1,18 @@
 package com.phonecodex.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.phonecodex.app.domain.model.FeedbackEntry
 
-class FeedbackStore(context: Context) {
+class FeedbackStore internal constructor(private val prefs: SharedPreferences) {
 
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
+
+    init {
+        removeLegacyPrivateContext()
+    }
 
     fun addFeedback(entry: FeedbackEntry) {
         val encoded = encode(entry)
@@ -27,11 +31,15 @@ class FeedbackStore(context: Context) {
         return getRawEntries().size
     }
 
+    fun clearFeedback() {
+        prefs.edit().remove(KEY_ENTRIES).apply()
+    }
+
     private fun getRawEntries(): List<String> {
         val stored = prefs.getString(KEY_ENTRIES, null) ?: return emptyList()
         return stored
             .lineSequence()
-            .map { it.trim() }
+            .map { it.removeSuffix("\r") }
             .filter { it.isNotEmpty() }
             .toList()
     }
@@ -48,7 +56,7 @@ class FeedbackStore(context: Context) {
     }
 
     private fun decode(raw: String): FeedbackEntry? {
-        val parts = raw.split(FIELD_SEPARATOR)
+        val parts = raw.split(FIELD_SEPARATOR, limit = Int.MAX_VALUE)
         if (parts.size < 6) return null
 
         val timestampMillis = parts[0].toLongOrNull() ?: return null
@@ -69,9 +77,27 @@ class FeedbackStore(context: Context) {
             .trim()
     }
 
+    private fun removeLegacyPrivateContext() {
+        val version = runCatching { prefs.getInt(KEY_PRIVACY_VERSION, 0) }.getOrDefault(0)
+        if (version >= PRIVACY_VERSION) return
+
+        val sanitizedEntries = getRawEntries().mapNotNull { raw ->
+            val fields = raw.split(FIELD_SEPARATOR, limit = Int.MAX_VALUE).toMutableList()
+            if (fields.size < 6) return@mapNotNull null
+            listOf(fields[0], fields[1], "", fields[3], fields[4], "")
+                .joinToString(FIELD_SEPARATOR)
+        }
+        prefs.edit()
+            .putString(KEY_ENTRIES, sanitizedEntries.joinToString("\n"))
+            .putInt(KEY_PRIVACY_VERSION, PRIVACY_VERSION)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "phonecodex_feedback"
         private const val KEY_ENTRIES = "entries"
+        private const val KEY_PRIVACY_VERSION = "privacyVersion"
+        private const val PRIVACY_VERSION = 1
         private const val MAX_ENTRIES = 50
         private const val FIELD_SEPARATOR = "\u001E"
     }
